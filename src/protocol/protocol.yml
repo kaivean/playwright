@@ -2429,7 +2429,7 @@ AndroidDevice:
     connectToWebView:
       parameters:
         sdkLanguage: string
-        pid: number
+        socketName: string
       returns:
         context: BrowserContext
 
@@ -2442,7 +2442,7 @@ AndroidDevice:
 
     webViewRemoved:
       parameters:
-        pid: number
+        socketName: string
 
 
 AndroidWebView:
@@ -2450,6 +2450,7 @@ AndroidWebView:
   properties:
     pid: number
     pkg: string
+    socketName: string
 
 
 AndroidSelector:

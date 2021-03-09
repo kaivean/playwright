@@ -1105,12 +1105,13 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.AndroidDeviceConnectToWebViewParams = tObject({
     sdkLanguage: tString,
-    pid: tNumber,
+    socketName: tString,
   });
   scheme.AndroidDeviceCloseParams = tOptional(tObject({}));
   scheme.AndroidWebView = tObject({
     pid: tNumber,
     pkg: tString,
+    socketName: tString,
   });
   scheme.AndroidSelector = tObject({
     checkable: tOptional(tBoolean),

@@ -102,7 +102,7 @@ export class AndroidDevice extends SdkObject {
   private _callbacks = new Map<number, { fulfill: (result: any) => void, reject: (error: Error) => void }>();
   private _pollingWebViews: NodeJS.Timeout | undefined;
   readonly _timeoutSettings: TimeoutSettings;
-  private _webViews = new Map<number, AndroidWebView>();
+  private _webViews = new Map<string, AndroidWebView>();
 
   static Events = {
     WebViewAdded: 'webViewAdded',
@@ -168,12 +168,13 @@ export class AndroidDevice extends SdkObject {
     await this.shell(`am force-stop com.microsoft.playwright.androiddriver`);
 
     debug('pw:android')('Uninstalling the old driver');
-    await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
-    await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
+    // 不要每次都卸载安装，有些手机安装有拦截机制，不易安装，要求用户安装好
+    // await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
+    // await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
 
     debug('pw:android')('Installing the new driver');
-    for (const file of ['android-driver.apk', 'android-driver-target.apk'])
-      await this.installApk(await readFileAsync(require.resolve(`../../../bin/${file}`)));
+    // for (const file of ['android-driver.apk', 'android-driver-target.apk'])
+    //   await this.installApk(await readFileAsync(require.resolve(`../../../bin/${file}`)));
 
     debug('pw:android')('Starting the new driver');
     this.shell('am instrument -w com.microsoft.playwright.androiddriver.test/androidx.test.runner.AndroidJUnitRunner');
@@ -204,6 +205,7 @@ export class AndroidDevice extends SdkObject {
         await new Promise(f => setTimeout(f, 250));
       }
     }
+
     debug('pw:android')(`Connected to localabstract:${socketName}`);
     return socket;
   }
@@ -245,11 +247,11 @@ export class AndroidDevice extends SdkObject {
     return await this._connectToBrowser(socketName, options);
   }
 
-  async connectToWebView(pid: number, sdkLanguage: string): Promise<BrowserContext> {
-    const webView = this._webViews.get(pid);
+  async connectToWebView(socketName: string, sdkLanguage: string): Promise<BrowserContext> {
+    const webView = this._webViews.get(socketName);
     if (!webView)
       throw new Error('WebView has been closed');
-    return await this._connectToBrowser(`webview_devtools_remote_${pid}`, { sdkLanguage });
+    return await this._connectToBrowser(`${socketName}`, { sdkLanguage, hasTouch: true });
   }
 
   private async _connectToBrowser(socketName: string, options: types.BrowserContextOptions): Promise<BrowserContext> {
@@ -271,7 +273,6 @@ export class AndroidDevice extends SdkObject {
       browserLogsCollector: new RecentLogsCollector()
     };
     validateBrowserContextOptions(options, browserOptions);
-
     const browser = await CRBrowser.connect(androidBrowser, browserOptions);
     const controller = new ProgressController(internalCallMetadata(), this);
     const defaultContext = browser._defaultContext!;
@@ -328,43 +329,63 @@ export class AndroidDevice extends SdkObject {
     await socket.close();
   }
 
+  // 有些常见不是 webview_devtools_remote_{pid}形式, 应该都存起来，让用户选择
   private async _refreshWebViews() {
     const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep webview_devtools_remote`)).toString().split('\n');
     if (this._isClosed)
       return;
 
     const newPids = new Set<number>();
+    const socketNames = new Set<string>();
     for (const line of sockets) {
       const match = line.match(/[^@]+@webview_devtools_remote_(\d+)/);
-      if (!match)
+      const macthSocketName = line.match(/[^@]+@(webview_devtools_remote_.+)/);
+
+      if (!macthSocketName)
         continue;
+
+      const socketName = macthSocketName[1];
+      socketNames.add(socketName);
+
+      if (!match) {
+        if (this._webViews.has(socketName))
+          continue;
+        const webView = { pid: -1, pkg: '', socketName};
+        this._webViews.set(socketName, webView);
+        this.emit(AndroidDevice.Events.WebViewAdded, webView);
+        continue;
+      }
+
+
       const pid = +match[1];
+      if (!newPids.has(pid)) {
+
+        if (this._webViews.has(socketName))
+          continue;
+
+        const procs = (await this._backend.runCommand(`shell:ps -A | grep ${pid}`)).toString().split('\n');
+        if (this._isClosed)
+          return;
+        let pkg = '';
+        for (const proc of procs) {
+          const match = proc.match(/[^\s]+\s+(\d+).*$/);
+          if (!match)
+            continue;
+          const p = match[1];
+          if (+p !== pid)
+            continue;
+          pkg = proc.substring(proc.lastIndexOf(' ') + 1);
+        }
+        const webView = { pid, pkg, socketName};
+        this._webViews.set(socketName, webView);
+
+        this.emit(AndroidDevice.Events.WebViewAdded, webView);
+      }
+
       newPids.add(pid);
     }
-    for (const pid of newPids) {
-      if (this._webViews.has(pid))
-        continue;
-
-      const procs = (await this._backend.runCommand(`shell:ps -A | grep ${pid}`)).toString().split('\n');
-      if (this._isClosed)
-        return;
-      let pkg = '';
-      for (const proc of procs) {
-        const match = proc.match(/[^\s]+\s+(\d+).*$/);
-        if (!match)
-          continue;
-        const p = match[1];
-        if (+p !== pid)
-          continue;
-        pkg = proc.substring(proc.lastIndexOf(' ') + 1);
-      }
-      const webView = { pid, pkg };
-      this._webViews.set(pid, webView);
-      this.emit(AndroidDevice.Events.WebViewAdded, webView);
-    }
-
     for (const p of this._webViews.keys()) {
-      if (!newPids.has(p)) {
+      if (!socketNames.has(p)) {
         this._webViews.delete(p);
         this.emit(AndroidDevice.Events.WebViewRemoved, p);
       }

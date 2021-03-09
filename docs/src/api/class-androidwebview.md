@@ -12,6 +12,12 @@ Emitted when the WebView is closed.
 
 Connects to the WebView and returns a regular Playwright [Page] to interact with.
 
+## async method: AndroidWebView.pages
+- returns: <[Page[]]>
+
+Connects to the WebView and returns many regular Playwright [Page] to interact with.
+
+
 ## method: AndroidWebView.pid
 - returns: <[int]>
 
@@ -21,3 +27,9 @@ WebView process PID.
 - returns: <[string]>
 
 WebView package identifier.
+
+
+## method: AndroidWebView.socketName
+- returns: <[string]>
+
+WebView socket name.

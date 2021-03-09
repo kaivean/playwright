@@ -451,6 +451,7 @@ export class Frame extends SdkObject {
   }
 
   private _recalculateLifecycle() {
+
     const events = new Set<types.LifecycleEvent>(this._firedLifecycleEvents);
     for (const child of this._childFrames) {
       child._recalculateLifecycle();
@@ -478,6 +479,8 @@ export class Frame extends SdkObject {
       if (!events.has(event))
         this.emit(Frame.Events.RemoveLifecycle, event);
     }
+
+
     this._subtreeLifecycleEvents = events;
   }
 
@@ -560,8 +563,15 @@ export class Frame extends SdkObject {
 
   async _waitForLoadState(progress: Progress, state: types.LifecycleEvent): Promise<void> {
     const waitUntil = verifyLifecycle('state', state);
-    if (!this._subtreeLifecycleEvents.has(waitUntil))
+    if (!this._subtreeLifecycleEvents.has(waitUntil)) {
+      if (waitUntil === 'load') {
+        const context = await this._utilityContext();
+        const state = await context.evaluateInternal(() => document.readyState);
+        if (state === 'complete')
+          return;
+      }
       await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
+    }
   }
 
   async frameElement(): Promise<dom.ElementHandle> {

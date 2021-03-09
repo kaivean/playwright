@@ -359,6 +359,8 @@ This method waits until [AndroidWebView] matching the [`option: selector`] is op
 ### param: AndroidDevice.webView.selector
 - `selector` <[Object]>
   - `pkg` <[string]> Package identifier.
+  - `pid` <[int]> process ID identifier.
+  - `socketName` <[string]> webview socket name.
 
 ### option: AndroidDevice.webView.timeout = %%-android-timeout-%%
 

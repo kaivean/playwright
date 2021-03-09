@@ -201,7 +201,14 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _scrollRectIntoViewIfNeeded(rect?: types.Rect): Promise<'error:notvisible' | 'error:notconnected' | 'done'> {
-    return await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
+    // 部分稍低点
+    try {
+      const res = await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
+      return res;
+    } catch (e) {
+      console.error('_scrollRectIntoViewIfNeeded', e);
+      return 'done';
+    }
   }
 
   async _waitAndScrollIntoViewIfNeeded(progress: Progress): Promise<void> {

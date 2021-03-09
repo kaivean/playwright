@@ -59,7 +59,7 @@ export class Android extends ChannelOwner<channels.AndroidChannel, channels.Andr
 
 export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel, channels.AndroidDeviceInitializer> implements api.AndroidDevice {
   readonly _timeoutSettings: TimeoutSettings;
-  private _webViews = new Map<number, AndroidWebView>();
+  private _webViews = new Map<string, AndroidWebView>();
 
   static from(androidDevice: channels.AndroidDeviceChannel): AndroidDevice {
     return (androidDevice as any)._object;
@@ -72,18 +72,18 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel, c
     this.input = new AndroidInput(this);
     this._timeoutSettings = new TimeoutSettings((parent as Android)._timeoutSettings);
     this._channel.on('webViewAdded', ({ webView }) => this._onWebViewAdded(webView));
-    this._channel.on('webViewRemoved', ({ pid }) => this._onWebViewRemoved(pid));
+    this._channel.on('webViewRemoved', ({ socketName }) => this._onWebViewRemoved(socketName));
   }
 
   private _onWebViewAdded(webView: channels.AndroidWebView) {
     const view = new AndroidWebView(this, webView);
-    this._webViews.set(webView.pid, view);
+    this._webViews.set(webView.socketName, view);
     this.emit(Events.AndroidDevice.WebView, view);
   }
 
-  private _onWebViewRemoved(pid: number) {
-    const view = this._webViews.get(pid);
-    this._webViews.delete(pid);
+  private _onWebViewRemoved(socketName: string) {
+    const view = this._webViews.get(socketName);
+    this._webViews.delete(socketName);
     if (view)
       view.emit(Events.AndroidWebView.Close);
   }
@@ -105,13 +105,35 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel, c
     return [...this._webViews.values()];
   }
 
-  async webView(selector: { pkg: string }, options?: types.TimeoutOptions): Promise<AndroidWebView> {
-    const webView = [...this._webViews.values()].find(v => v.pkg() === selector.pkg);
+  async webView(selector: { pkg?: string; socketName?: string; pid?: number; }, options?: types.TimeoutOptions): Promise<AndroidWebView> {
+    const webView = [...this._webViews.values()].find(v => {
+      if (selector.pkg)
+        return v.pkg() === selector.pkg;
+
+      else if (selector.pid)
+        return v.pid() === selector.pid;
+
+      else if (selector.socketName)
+        return v.socketName() === selector.socketName;
+
+      return false;
+    });
     if (webView)
       return webView;
     return this.waitForEvent('webview', {
       ...options,
-      predicate: (view: AndroidWebView) => view.pkg() === selector.pkg
+      predicate: (view: AndroidWebView) => {
+        if (selector.pkg)
+          return view.pkg() === selector.pkg;
+
+        else if (selector.pid)
+          return view.pid() === selector.pid;
+
+        else if (selector.socketName)
+          return view.socketName() === selector.socketName;
+
+        return false;
+      }
     });
   }
 
@@ -370,7 +392,7 @@ function toSelectorChannel(selector: api.AndroidSelector): channels.AndroidSelec
 export class AndroidWebView extends EventEmitter implements api.AndroidWebView {
   private _device: AndroidDevice;
   private _data: channels.AndroidWebView;
-  private _pagePromise: Promise<Page> | undefined;
+  private _pagePromise: Promise<Page[]> | undefined;
 
   constructor(device: AndroidDevice, data: channels.AndroidWebView) {
     super();
@@ -386,16 +408,25 @@ export class AndroidWebView extends EventEmitter implements api.AndroidWebView {
     return this._data.pkg;
   }
 
+  socketName(): string {
+    return this._data.socketName;
+  }
+
   async page(): Promise<Page> {
+    const pages = await this.pages();
+    return pages[0];
+  }
+
+  async pages(): Promise<Page[]> {
     if (!this._pagePromise)
       this._pagePromise = this._fetchPage();
     return this._pagePromise;
   }
 
-  private async _fetchPage(): Promise<Page> {
+  private async _fetchPage(): Promise<Page[]> {
     return this._device._wrapApiCall('androidWebView.page', async (channel: channels.AndroidDeviceChannel) => {
-      const { context } = await channel.connectToWebView({ pid: this._data.pid, sdkLanguage: 'javascript' });
-      return BrowserContext.from(context).pages()[0];
+      const { context } = await channel.connectToWebView({ socketName: this._data.socketName, sdkLanguage: 'javascript' });
+      return BrowserContext.from(context).pages();
     });
   }
 }
