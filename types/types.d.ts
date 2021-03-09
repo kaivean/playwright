@@ -7935,9 +7935,19 @@ export interface AndroidDevice {
    */
   webView(selector: {
     /**
-     * Package identifier.
+     * Optional Package identifier.
      */
-    pkg: string;
+    pkg?: string;
+
+    /**
+     * Optional process ID identifier.
+     */
+    pid?: number;
+
+    /**
+     * Optional webview socket name.
+     */
+    socketName?: string;
   }, options?: {
     /**
      * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
@@ -8114,6 +8124,11 @@ export interface AndroidWebView {
   page(): Promise<Page>;
 
   /**
+   * Connects to the WebView and returns many regular Playwright [Page] to interact with.
+   */
+  pages(): Promise<Page[]>;
+
+  /**
    * WebView process PID.
    */
   pid(): number;
@@ -8122,6 +8137,11 @@ export interface AndroidWebView {
    * WebView package identifier.
    */
   pkg(): string;
+
+  /**
+   * WebView socket name.
+   */
+  socketName(): string;
 }
 
 /**
