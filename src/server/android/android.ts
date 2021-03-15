@@ -331,15 +331,15 @@ export class AndroidDevice extends SdkObject {
 
   // 有些常见不是 webview_devtools_remote_{pid}形式, 应该都存起来，让用户选择
   private async _refreshWebViews() {
-    const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep webview_devtools_remote`)).toString().split('\n');
+    const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep devtools_remote`)).toString().split('\n');
     if (this._isClosed)
       return;
 
     const newPids = new Set<number>();
     const socketNames = new Set<string>();
     for (const line of sockets) {
-      const match = line.match(/[^@]+@webview_devtools_remote_(\d+)/);
-      const macthSocketName = line.match(/[^@]+@(webview_devtools_remote_.+)/);
+      const match = line.match(/[^@]+@.*?devtools_remote_?(\d*)/);
+      const macthSocketName = line.match(/[^@]+@(.*?_devtools_remote_?.*)/);
 
       if (!macthSocketName)
         continue;

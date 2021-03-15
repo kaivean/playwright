@@ -392,8 +392,6 @@ function toSelectorChannel(selector: api.AndroidSelector): channels.AndroidSelec
 export class AndroidWebView extends EventEmitter implements api.AndroidWebView {
   private _device: AndroidDevice;
   private _data: channels.AndroidWebView;
-  private _pagePromise: Promise<Page[]> | undefined;
-
   constructor(device: AndroidDevice, data: channels.AndroidWebView) {
     super();
     this._device = device;
@@ -418,9 +416,7 @@ export class AndroidWebView extends EventEmitter implements api.AndroidWebView {
   }
 
   async pages(): Promise<Page[]> {
-    if (!this._pagePromise)
-      this._pagePromise = this._fetchPage();
-    return this._pagePromise;
+    return this._fetchPage();
   }
 
   private async _fetchPage(): Promise<Page[]> {

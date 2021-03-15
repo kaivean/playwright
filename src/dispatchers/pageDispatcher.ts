@@ -237,7 +237,11 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageInitializer> i
   }
 
   _onFrameDetached(frame: Frame) {
-    this._dispatchEvent('frameDetached', { frame: lookupDispatcher<FrameDispatcher>(frame) });
+    // 假如已经打开百度app的webview，已经加载完成页面，当连接webview时，此时立即执行goto到新页面，会出发之前页面的Page.frameDetached CDP事件，但由于先前没有收到之前页面的Page.frameAttached ，在`src/server/chromium/crPage.ts` 的_onFrameDetached响应时，无法根据其frameId获取到创建的frame对象，故返回undefined，导致有报错
+    const disptcher = lookupDispatcher<FrameDispatcher>(frame);
+    if (disptcher !== undefined)
+      this._dispatchEvent('frameDetached', { frame: disptcher });
+
   }
 }
 
