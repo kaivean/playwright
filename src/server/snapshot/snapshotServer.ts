@@ -16,21 +16,10 @@
 
 import * as http from 'http';
 import querystring from 'querystring';
-import { SnapshotRenderer } from './snapshotRenderer';
 import { HttpServer } from '../../utils/httpServer';
-import type { RenderedFrameSnapshot } from './snapshot';
-
-export type NetworkResponse = {
-  contentType: string;
-  responseHeaders: { name: string, value: string }[];
-  responseSha1: string;
-};
-
-export interface SnapshotStorage {
-  resourceContent(sha1: string): Buffer | undefined;
-  resourceById(resourceId: string): NetworkResponse | undefined;
-  snapshotById(snapshotId: string): SnapshotRenderer | undefined;
-}
+import type { RenderedFrameSnapshot } from './snapshotTypes';
+import { SnapshotStorage } from './snapshotStorage';
+import type { Point } from '../../common/types';
 
 export class SnapshotServer {
   private _snapshotStorage: SnapshotStorage;
@@ -38,9 +27,7 @@ export class SnapshotServer {
   constructor(server: HttpServer, snapshotStorage: SnapshotStorage) {
     this._snapshotStorage = snapshotStorage;
 
-    server.routePath('/snapshot/', this._serveSnapshotRoot.bind(this));
-    server.routePath('/snapshot/service-worker.js', this._serveServiceWorker.bind(this));
-    server.routePath('/snapshot-data', this._serveSnapshot.bind(this));
+    server.routePrefix('/snapshot/', this._serveSnapshot.bind(this));
     server.routePrefix('/resources/', this._serveResource.bind(this));
   }
 
@@ -65,35 +52,7 @@ export class SnapshotServer {
       </style>
       <body>
         <script>
-        if (navigator.serviceWorker) {
-          navigator.serviceWorker.register('./service-worker.js');
-          let showPromise = Promise.resolve();
-          if (!navigator.serviceWorker.controller)
-            showPromise = new Promise(resolve => navigator.serviceWorker.oncontrollerchange = resolve);
-
-          let current = document.createElement('iframe');
-          document.body.appendChild(current);
-          let next = document.createElement('iframe');
-          document.body.appendChild(next);
-          next.style.visibility = 'hidden';
-          const onload = () => {
-            let temp = current;
-            current = next;
-            next = temp;
-            current.style.visibility = 'visible';
-            next.style.visibility = 'hidden';
-          };
-          current.onload = onload;
-          next.onload = onload;
-
-          window.showSnapshot = async url => {
-            await showPromise;
-            next.src = url;
-          };
-          window.addEventListener('message', event => {
-            window.showSnapshot(window.location.href + event.data.snapshotId);
-          }, false);
-        }
+        (${rootScript})();
         </script>
       </body>
     `);
@@ -116,7 +75,7 @@ export class SnapshotServer {
       }
 
       function respondNotAvailable(): Response {
-        return new Response('<body>Snapshot is not available</body>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        return new Response('<body style="background: #ddd"></body>', { status: 200, headers: { 'Content-Type': 'text/html' } });
       }
 
       function removeHash(url: string) {
@@ -135,24 +94,20 @@ export class SnapshotServer {
         if (pathname === '/snapshot/service-worker.js' || pathname === '/snapshot/')
           return fetch(event.request);
 
-        let snapshotId: string;
+        const snapshotUrl = request.mode === 'navigate' ?
+          request.url : (await self.clients.get(event.clientId))!.url;
+
         if (request.mode === 'navigate') {
-          snapshotId = pathname.substring('/snapshot/'.length);
-        } else {
-          const client = (await self.clients.get(event.clientId))!;
-          snapshotId = new URL(client.url).pathname.substring('/snapshot/'.length);
-        }
-        if (request.mode === 'navigate') {
-          const htmlResponse = await fetch(`/snapshot-data?snapshotId=${snapshotId}`);
+          const htmlResponse = await fetch(event.request);
           const { html, resources }: RenderedFrameSnapshot  = await htmlResponse.json();
           if (!html)
             return respondNotAvailable();
-          snapshotResources.set(snapshotId, resources);
+          snapshotResources.set(snapshotUrl, resources);
           const response = new Response(html, { status: 200, headers: { 'Content-Type': 'text/html' } });
           return response;
         }
 
-        const resources = snapshotResources.get(snapshotId)!;
+        const resources = snapshotResources.get(snapshotUrl)!;
         const urlWithoutHash = removeHash(request.url);
         const resource = resources[urlWithoutHash];
         if (!resource)
@@ -193,11 +148,17 @@ export class SnapshotServer {
   }
 
   private _serveSnapshot(request: http.IncomingMessage, response: http.ServerResponse): boolean {
+    if (request.url!.endsWith('/snapshot/'))
+      return this._serveSnapshotRoot(request, response);
+    if (request.url!.endsWith('/snapshot/service-worker.js'))
+      return this._serveServiceWorker(request, response);
+
     response.statusCode = 200;
     response.setHeader('Cache-Control', 'public, max-age=31536000');
     response.setHeader('Content-Type', 'application/json');
-    const parsed: any = querystring.parse(request.url!.substring(request.url!.indexOf('?') + 1));
-    const snapshot = this._snapshotStorage.snapshotById(parsed.snapshotId);
+    const [ pageOrFrameId, query ] = request.url!.substring('/snapshot/'.length).split('?');
+    const parsed: any = querystring.parse(query);
+    const snapshot = this._snapshotStorage.snapshotByName(pageOrFrameId, parsed.name);
     const snapshotData: any = snapshot ? snapshot.render() : { html: '' };
     response.end(JSON.stringify(snapshotData));
     return true;
@@ -255,4 +216,47 @@ export class SnapshotServer {
       return false;
     }
   }
+}
+
+declare global {
+  interface Window {
+    showSnapshot: (url: string, point?: Point) => Promise<void>;
+  }
+}
+function rootScript() {
+  if (!navigator.serviceWorker)
+    return;
+  navigator.serviceWorker.register('./service-worker.js');
+  let showPromise = Promise.resolve();
+  if (!navigator.serviceWorker.controller) {
+    showPromise = new Promise(resolve => {
+      navigator.serviceWorker.oncontrollerchange = () => resolve();
+    });
+  }
+
+  const pointElement = document.createElement('div');
+  pointElement.style.position = 'fixed';
+  pointElement.style.backgroundColor = 'red';
+  pointElement.style.width = '20px';
+  pointElement.style.height = '20px';
+  pointElement.style.borderRadius = '10px';
+  pointElement.style.margin = '-10px 0 0 -10px';
+  pointElement.style.zIndex = '2147483647';
+
+  const iframe = document.createElement('iframe');
+  document.body.appendChild(iframe);
+  (window as any).showSnapshot = async (url: string, options: { point?: Point } = {}) => {
+    await showPromise;
+    iframe.src = url;
+    if (options.point) {
+      pointElement.style.left = options.point.x + 'px';
+      pointElement.style.top = options.point.y + 'px';
+      document.documentElement.appendChild(pointElement);
+    } else {
+      pointElement.remove();
+    }
+  };
+  window.addEventListener('message', event => {
+    window.showSnapshot(window.location.href + event.data.snapshotUrl);
+  }, false);
 }

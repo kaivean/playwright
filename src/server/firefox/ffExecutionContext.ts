@@ -30,7 +30,17 @@ export class FFExecutionContext implements js.ExecutionContextDelegate {
     this._executionContextId = executionContextId;
   }
 
-  async rawEvaluate(expression: string): Promise<string> {
+  async rawEvaluateJSON(expression: string): Promise<any> {
+    const payload = await this._session.send('Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      executionContextId: this._executionContextId,
+    }).catch(rewriteError);
+    checkException(payload.exceptionDetails);
+    return payload.result!.value;
+  }
+
+  async rawEvaluateHandle(expression: string): Promise<js.ObjectId> {
     const payload = await this._session.send('Runtime.evaluate', {
       expression,
       returnByValue: false,
@@ -38,6 +48,15 @@ export class FFExecutionContext implements js.ExecutionContextDelegate {
     }).catch(rewriteError);
     checkException(payload.exceptionDetails);
     return payload.result!.objectId!;
+  }
+
+  rawCallFunctionNoReply(func: Function, ...args: any[]) {
+    this._session.send('Runtime.callFunction', {
+      functionDeclaration: func.toString(),
+      args: args.map(a => a instanceof js.JSHandle ? { objectId: a._objectId } : { value: a }) as any,
+      returnByValue: true,
+      executionContextId: this._executionContextId
+    }).catch(() => {});
   }
 
   async evaluateWithArguments(expression: string, returnByValue: boolean, utilityScript: js.JSHandle<any>, values: any[], objectIds: string[]): Promise<any> {
@@ -57,17 +76,14 @@ export class FFExecutionContext implements js.ExecutionContextDelegate {
     return utilityScript._context.createHandle(payload.result!);
   }
 
-  async getProperties(handle: js.JSHandle): Promise<Map<string, js.JSHandle>> {
-    const objectId = handle._objectId;
-    if (!objectId)
-      return new Map();
+  async getProperties(context: js.ExecutionContext, objectId: js.ObjectId): Promise<Map<string, js.JSHandle>> {
     const response = await this._session.send('Runtime.getObjectProperties', {
       executionContextId: this._executionContextId,
       objectId,
     });
     const result = new Map();
     for (const property of response.properties)
-      result.set(property.name, handle._context.createHandle(property.value));
+      result.set(property.name, context.createHandle(property.value));
     return result;
   }
 
@@ -75,13 +91,11 @@ export class FFExecutionContext implements js.ExecutionContextDelegate {
     return new js.JSHandle(context, remoteObject.subtype || remoteObject.type || '', remoteObject.objectId, potentiallyUnserializableValue(remoteObject));
   }
 
-  async releaseHandle(handle: js.JSHandle): Promise<void> {
-    if (!handle._objectId)
-      return;
+  async releaseHandle(objectId: js.ObjectId): Promise<void> {
     await this._session.send('Runtime.disposeObject', {
       executionContextId: this._executionContextId,
-      objectId: handle._objectId,
-    }).catch(error => {});
+      objectId
+    });
   }
 }
 
@@ -97,7 +111,7 @@ function checkException(exceptionDetails?: Protocol.Runtime.ExceptionDetails) {
 function rewriteError(error: Error): (Protocol.Runtime.evaluateReturnValue | Protocol.Runtime.callFunctionReturnValue) {
   if (error.message.includes('cyclic object value') || error.message.includes('Object is not serializable'))
     return {result: {type: 'undefined', value: undefined}};
-  if (error.message.includes('Failed to find execution context with id') || error.message.includes('Execution context was destroyed!'))
+  if (js.isContextDestroyedError(error))
     throw new Error('Execution context was destroyed, most likely because of a navigation.');
   if (error instanceof TypeError && error.message.startsWith('Converting circular structure to JSON'))
     rewriteErrorMessage(error, error.message + ' Are you passing a nested JSHandle?');

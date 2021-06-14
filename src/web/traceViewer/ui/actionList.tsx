@@ -14,16 +14,17 @@
   limitations under the License.
 */
 
-import { ActionEntry } from '../../../server/trace/viewer/traceModel';
 import './actionList.css';
+import './tabbedPane.css';
 import * as React from 'react';
+import { ActionTraceEvent } from '../../../server/trace/common/traceEvents';
 
 export interface ActionListProps {
-  actions: ActionEntry[],
-  selectedAction: ActionEntry | undefined,
-  highlightedAction: ActionEntry | undefined,
-  onSelected: (action: ActionEntry) => void,
-  onHighlighted: (action: ActionEntry | undefined) => void,
+  actions: ActionTraceEvent[],
+  selectedAction: ActionTraceEvent | undefined,
+  highlightedAction: ActionTraceEvent | undefined,
+  onSelected: (action: ActionTraceEvent) => void,
+  onHighlighted: (action: ActionTraceEvent | undefined) => void,
 }
 
 export const ActionList: React.FC<ActionListProps> = ({
@@ -33,22 +34,57 @@ export const ActionList: React.FC<ActionListProps> = ({
   onSelected = () => {},
   onHighlighted = () => {},
 }) => {
-  const targetAction = highlightedAction || selectedAction;
-  return <div className='action-list'>{actions.map(actionEntry => {
-    const { action, actionId } = actionEntry;
-    return <div
-      className={'action-entry' + (actionEntry === targetAction ? ' selected' : '')}
-      key={actionId}
-      onClick={() => onSelected(actionEntry)}
-      onMouseEnter={() => onHighlighted(actionEntry)}
-      onMouseLeave={() => (highlightedAction === actionEntry) && onHighlighted(undefined)}
-    >
-      <div className='action-header'>
-        <div className={'action-error codicon codicon-issues'} hidden={!actionEntry.action.error} />
-        <div className='action-title'>{action.method}</div>
-        {action.params.selector && <div className='action-selector' title={action.params.selector}>{action.params.selector}</div>}
-        {action.method === 'goto' && action.params.url && <div className='action-url' title={action.params.url}>{action.params.url}</div>}
+  const actionListRef = React.createRef<HTMLDivElement>();
+
+  React.useEffect(() => {
+    actionListRef.current?.focus();
+  }, [selectedAction]);
+
+  return <div className='action-list vbox'>
+    <div className='.action-list-title tab-strip'>
+      <div className='tab-element'>
+        <div className='tab-label'>Actions</div>
       </div>
-    </div>;
-  })}</div>;
+    </div>
+    <div
+      className='action-list-content'
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key !== 'ArrowDown' &&  event.key !== 'ArrowUp')
+          return;
+        const index = selectedAction ? actions.indexOf(selectedAction) : -1;
+        if (event.key === 'ArrowDown') {
+          if (index === -1)
+            onSelected(actions[0]);
+          else
+            onSelected(actions[Math.min(index + 1, actions.length - 1)]);
+        }
+        if (event.key === 'ArrowUp') {
+          if (index === -1)
+            onSelected(actions[actions.length - 1]);
+          else
+            onSelected(actions[Math.max(index - 1, 0)]);
+        }
+      }}
+      ref={actionListRef}
+    >
+      {actions.map(action => {
+        const { metadata } = action;
+        const selectedSuffix = action === selectedAction ? ' selected' : '';
+        const highlightedSuffix = action === highlightedAction ? ' highlighted' : '';
+        return <div
+          className={'action-entry' + selectedSuffix + highlightedSuffix}
+          key={metadata.id}
+          onClick={() => onSelected(action)}
+          onMouseEnter={() => onHighlighted(action)}
+          onMouseLeave={() => (highlightedAction === action) && onHighlighted(undefined)}
+        >
+          <div className={'action-error codicon codicon-issues'} hidden={!metadata.error} />
+          <div className='action-title'>{metadata.apiName || metadata.method}</div>
+          {metadata.params.selector && <div className='action-selector' title={metadata.params.selector}>{metadata.params.selector}</div>}
+          {metadata.method === 'goto' && metadata.params.url && <div className='action-url' title={metadata.params.url}>{metadata.params.url}</div>}
+        </div>;
+      })}
+    </div>
+  </div>;
 };

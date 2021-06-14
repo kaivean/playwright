@@ -14,22 +14,24 @@
  * limitations under the License.
  */
 
+import type { BrowserWindow } from 'electron';
 import * as structs from '../../types/structs';
 import * as api from '../../types/types';
 import * as channels from '../protocol/channels';
 import { TimeoutSettings } from '../utils/timeoutSettings';
+import { headersObjectToArray } from '../utils/utils';
 import { BrowserContext } from './browserContext';
 import { ChannelOwner } from './channelOwner';
-import type { ChromiumBrowserContext } from './chromiumBrowserContext';
 import { envObjectToArray } from './clientHelper';
 import { Events } from './events';
 import { JSHandle, parseResult, serializeArgument } from './jsHandle';
 import { Page } from './page';
-import { Env, WaitForEventOptions } from './types';
+import { Env, WaitForEventOptions, Headers } from './types';
 import { Waiter } from './waiter';
 
-type ElectronOptions = Omit<channels.ElectronLaunchOptions, 'env'> & {
+type ElectronOptions = Omit<channels.ElectronLaunchOptions, 'env'|'extraHTTPHeaders'> & {
   env?: Env,
+  extraHTTPHeaders?: Headers,
 };
 
 type ElectronAppType = typeof import('electron');
@@ -48,6 +50,7 @@ export class Electron extends ChannelOwner<channels.ElectronChannel, channels.El
       const params: channels.ElectronLaunchParams = {
         sdkLanguage: 'javascript',
         ...options,
+        extraHTTPHeaders: options.extraHTTPHeaders && headersObjectToArray(options.extraHTTPHeaders),
         env: envObjectToArray(options.env ? options.env : process.env),
       };
       return ElectronApplication.from((await channel.launch(params)).electronApplication);
@@ -56,7 +59,7 @@ export class Electron extends ChannelOwner<channels.ElectronChannel, channels.El
 }
 
 export class ElectronApplication extends ChannelOwner<channels.ElectronApplicationChannel, channels.ElectronApplicationInitializer> implements api.ElectronApplication {
-  private _context?: BrowserContext;
+  private _context: BrowserContext;
   private _windows = new Set<Page>();
   private _timeoutSettings = new TimeoutSettings();
 
@@ -66,15 +69,17 @@ export class ElectronApplication extends ChannelOwner<channels.ElectronApplicati
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.ElectronApplicationInitializer) {
     super(parent, type, guid, initializer);
-    this._channel.on('context', ({ context }) => this._context = BrowserContext.from(context));
-    this._channel.on('window', ({ page, browserWindow }) => {
-      const window = Page.from(page);
-      (window as any).browserWindow = JSHandle.from(browserWindow);
-      this._windows.add(window);
-      this.emit(Events.ElectronApplication.Window, window);
-      window.once(Events.Page.Close, () => this._windows.delete(window));
-    });
+    this._context = BrowserContext.from(initializer.context);
+    for (const page of this._context._pages)
+      this._onPage(page);
+    this._context.on(Events.BrowserContext.Page, page => this._onPage(page));
     this._channel.on('close', () => this.emit(Events.ElectronApplication.Close));
+  }
+
+  _onPage(page: Page) {
+    this._windows.add(page);
+    this.emit(Events.ElectronApplication.Window, page);
+    page.once(Events.Page.Close, () => this._windows.delete(page));
   }
 
   windows(): Page[] {
@@ -90,8 +95,8 @@ export class ElectronApplication extends ChannelOwner<channels.ElectronApplicati
     });
   }
 
-  context(): ChromiumBrowserContext {
-    return this._context! as ChromiumBrowserContext;
+  context(): BrowserContext {
+    return this._context! as BrowserContext;
   }
 
   async close() {
@@ -108,6 +113,13 @@ export class ElectronApplication extends ChannelOwner<channels.ElectronApplicati
     const result = await waiter.waitForEvent(this, event, predicate as any);
     waiter.dispose();
     return result;
+  }
+
+  async browserWindow(page: Page): Promise<JSHandle<BrowserWindow>> {
+    return this._wrapApiCall('electronApplication.browserWindow', async (channel: channels.ElectronApplicationChannel) => {
+      const result = await channel.browserWindow({ page: page._channel });
+      return JSHandle.from(result.handle);
+    });
   }
 
   async evaluate<R, Arg>(pageFunction: structs.PageFunctionOn<ElectronAppType, Arg, R>, arg: Arg): Promise<R> {

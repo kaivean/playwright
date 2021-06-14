@@ -15,7 +15,6 @@
  */
 
 import fs from 'fs';
-import * as util from 'util';
 import { isString } from '../utils/utils';
 import * as channels from '../protocol/channels';
 import { Events } from './events';
@@ -27,7 +26,6 @@ import { Page } from './page';
 import { TimeoutSettings } from '../utils/timeoutSettings';
 import { Waiter } from './waiter';
 import { EventEmitter } from 'events';
-import { ChromiumBrowserContext } from './chromiumBrowserContext';
 
 type Direction = 'down' | 'up' | 'left' | 'right';
 type SpeedOptions = { speed?: number };
@@ -191,7 +189,7 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel, c
       const { binary } = await channel.screenshot();
       const buffer = Buffer.from(binary, 'base64');
       if (options.path)
-        await util.promisify(fs.writeFile)(options.path, buffer);
+        await fs.promises.writeFile(options.path, buffer);
       return buffer;
     });
   }
@@ -228,11 +226,11 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel, c
     });
   }
 
-  async launchBrowser(options: types.BrowserContextOptions & { pkg?: string  } = {}): Promise<ChromiumBrowserContext> {
+  async launchBrowser(options: types.BrowserContextOptions & { pkg?: string  } = {}): Promise<BrowserContext> {
     return this._wrapApiCall('androidDevice.launchBrowser', async (channel: channels.AndroidDeviceChannel) => {
       const contextOptions = await prepareBrowserContextParams(options);
       const { context } = await channel.launchBrowser(contextOptions);
-      return BrowserContext.from(context) as ChromiumBrowserContext;
+      return BrowserContext.from(context) as BrowserContext;
     });
   }
 
@@ -275,7 +273,7 @@ export class AndroidSocket extends ChannelOwner<channels.AndroidSocketChannel, c
 
 async function loadFile(file: string | Buffer): Promise<string> {
   if (isString(file))
-    return (await util.promisify(fs.readFile)(file)).toString('base64');
+    return fs.promises.readFile(file, { encoding: 'base64' }).toString();
   return file.toString('base64');
 }
 

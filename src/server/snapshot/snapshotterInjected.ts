@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { NodeSnapshot } from './snapshot';
+import { NodeSnapshot } from './snapshotTypes';
 
 export type SnapshotData = {
   doctype?: string,
@@ -26,20 +26,13 @@ export type SnapshotData = {
   }[],
   viewport: { width: number, height: number },
   url: string,
-  snapshotId: string,
   timestamp: number,
   collectionTime: number,
 };
 
-export const kSnapshotStreamer = '__playwright_snapshot_streamer_';
-export const kSnapshotBinding = '__playwright_snapshot_binding_';
-
-export function frameSnapshotStreamer() {
+export function frameSnapshotStreamer(snapshotStreamer: string) {
   // Communication with Playwright.
-  const kSnapshotStreamer = '__playwright_snapshot_streamer_';
-  const kSnapshotBinding = '__playwright_snapshot_binding_';
-
-  if ((window as any)[kSnapshotStreamer])
+  if ((window as any)[snapshotStreamer])
     return;
 
   // Attributes present in the snapshot.
@@ -57,6 +50,11 @@ export function frameSnapshotStreamer() {
     cssText?: string, // Text for stylesheets.
     cssRef?: number, // Previous snapshotNumber for overridden stylesheets.
   };
+
+  function resetCachedData(obj: any) {
+    delete obj[kCachedData];
+  }
+
   function ensureCachedData(obj: any): CachedData {
     if (!obj[kCachedData])
       obj[kCachedData] = {};
@@ -75,14 +73,11 @@ export function frameSnapshotStreamer() {
 
   class Streamer {
     private _removeNoScript = true;
-    private _timer: NodeJS.Timeout | undefined;
     private _lastSnapshotNumber = 0;
     private _staleStyleSheets = new Set<CSSStyleSheet>();
-    private _allStyleSheetsWithUrlOverride = new Set<CSSStyleSheet>();
     private _readingStyleSheet = false;  // To avoid invalidating due to our own reads.
     private _fakeBase: HTMLBaseElement;
     private _observer: MutationObserver;
-    private _interval = 0;
 
     constructor() {
       this._interceptNativeMethod(window.CSSStyleSheet.prototype, 'insertRule', (sheet: CSSStyleSheet) => this._invalidateStyleSheet(sheet));
@@ -131,8 +126,6 @@ export function frameSnapshotStreamer() {
       if (this._readingStyleSheet)
         return;
       this._staleStyleSheets.add(sheet);
-      if (sheet.href !== null)
-        this._allStyleSheetsWithUrlOverride.add(sheet);
     }
 
     private _updateStyleElementStyleSheetTextIfNeeded(sheet: CSSStyleSheet): string | undefined {
@@ -168,29 +161,20 @@ export function frameSnapshotStreamer() {
       (iframeElement as any)[kSnapshotFrameId] = frameId;
     }
 
-    captureSnapshot(snapshotId: string) {
-      this._streamSnapshot(snapshotId, true);
-    }
+    reset() {
+      this._staleStyleSheets.clear();
 
-    setSnapshotInterval(interval: number) {
-      this._interval = interval;
-      if (interval)
-        this._streamSnapshot(`snapshot@${performance.now()}`, false);
-    }
-
-    private _streamSnapshot(snapshotId: string, explicitRequest: boolean) {
-      if (this._timer) {
-        clearTimeout(this._timer);
-        this._timer = undefined;
-      }
-      try {
-        const snapshot = this._captureSnapshot(snapshotId, explicitRequest);
-        if (snapshot)
-          (window as any)[kSnapshotBinding](snapshot);
-      } catch (e) {
-      }
-      if (this._interval)
-        this._timer = setTimeout(() => this._streamSnapshot(`snapshot@${performance.now()}`, false), this._interval);
+      const visitNode = (node: Node | ShadowRoot) => {
+        resetCachedData(node);
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const element = node as Element;
+          if (element.shadowRoot)
+            visitNode(element.shadowRoot);
+        }
+        for (let child = node.firstChild; child; child = child.nextSibling)
+          visitNode(child);
+      };
+      visitNode(document.documentElement);
     }
 
     private _sanitizeUrl(url: string): string {
@@ -206,7 +190,7 @@ export function frameSnapshotStreamer() {
         if (spaceIndex === -1)
           return this._sanitizeUrl(src);
         return this._sanitizeUrl(src.substring(0, spaceIndex).trim()) + src.substring(spaceIndex);
-      }).join(',');
+      }).join(', ');
     }
 
     private _resolveUrl(base: string, url: string): string {
@@ -240,7 +224,7 @@ export function frameSnapshotStreamer() {
       }
     }
 
-    private _captureSnapshot(snapshotId: string, explicitRequest: boolean): SnapshotData | undefined {
+    captureSnapshot(): SnapshotData | undefined {
       const timestamp = performance.now();
       const snapshotNumber = ++this._lastSnapshotNumber;
       let nodeCounter = 0;
@@ -304,11 +288,11 @@ export function frameSnapshotStreamer() {
         const result: NodeSnapshot = [nodeName, attrs];
 
         const visitChild = (child: Node) => {
-          const snapshotted = visitNode(child);
-          if (snapshotted) {
-            result.push(snapshotted.n);
+          const snapshot = visitNode(child);
+          if (snapshot) {
+            result.push(snapshot.n);
             expectValue(child);
-            equals = equals && snapshotted.equals;
+            equals = equals && snapshot.equals;
           }
         };
 
@@ -317,8 +301,6 @@ export function frameSnapshotStreamer() {
 
         if (nodeType === Node.ELEMENT_NODE) {
           const element = node as Element;
-          // if (node === target)
-          //   attrs[' __playwright_target__] = '';
           if (nodeName === 'INPUT') {
             const value = (element as HTMLInputElement).value;
             expectValue('value');
@@ -365,6 +347,19 @@ export function frameSnapshotStreamer() {
             visitChild(child);
         }
 
+        // Process iframe src attribute before bailing out since it depends on a symbol, not the DOM.
+        if (nodeName === 'IFRAME' || nodeName === 'FRAME') {
+          const element = node as Element;
+          for (let i = 0; i < element.attributes.length; i++) {
+            const frameId = (element as any)[kSnapshotFrameId];
+            const name = 'src';
+            const value = frameId ? `/snapshot/${frameId}` : '';
+            expectValue(name);
+            expectValue(value);
+            attrs[name] = value;
+          }
+        }
+
         // We can skip attributes comparison because nothing else has changed,
         // and mutation observer didn't tell us about the attributes.
         if (equals && data.attributesCached && !shadowDomNesting)
@@ -378,22 +373,19 @@ export function frameSnapshotStreamer() {
               continue;
             if (nodeName === 'LINK' && name === 'integrity')
               continue;
+            if (nodeName === 'IFRAME' && name === 'src')
+              continue;
             let value = element.attributes[i].value;
-            if (name === 'src' && (nodeName === 'IFRAME' || nodeName === 'FRAME')) {
-              // TODO: handle srcdoc?
-              const frameId = (element as any)[kSnapshotFrameId];
-              value = frameId || 'data:text/html,<body>Snapshot is not available</body>';
-            } else if (name === 'src' && (nodeName === 'IMG')) {
+            if (name === 'src' && (nodeName === 'IMG'))
               value = this._sanitizeUrl(value);
-            } else if (name === 'srcset' && (nodeName === 'IMG')) {
+            else if (name === 'srcset' && (nodeName === 'IMG'))
               value = this._sanitizeSrcSet(value);
-            } else if (name === 'srcset' && (nodeName === 'SOURCE')) {
+            else if (name === 'srcset' && (nodeName === 'SOURCE'))
               value = this._sanitizeSrcSet(value);
-            } else if (name === 'href' && (nodeName === 'LINK')) {
+            else if (name === 'href' && (nodeName === 'LINK'))
               value = this._sanitizeUrl(value);
-            } else if (name.startsWith('on')) {
+            else if (name.startsWith('on'))
               value = '';
-            }
             expectValue(name);
             expectValue(value);
             attrs[name] = value;
@@ -406,10 +398,8 @@ export function frameSnapshotStreamer() {
       };
 
       let html: NodeSnapshot;
-      let htmlEquals = false;
       if (document.documentElement) {
-        const { equals, n } = visitNode(document.documentElement)!;
-        htmlEquals = equals;
+        const { n } = visitNode(document.documentElement)!;
         html = n;
       } else {
         html = ['html'];
@@ -424,31 +414,27 @@ export function frameSnapshotStreamer() {
           height: Math.max(document.body ? document.body.offsetHeight : 0, document.documentElement ? document.documentElement.offsetHeight : 0),
         },
         url: location.href,
-        snapshotId,
         timestamp,
         collectionTime: 0,
       };
 
-      let allOverridesAreRefs = true;
-      for (const sheet of this._allStyleSheetsWithUrlOverride) {
+      for (const sheet of this._staleStyleSheets) {
+        if (sheet.href === null)
+          continue;
         const content = this._updateLinkStyleSheetTextIfNeeded(sheet, snapshotNumber);
         if (content === undefined) {
-          // Unable to capture stylsheet contents.
+          // Unable to capture stylesheet contents.
           continue;
         }
-        if (typeof content !== 'number')
-          allOverridesAreRefs = false;
         const base = this._getSheetBase(sheet);
         const url = removeHash(this._resolveUrl(base, sheet.href!));
         result.resourceOverrides.push({ url, content });
       }
 
       result.collectionTime = performance.now() - result.timestamp;
-      if (!explicitRequest && htmlEquals && allOverridesAreRefs)
-        return undefined;
       return result;
     }
   }
 
-  (window as any)[kSnapshotStreamer] = new Streamer();
+  (window as any)[snapshotStreamer] = new Streamer();
 }

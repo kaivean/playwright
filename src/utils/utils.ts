@@ -16,13 +16,140 @@
 
 import path from 'path';
 import fs from 'fs';
-import * as util from 'util';
+import removeFolder from 'rimraf';
 import * as crypto from 'crypto';
+import os from 'os';
+import { spawn } from 'child_process';
+import { getProxyForUrl } from 'proxy-from-env';
+import * as URL from 'url';
 
-const mkdirAsync = util.promisify(fs.mkdir.bind(fs));
+// `https-proxy-agent` v5 is written in TypeScript and exposes generated types.
+// However, as of June 2020, its types are generated with tsconfig that enables
+// `esModuleInterop` option.
+//
+// As a result, we can't depend on the package unless we enable the option
+// for our codebase. Instead of doing this, we abuse "require" to import module
+// without types.
+const ProxyAgent = require('https-proxy-agent');
+
+export const existsAsync = (path: string): Promise<boolean> => new Promise(resolve => fs.stat(path, err => resolve(!err)));
+
+function httpRequest(url: string, method: string, response: (r: any) => void) {
+  let options: any = URL.parse(url);
+  options.method = method;
+
+  const proxyURL = getProxyForUrl(url);
+  if (proxyURL) {
+    if (url.startsWith('http:')) {
+      const proxy = URL.parse(proxyURL);
+      options = {
+        path: options.href,
+        host: proxy.hostname,
+        port: proxy.port,
+      };
+    } else {
+      const parsedProxyURL: any = URL.parse(proxyURL);
+      parsedProxyURL.secureProxy = parsedProxyURL.protocol === 'https:';
+
+      options.agent = new ProxyAgent(parsedProxyURL);
+      options.rejectUnauthorized = false;
+    }
+  }
+
+  const requestCallback = (res: any) => {
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
+      httpRequest(res.headers.location, method, response);
+    else
+      response(res);
+  };
+  const request = options.protocol === 'https:' ?
+    require('https').request(options, requestCallback) :
+    require('http').request(options, requestCallback);
+  request.end();
+  return request;
+}
+
+export function fetchData(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    httpRequest(url, 'GET', function(response){
+      if (response.statusCode !== 200) {
+        reject(new Error(`fetch failed: server returned code ${response.statusCode}. URL: ${url}`));
+        return;
+      }
+      let body = '';
+      response.on('data', (chunk: string) => body += chunk);
+      response.on('error', (error: any) => reject(error));
+      response.on('end', () => resolve(body));
+    }).on('error', (error: any) => reject(error));
+  });
+}
+
+type OnProgressCallback = (downloadedBytes: number, totalBytes: number) => void;
+type DownloadFileLogger = (message: string) => void;
+
+export function downloadFile(url: string, destinationPath: string, options : {progressCallback?: OnProgressCallback, log?: DownloadFileLogger} = {}): Promise<{error: any}> {
+  const {
+    progressCallback,
+    log = () => {},
+  } = options;
+  log(`running download:`);
+  log(`-- from url: ${url}`);
+  log(`-- to location: ${destinationPath}`);
+  let fulfill: ({error}: {error: any}) => void = ({error}) => {};
+  let downloadedBytes = 0;
+  let totalBytes = 0;
+
+  const promise: Promise<{error: any}> = new Promise(x => { fulfill = x; });
+
+  const request = httpRequest(url, 'GET', response => {
+    log(`-- response status code: ${response.statusCode}`);
+    if (response.statusCode !== 200) {
+      const error = new Error(`Download failed: server returned code ${response.statusCode}. URL: ${url}`);
+      // consume response data to free up memory
+      response.resume();
+      fulfill({error});
+      return;
+    }
+    const file = fs.createWriteStream(destinationPath);
+    file.on('finish', () => fulfill({error: null}));
+    file.on('error', error => fulfill({error}));
+    response.pipe(file);
+    totalBytes = parseInt(response.headers['content-length'], 10);
+    log(`-- total bytes: ${totalBytes}`);
+    if (progressCallback)
+      response.on('data', onData);
+  });
+  request.on('error', (error: any) => fulfill({error}));
+  return promise;
+
+  function onData(chunk: string) {
+    downloadedBytes += chunk.length;
+    progressCallback!(downloadedBytes, totalBytes);
+  }
+}
+
+export function spawnAsync(cmd: string, args: string[], options: any): Promise<{stdout: string, stderr: string, code: number, error?: Error}> {
+  const process = spawn(cmd, args, options);
+
+  return new Promise(resolve => {
+    let stdout = '';
+    let stderr = '';
+    if (process.stdout)
+      process.stdout.on('data', data => stdout += data);
+    if (process.stderr)
+      process.stderr.on('data', data => stderr += data);
+    process.on('close', code => resolve({stdout, stderr, code}));
+    process.on('error', error => resolve({stdout, stderr, code: 0, error}));
+  });
+}
 
 // See https://joel.tools/microtasks/
 export function makeWaitForNextTask() {
+  // As of Mar 2021, Electorn v12 doesn't create new task with `setImmediate` despite
+  // using Node 14 internally, so we fallback to `setTimeout(0)` instead.
+  // @see https://github.com/electron/electron/issues/28261
+  if ((process.versions as any).electron)
+    return (callback: () => void) => setTimeout(callback, 0);
   if (parseInt(process.versions.node, 10) >= 11)
     return setImmediate;
 
@@ -82,9 +209,11 @@ export function isError(obj: any): obj is Error {
   return obj instanceof Error || (obj && obj.__proto__ && obj.__proto__.name === 'Error');
 }
 
-const isInDebugMode = !!getFromENV('PWDEBUG');
-export function isDebugMode(): boolean {
-  return isInDebugMode;
+const debugEnv = getFromENV('PWDEBUG') || '';
+export function debugMode() {
+  if (debugEnv === 'console')
+    return 'console';
+  return debugEnv ? 'inspector' : '';
 }
 
 let _isUnderTest = false;
@@ -109,7 +238,7 @@ export function getAsBooleanFromENV(name: string): boolean {
 
 export async function mkdirIfNeeded(filePath: string) {
   // This will harmlessly throw on windows if the dirname is the root directory.
-  await mkdirAsync(path.dirname(filePath), {recursive: true}).catch(() => {});
+  await fs.promises.mkdir(path.dirname(filePath), {recursive: true}).catch(() => {});
 }
 
 type HeadersArray = { name: string, value: string }[];
@@ -144,4 +273,43 @@ export function calculateSha1(buffer: Buffer | string): string {
 
 export function createGuid(): string {
   return crypto.randomBytes(16).toString('hex');
+}
+
+export async function removeFolders(dirs: string[]): Promise<Array<Error|undefined>> {
+  return await Promise.all(dirs.map((dir: string) => {
+    return new Promise<Error|undefined>(fulfill => {
+      removeFolder(dir, { maxBusyTries: 10 }, error => {
+        fulfill(error);
+      });
+    });
+  }));
+}
+
+export function canAccessFile(file: string) {
+  if (!file)
+    return false;
+
+  try {
+    fs.accessSync(file);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+const localIpAddresses = [
+  'localhost',
+  '127.0.0.1',
+  '::ffff:127.0.0.1',
+  '::1',
+  '0000:0000:0000:0000:0000:0000:0000:0001', // WebKit (Windows)
+];
+
+export function isLocalIpAddress(ipAdress: string): boolean {
+  return localIpAddresses.includes(ipAdress);
+}
+
+export function getUserAgent() {
+  const packageJson = require('./../../package.json');
+  return `Playwright/${packageJson.version} (${os.arch()}/${os.platform()}/${os.release()})`;
 }

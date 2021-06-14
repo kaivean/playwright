@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import { ActionEntry } from '../../../server/trace/viewer/traceModel';
 import * as React from 'react';
 import { useAsyncMemo } from './helpers';
 import './sourceTab.css';
 import '../../../third_party/highlightjs/highlightjs/tomorrow.css';
-import * as highlightjs from '../../../third_party/highlightjs/highlightjs';
 import { StackFrame } from '../../../common/types';
+import { Source as SourceView } from '../../components/source';
+import { StackTraceView } from './stackTrace';
+import { SplitView } from '../../components/splitView';
+import { ActionTraceEvent } from '../../../server/trace/common/traceEvents';
 
 type StackInfo = string | {
   frames: StackFrame[];
@@ -28,32 +30,32 @@ type StackInfo = string | {
 };
 
 export const SourceTab: React.FunctionComponent<{
-  actionEntry: ActionEntry | undefined,
-}> = ({ actionEntry }) => {
-  const [lastAction, setLastAction] = React.useState<ActionEntry | undefined>();
+  action: ActionTraceEvent | undefined,
+}> = ({ action }) => {
+  const [lastAction, setLastAction] = React.useState<ActionTraceEvent | undefined>();
   const [selectedFrame, setSelectedFrame] = React.useState<number>(0);
   const [needReveal, setNeedReveal] = React.useState<boolean>(false);
 
-  if (lastAction !== actionEntry) {
-    setLastAction(actionEntry);
+  if (lastAction !== action) {
+    setLastAction(action);
     setSelectedFrame(0);
     setNeedReveal(true);
   }
 
   const stackInfo = React.useMemo<StackInfo>(() => {
-    if (!actionEntry)
+    if (!action)
       return '';
-    const { action } = actionEntry;
-    if (!action.stack)
+    const { metadata } = action;
+    if (!metadata.stack)
       return '';
-    const frames = action.stack;
+    const frames = metadata.stack;
     return {
       frames,
       fileContent: new Map(),
     };
-  }, [actionEntry]);
+  }, [action]);
 
-  const content = useAsyncMemo<string[]>(async () => {
+  const content = useAsyncMemo<string>(async () => {
     let value: string;
     if (typeof stackInfo === 'string') {
       value = stackInfo;
@@ -63,17 +65,10 @@ export const SourceTab: React.FunctionComponent<{
         stackInfo.fileContent.set(filePath, await fetch(`/file?${filePath}`).then(response => response.text()).catch(e => `<Unable to read "${filePath}">`));
       value = stackInfo.fileContent.get(filePath)!;
     }
-    const result = [];
-    let continuation: any;
-    for (const line of (value || '').split('\n')) {
-      const highlighted = highlightjs.highlight('javascript', line, true, continuation);
-      continuation = highlighted.top;
-      result.push(highlighted.value);
-    }
-    return result;
-  }, [stackInfo, selectedFrame], []);
+    return value;
+  }, [stackInfo, selectedFrame], '');
 
-  const targetLine = typeof stackInfo === 'string' ? -1 : stackInfo.frames[selectedFrame].line;
+  const targetLine = typeof stackInfo === 'string' ? 0 : stackInfo.frames[selectedFrame]?.line || 0;
 
   const targetLineRef = React.createRef<HTMLDivElement>();
   React.useLayoutEffect(() => {
@@ -83,41 +78,8 @@ export const SourceTab: React.FunctionComponent<{
     }
   }, [needReveal, targetLineRef]);
 
-  return <div className='source-tab'>
-    <div className='source-content'>{
-      content.map((markup, index) => {
-        const isTargetLine = (index + 1) === targetLine;
-        return <div
-          key={index}
-          className={isTargetLine ? 'source-line-highlight' : ''}
-          ref={isTargetLine ? targetLineRef : null}
-        >
-          <div className='source-line-number'>{index + 1}</div>
-          <div className='source-code' dangerouslySetInnerHTML={{ __html: markup }}></div>
-        </div>;
-      })
-    }</div>
-    {typeof stackInfo !== 'string' && <div className='source-stack'>{
-      stackInfo.frames.map((frame, index) => {
-        return <div
-          key={index}
-          className={'source-stack-frame' + (selectedFrame === index ? ' selected' : '')}
-          onClick={() => {
-            setSelectedFrame(index);
-            setNeedReveal(true);
-          }}
-        >
-          <span className='source-stack-frame-function'>
-            {frame.function || '(anonymous)'}
-          </span>
-          <span className='source-stack-frame-location'>
-            {frame.file}
-          </span>
-          <span className='source-stack-frame-line'>
-            {':' + frame.line}
-          </span>
-        </div>;
-      })
-    }</div>}
-  </div>;
+  return <SplitView sidebarSize={100} orientation='vertical'>
+    <SourceView text={content} language='javascript' highlight={[{ line: targetLine, type: 'running' }]} revealLine={targetLine}></SourceView>
+    <StackTraceView action={action} selectedFrame={selectedFrame} setSelectedFrame={setSelectedFrame}></StackTraceView>
+  </SplitView>;
 };

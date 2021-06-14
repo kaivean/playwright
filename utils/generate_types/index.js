@@ -97,9 +97,17 @@ ${overrides}
 ${classes.map(classDesc => classToString(classDesc)).join('\n')}
 ${objectDefinitionsToString(overrides)}
 ${generateDevicesTypes()}
+
+export interface ChromiumBrowserContext extends BrowserContext { }
+export interface ChromiumBrowser extends Browser { }
+export interface FirefoxBrowser extends Browser { }
+export interface WebKitBrowser extends Browser { }
+export interface ChromiumCoverage extends Coverage { }
 `;
   for (const [key, value] of Object.entries(exported))
     output = output.replace(new RegExp('\\b' + key + '\\b', 'g'), value);
+  // remove trailing whitespace
+  output = output.replace(/( +)\n/g, '\n');
   writeFile(path.join(typesDir, 'types.d.ts'), output);
   process.exit(hadChanges && process.argv.includes('--check-clean') ? 1 : 0);
 })().catch(e => {
@@ -222,7 +230,7 @@ function classBody(classDesc) {
       for (const {eventName, params, comment, type} of eventDescriptions) {
         if (comment)
           parts.push(writeComment(comment, '  '));
-        parts.push(`  ${member.alias}(event: '${eventName}', optionsOrPredicate?: { predicate?: (${params}) => boolean, timeout?: number } | ((${params}) => boolean)): Promise<${type}>;\n`);
+        parts.push(`  ${member.alias}(event: '${eventName}', optionsOrPredicate?: { predicate?: (${params}) => boolean | Promise<boolean>, timeout?: number } | ((${params}) => boolean | Promise<boolean>)): Promise<${type}>;\n`);
       }
 
       return parts.join('\n');
@@ -275,7 +283,7 @@ function writeComment(comment, indent = '') {
     const match = line.match(/```(\w+)/);
     if (match) {
       const lang = match[1];
-      skipExample = !["html", "yml", "sh", "js"].includes(lang);
+      skipExample = !["html", "yml", "bash", "js"].includes(lang);
     } else if (skipExample && line.trim().startsWith('```')) {
       skipExample = false;
       continue;
@@ -330,11 +338,12 @@ function stringifySimpleType(type, indent = '', ...namespace) {
   if (type.name === 'Object' && type.properties && type.properties.length) {
     const name = namespace.map(n => n[0].toUpperCase() + n.substring(1)).join('');
     const shouldExport = exported[name];
-    objectDefinitions.push({name, properties: type.properties});
+    const properties = namespace[namespace.length -1] === 'options' ? type.sortedProperties() : type.properties;
+    objectDefinitions.push({name, properties: properties});
     if (shouldExport) {
       out = name;
     } else {
-      out = stringifyObjectType(type.properties, name, indent);
+      out = stringifyObjectType(properties, name, indent);
     }
   }
 

@@ -11,7 +11,7 @@ Fired when the websocket closes.
 - argument: <[Object]>
   - `payload` <[string]|[Buffer]> frame payload
 
-Fired when the websocket recieves a frame.
+Fired when the websocket receives a frame.
 
 ## event: WebSocket.frameReceived
 * langs: csharp, java
@@ -43,7 +43,7 @@ Indicates that the web socket has been closed.
 Contains the URL of the WebSocket.
 
 ## async method: WebSocket.waitForEvent
-* langs: csharp, js, python
+* langs: js, python
   - alias-python: expect_event
 - returns: <[any]>
 
@@ -63,8 +63,8 @@ Event name, same one would pass into `webSocket.on(event)`.
 
 Either a predicate that receives an event or an options object. Optional.
 
-## method: WebSocket.waitForFrameReceived
-* langs: csharp, java
+## async method: WebSocket.waitForFrameReceived
+* langs: java
 - returns: <[WebSocketFrame]>
 
 Performs action and waits for a frame to be sent. If predicate is provided, it passes
@@ -78,8 +78,8 @@ Receives the [WebSocketFrame] object and resolves to truthy value when the waiti
 
 ### option: WebSocket.waitForFrameReceived.timeout = %%-wait-for-event-timeout-%%
 
-## method: WebSocket.waitForFrameSent
-* langs: csharp, java
+## async method: WebSocket.waitForFrameSent
+* langs: java
 - returns: <[WebSocketFrame]>
 
 Performs action and waits for a frame to be sent. If predicate is provided, it passes
@@ -92,3 +92,20 @@ Will throw an error if the WebSocket or Page is closed before the frame is sent.
 Receives the [WebSocketFrame] object and resolves to truthy value when the waiting should resolve.
 
 ### option: WebSocket.waitForFrameSent.timeout = %%-wait-for-event-timeout-%%
+
+## async method: WebSocket.waitForEvent2
+* langs: python
+  - alias-python: wait_for_event
+- returns: <[any]>
+
+:::note
+In most cases, you should use [`method: WebSocket.waitForEvent`].
+:::
+
+Waits for given `event` to fire. If predicate is provided, it passes
+event's value into the `predicate` function and waits for `predicate(event)` to return a truthy value.
+Will throw an error if the socket is closed before the `event` is fired.
+
+### param: WebSocket.waitForEvent2.event = %%-wait-for-event-event-%%
+### option: WebSocket.waitForEvent2.predicate = %%-wait-for-event-predicate-%%
+### option: WebSocket.waitForEvent2.timeout = %%-wait-for-event-timeout-%%

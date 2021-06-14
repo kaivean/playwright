@@ -17,10 +17,9 @@
 
 import * as childProcess from 'child_process';
 import * as readline from 'readline';
-import * as removeFolder from 'rimraf';
 import { helper } from './helper';
 import * as types from './types';
-import { isUnderTest } from '../utils/utils';
+import { isUnderTest, removeFolders } from '../utils/utils';
 
 export type Env = {[key: string]: string | number | boolean | undefined};
 
@@ -62,8 +61,6 @@ if (maxListeners !== 0)
   process.setMaxListeners(Math.max(maxListeners || 0, 100));
 
 export async function launchProcess(options: LaunchProcessOptions): Promise<LaunchResult> {
-  const cleanup = () => helper.removeFolders(options.tempDirectories);
-
   const stdio: ('ignore' | 'pipe')[] = options.stdio === 'pipe' ? ['ignore', 'pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'];
   options.log(`<launching> ${options.executablePath} ${options.args.join(' ')}`);
   const spawnedProcess = childProcess.spawn(
@@ -80,6 +77,16 @@ export async function launchProcess(options: LaunchProcessOptions): Promise<Laun
       }
   );
 
+  const cleanup = async () => {
+    options.log(`[pid=${spawnedProcess.pid || 'N/A'}] starting temporary directories cleanup`);
+    const errors = await removeFolders(options.tempDirectories);
+    for (let i = 0; i < options.tempDirectories.length; ++i) {
+      if (errors[i])
+        options.log(`[pid=${spawnedProcess.pid || 'N/A'}] exception while removing ${options.tempDirectories[i]}: ${errors[i]}`);
+    }
+    options.log(`[pid=${spawnedProcess.pid || 'N/A'}] finished temporary directories cleanup`);
+  };
+
   // Prevent Unhandled 'error' event.
   spawnedProcess.on('error', () => {});
 
@@ -87,7 +94,7 @@ export async function launchProcess(options: LaunchProcessOptions): Promise<Laun
     let failed: (e: Error) => void;
     const failedPromise = new Promise<Error>((f, r) => failed = f);
     spawnedProcess.once('error', error => {
-      failed(new Error('Failed to launch browser: ' + error));
+      failed(new Error('Failed to launch: ' + error));
     });
     return cleanup().then(() => failedPromise).then(e => Promise.reject(e));
   }
@@ -162,21 +169,23 @@ export async function launchProcess(options: LaunchProcessOptions): Promise<Laun
     options.log(`[pid=${spawnedProcess.pid}] <kill>`);
     helper.removeEventListeners(listeners);
     if (spawnedProcess.pid && !spawnedProcess.killed && !processClosed) {
+      options.log(`[pid=${spawnedProcess.pid}] <will force kill>`);
       // Force kill the browser.
       try {
-        if (process.platform === 'win32')
-          childProcess.execSync(`taskkill /pid ${spawnedProcess.pid} /T /F`);
-        else
+        if (process.platform === 'win32') {
+          const stdout = childProcess.execSync(`taskkill /pid ${spawnedProcess.pid} /T /F`);
+          options.log(`[pid=${spawnedProcess.pid}] taskkill output: ${stdout.toString()}`);
+        } else {
           process.kill(-spawnedProcess.pid, 'SIGKILL');
+        }
       } catch (e) {
+        options.log(`[pid=${spawnedProcess.pid}] exception while trying to kill process: ${e}`);
         // the process might have already stopped
       }
+    } else {
+      options.log(`[pid=${spawnedProcess.pid}] <skipped force kill spawnedProcess.killed=${spawnedProcess.killed} processClosed=${processClosed}>`);
     }
-    try {
-      // Attempt to remove temporary directories to avoid littering.
-      for (const dir of options.tempDirectories)
-        removeFolder.sync(dir);
-    } catch (e) { }
+    cleanup();
   }
 
   function killAndWait() {

@@ -22,7 +22,6 @@ import { ElementHandle, convertSelectOptionValues, convertInputFiles } from './e
 import { assertMaxArguments, JSHandle, serializeArgument, parseResult } from './jsHandle';
 import fs from 'fs';
 import * as network from './network';
-import * as util from 'util';
 import { Page } from './page';
 import { EventEmitter } from 'events';
 import { Waiter } from './waiter';
@@ -31,8 +30,6 @@ import { LifecycleEvent, URLMatch, SelectOption, SelectOptionOptions, FilePayloa
 import { urlMatches } from './clientHelper';
 import * as api from '../../types/types';
 import * as structs from '../../types/structs';
-
-const fsReadFileAsync = util.promisify(fs.readFile.bind(fs));
 
 export type WaitForNavigationOptions = {
   timeout?: number,
@@ -102,6 +99,8 @@ export class Frame extends ChannelOwner<channels.FrameChannel, channels.FrameIni
 
   private _setupNavigationWaiter(name: string, options: { timeout?: number }): Waiter {
     const waiter = new Waiter(this, name);
+    if (this._page!.isClosed())
+      waiter.rejectImmediately(new Error('Navigation failed because page was closed!'));
     waiter.rejectOnEvent(this._page!, Events.Page.Close, new Error('Navigation failed because page was closed!'));
     waiter.rejectOnEvent(this._page!, Events.Page.Crash, new Error('Navigation failed because page crashed!'));
     waiter.rejectOnEvent<Frame>(this._page!, Events.Page.FrameDetached, new Error('Navigating frame was detached!'), frame => frame === this);
@@ -159,6 +158,12 @@ export class Frame extends ChannelOwner<channels.FrameChannel, channels.FrameIni
     });
   }
 
+  async waitForURL(url: URLMatch, options: { waitUntil?: LifecycleEvent, timeout?: number } = {}): Promise<void> {
+    if (urlMatches(this.url(), url))
+      return await this.waitForLoadState(options?.waitUntil, options);
+    await this.waitForNavigation({ url, ...options });
+  }
+
   async frameElement(): Promise<ElementHandle> {
     return this._wrapApiCall(this._apiName('frameElement'), async (channel: channels.FrameChannel) => {
       return ElementHandle.from((await channel.frameElement()).element);
@@ -173,30 +178,10 @@ export class Frame extends ChannelOwner<channels.FrameChannel, channels.FrameIni
     });
   }
 
-  async _evaluateHandleInUtility<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg: Arg): Promise<structs.SmartHandle<R>>;
-  async _evaluateHandleInUtility<R>(pageFunction: structs.PageFunction<void, R>, arg?: any): Promise<structs.SmartHandle<R>>;
-  async _evaluateHandleInUtility<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg?: Arg): Promise<structs.SmartHandle<R>> {
-    assertMaxArguments(arguments.length, 2);
-    return this._wrapApiCall(this._apiName('_evaluateHandleInUtility'), async (channel: channels.FrameChannel) => {
-      const result = await channel.evaluateExpressionHandle({ expression: String(pageFunction), isFunction: typeof pageFunction === 'function', arg: serializeArgument(arg), world: 'utility' });
-      return JSHandle.from(result.handle) as any as structs.SmartHandle<R>;
-    });
-  }
-
   async evaluate<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg?: Arg): Promise<R> {
     assertMaxArguments(arguments.length, 2);
     return this._wrapApiCall(this._apiName('evaluate'), async (channel: channels.FrameChannel) => {
       const result = await channel.evaluateExpression({ expression: String(pageFunction), isFunction: typeof pageFunction === 'function', arg: serializeArgument(arg) });
-      return parseResult(result.value);
-    });
-  }
-
-  async _evaluateInUtility<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg: Arg): Promise<R>;
-  async _evaluateInUtility<R>(pageFunction: structs.PageFunction<void, R>, arg?: any): Promise<R>;
-  async _evaluateInUtility<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg?: Arg): Promise<R> {
-    assertMaxArguments(arguments.length, 2);
-    return this._wrapApiCall(this._apiName('evaluate'), async (channel: channels.FrameChannel) => {
-      const result = await channel.evaluateExpression({ expression: String(pageFunction), isFunction: typeof pageFunction === 'function', arg: serializeArgument(arg), world: 'utility' });
       return parseResult(result.value);
     });
   }
@@ -287,7 +272,7 @@ export class Frame extends ChannelOwner<channels.FrameChannel, channels.FrameIni
     return this._wrapApiCall(this._apiName('addScriptTag'), async (channel: channels.FrameChannel) => {
       const copy = { ...options };
       if (copy.path) {
-        copy.content = (await fsReadFileAsync(copy.path)).toString();
+        copy.content = (await fs.promises.readFile(copy.path)).toString();
         copy.content += '//# sourceURL=' + copy.path.replace(/\n/g, '');
       }
       return ElementHandle.from((await channel.addScriptTag({ ...copy })).element);
@@ -298,7 +283,7 @@ export class Frame extends ChannelOwner<channels.FrameChannel, channels.FrameIni
     return this._wrapApiCall(this._apiName('addStyleTag'), async (channel: channels.FrameChannel) => {
       const copy = { ...options };
       if (copy.path) {
-        copy.content = (await fsReadFileAsync(copy.path)).toString();
+        copy.content = (await fs.promises.readFile(copy.path)).toString();
         copy.content += '/*# sourceURL=' + copy.path.replace(/\n/g, '') + '*/';
       }
       return ElementHandle.from((await channel.addStyleTag({ ...copy })).element);

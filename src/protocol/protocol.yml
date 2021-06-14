@@ -41,10 +41,7 @@ WaitForEventInfo:
       - before
       - after
       - log
-    name: string?
-    stack:
-      type: array?
-      items: StackFrame
+    apiName: string?
     message: string?
     error: string?
 
@@ -223,6 +220,110 @@ SerializedError:
     value: SerializedValue?
 
 
+LaunchOptions:
+  type: mixin
+  properties:
+    channel: string?
+    executablePath: string?
+    args:
+      type: array?
+      items: string
+    ignoreAllDefaultArgs: boolean?
+    ignoreDefaultArgs:
+      type: array?
+      items: string
+    handleSIGINT: boolean?
+    handleSIGTERM: boolean?
+    handleSIGHUP: boolean?
+    timeout: number?
+    env:
+      type: array?
+      items: NameValue
+    headless: boolean?
+    devtools: boolean?
+    proxy:
+      type: object?
+      properties:
+        server: string
+        bypass: string?
+        username: string?
+        password: string?
+    downloadsPath: string?
+    tracesDir: string?
+    chromiumSandbox: boolean?
+
+
+ContextOptions:
+  type: mixin
+  properties:
+    sdkLanguage: string
+    noDefaultViewport: boolean?
+    viewport:
+      type: object?
+      properties:
+        width: number
+        height: number
+    screen:
+      type: object?
+      properties:
+        width: number
+        height: number
+    ignoreHTTPSErrors: boolean?
+    javaScriptEnabled: boolean?
+    bypassCSP: boolean?
+    userAgent: string?
+    locale: string?
+    timezoneId: string?
+    geolocation:
+      type: object?
+      properties:
+        longitude: number
+        latitude: number
+        accuracy: number?
+    permissions:
+      type: array?
+      items: string
+    extraHTTPHeaders:
+      type: array?
+      items: NameValue
+    offline: boolean?
+    httpCredentials:
+      type: object?
+      properties:
+        username: string
+        password: string
+    deviceScaleFactor: number?
+    isMobile: boolean?
+    hasTouch: boolean?
+    colorScheme:
+      type: enum?
+      literals:
+      - dark
+      - light
+      - no-preference
+    reducedMotion:
+      type: enum?
+      literals:
+      - reduce
+      - no-preference
+    acceptDownloads: boolean?
+    _debugName: string?
+    recordVideo:
+      type: object?
+      properties:
+        dir: string
+        size:
+          type: object?
+          properties:
+            width: number
+            height: number
+    recordHar:
+      type: object?
+      properties:
+        omitContent: boolean?
+        path: string
+
+
 Playwright:
   type: interface
 
@@ -247,6 +348,11 @@ Playwright:
                 properties:
                   width: number
                   height: number
+              screen:
+                type: object?
+                properties:
+                  width: number
+                  height: number
               deviceScaleFactor: number
               isMobile: boolean
               hasTouch: boolean
@@ -257,24 +363,22 @@ Playwright:
                 - firefox
                 - webkit
     selectors: Selectors
+    # Only present when connecting remotely via BrowserType.connect() method.
+    preLaunchedBrowser: Browser?
 
+  commands:
 
-RemoteBrowser:
-  type: interface
-
-  initializer:
-    browser: Browser
-    selectors: Selectors
+    setForwardedPorts:
+      parameters:
+        ports:
+          type: array
+          items: number
 
   events:
 
-    # Video stream blocks owner context from closing until the stream is closed.
-    # Make sure to close the stream!
-    video:
+    incomingSocksSocket:
       parameters:
-        context: BrowserContext
-        stream: Stream
-        relativePath: string
+        socket: SocksSocket
 
 
 Selectors:
@@ -300,131 +404,28 @@ BrowserType:
 
     launch:
       parameters:
-        executablePath: string?
-        args:
-          type: array?
-          items: string
-        ignoreAllDefaultArgs: boolean?
-        ignoreDefaultArgs:
-          type: array?
-          items: string
-        handleSIGINT: boolean?
-        handleSIGTERM: boolean?
-        handleSIGHUP: boolean?
-        timeout: number?
-        env:
-          type: array?
-          items: NameValue
-        headless: boolean?
-        devtools: boolean?
-        proxy:
-          type: object?
-          properties:
-            server: string
-            bypass: string?
-            username: string?
-            password: string?
-        downloadsPath: string?
+        $mixin: LaunchOptions
         firefoxUserPrefs: json?
-        chromiumSandbox: boolean?
         slowMo: number?
       returns:
         browser: Browser
 
     launchPersistentContext:
       parameters:
+        $mixin1: LaunchOptions
+        $mixin2: ContextOptions
         userDataDir: string
-        sdkLanguage: string
-        executablePath: string?
-        args:
-          type: array?
-          items: string
-        ignoreAllDefaultArgs: boolean?
-        ignoreDefaultArgs:
-          type: array?
-          items: string
-        handleSIGINT: boolean?
-        handleSIGTERM: boolean?
-        handleSIGHUP: boolean?
-        timeout: number?
-        env:
-          type: array?
-          items: NameValue
-        headless: boolean?
-        devtools: boolean?
-        proxy:
-          type: object?
-          properties:
-            server: string
-            bypass: string?
-            username: string?
-            password: string?
-        downloadsPath: string?
-        chromiumSandbox: boolean?
         slowMo: number?
-        noDefaultViewport: boolean?
-        viewport:
-          type: object?
-          properties:
-            width: number
-            height: number
-        ignoreHTTPSErrors: boolean?
-        javaScriptEnabled: boolean?
-        bypassCSP: boolean?
-        userAgent: string?
-        locale: string?
-        timezoneId: string?
-        geolocation:
-          type: object?
-          properties:
-            longitude: number
-            latitude: number
-            accuracy: number?
-        permissions:
-          type: array?
-          items: string
-        extraHTTPHeaders:
-          type: array?
-          items: NameValue
-        offline: boolean?
-        httpCredentials:
-          type: object?
-          properties:
-            username: string
-            password: string
-        deviceScaleFactor: number?
-        isMobile: boolean?
-        hasTouch: boolean?
-        colorScheme:
-          type: enum?
-          literals:
-          - light
-          - dark
-          - no-preference
-        acceptDownloads: boolean?
-        _traceDir: string?
-        _debugName: string?
-        recordVideo:
-          type: object?
-          properties:
-            dir: string
-            size:
-              type: object?
-              properties:
-                width: number
-                height: number
-        recordHar:
-          type: object?
-          properties:
-            omitContent: boolean?
-            path: string
       returns:
         context: BrowserContext
 
     connectOverCDP:
       parameters:
         sdkLanguage: string
-        wsEndpoint: string
+        endpointURL: string
+        headers:
+          type: array?
+          items: NameValue
         slowMo: number?
         timeout: number?
       returns:
@@ -442,65 +443,11 @@ Browser:
 
     close:
 
+    killForTests:
+
     newContext:
       parameters:
-        sdkLanguage: string
-        noDefaultViewport: boolean?
-        viewport:
-          type: object?
-          properties:
-            width: number
-            height: number
-        ignoreHTTPSErrors: boolean?
-        javaScriptEnabled: boolean?
-        bypassCSP: boolean?
-        userAgent: string?
-        locale: string?
-        timezoneId: string?
-        geolocation:
-          type: object?
-          properties:
-            longitude: number
-            latitude: number
-            accuracy: number?
-        permissions:
-          type: array?
-          items: string
-        extraHTTPHeaders:
-          type: array?
-          items: NameValue
-        offline: boolean?
-        httpCredentials:
-          type: object?
-          properties:
-            username: string
-            password: string
-        deviceScaleFactor: number?
-        isMobile: boolean?
-        hasTouch: boolean?
-        colorScheme:
-          type: enum?
-          literals:
-          - dark
-          - light
-          - no-preference
-        acceptDownloads: boolean?
-        _traceDir: string?
-        _debugName: string?
-        recordVideo:
-          type: object?
-          properties:
-            dir: string
-            size:
-              type: object?
-              properties:
-                width: number
-                height: number
-        recordHar:
-          type: object?
-          properties:
-            omitContent: boolean?
-            path: string
+        $mixin: ContextOptions
         proxy:
           type: object?
           properties:
@@ -520,11 +467,11 @@ Browser:
       returns:
         context: BrowserContext
 
-    crNewBrowserCDPSession:
+    newBrowserCDPSession:
       returns:
         session: CDPSession
 
-    crStartTracing:
+    startTracing:
       parameters:
         page: Page?
         path: string?
@@ -533,7 +480,7 @@ Browser:
           type: array?
           items: string
 
-    crStopTracing:
+    stopTracing:
       returns:
         binary: binary
 
@@ -656,11 +603,23 @@ BrowserContext:
         saveStorage: string?
         outputFile: string?
 
-    crNewCDPSession:
+    newCDPSession:
       parameters:
         page: Page
       returns:
         session: CDPSession
+
+    tracingStart:
+      parameters:
+        name: string?
+        snapshots: boolean?
+        screenshots: boolean?
+
+    tracingStop:
+
+    tracingExport:
+      returns:
+        artifact: Artifact
 
   events:
 
@@ -679,13 +638,40 @@ BrowserContext:
         route: Route
         request: Request
 
-    crBackgroundPage:
+    video:
+      parameters:
+        artifact: Artifact
+
+    backgroundPage:
       parameters:
         page: Page
 
-    crServiceWorker:
+    serviceWorker:
       parameters:
         worker: Worker
+
+    request:
+      parameters:
+        request: Request
+        page: Page?
+
+    requestFailed:
+      parameters:
+        request: Request
+        failureText: string?
+        responseEndTiming: number
+        page: Page?
+
+    requestFinished:
+      parameters:
+        request: Request
+        responseEndTiming: number
+        page: Page?
+
+    response:
+      parameters:
+        response: Response
+        page: Page?
 
 Page:
   type: interface
@@ -698,7 +684,7 @@ Page:
         width: number
         height: number
     isClosed: boolean
-    videoRelativePath: string?
+    opener: Page?
 
   commands:
 
@@ -739,6 +725,13 @@ Page:
           - no-preference
           # Reset emulated value to the system default.
           - null
+        reducedMotion:
+          type: enum?
+          literals:
+          - reduce
+          - no-preference
+          # Reset emulated value to the system default.
+          - null
 
     exposeBinding:
       parameters:
@@ -768,10 +761,6 @@ Page:
           - networkidle
       returns:
         response: Response?
-
-    opener:
-      returns:
-        page: Page?
 
     reload:
       parameters:
@@ -914,12 +903,12 @@ Page:
       returns:
         pdf: binary
 
-    crStartJSCoverage:
+    startJSCoverage:
       parameters:
         resetOnNavigation: boolean?
         reportAnonymousScripts: boolean?
 
-    crStopJSCoverage:
+    stopJSCoverage:
       returns:
         entries:
           type: array
@@ -945,11 +934,11 @@ Page:
                           endOffset: number
                           count: number
 
-    crStartCSSCoverage:
+    startCSSCoverage:
       parameters:
         resetOnNavigation: boolean?
 
-    crStopCSSCoverage:
+    stopCSSCoverage:
       returns:
         entries:
           type: array
@@ -988,7 +977,9 @@ Page:
 
     download:
       parameters:
-        download: Download
+        url: string
+        suggestedFilename: string
+        artifact: Artifact
 
     domcontentloaded:
 
@@ -1011,29 +1002,6 @@ Page:
       parameters:
         error: SerializedError
 
-    popup:
-      parameters:
-        page: Page
-
-    request:
-      parameters:
-        request: Request
-
-    requestFailed:
-      parameters:
-        request: Request
-        failureText: string?
-        responseEndTiming: number
-
-    requestFinished:
-      parameters:
-        request: Request
-        responseEndTiming: number
-
-    response:
-      parameters:
-        response: Response
-
     route:
       parameters:
         route: Route
@@ -1041,7 +1009,7 @@ Page:
 
     video:
       parameters:
-        relativePath: string
+        artifact: Artifact
 
     webSocket:
       parameters:
@@ -1109,7 +1077,9 @@ Frame:
         selector: string
         force: boolean?
         noWaitAfter: boolean?
+        position: Point?
         timeout: number?
+        trial: boolean?
 
     click:
       parameters:
@@ -1135,6 +1105,7 @@ Frame:
           - middle
         clickCount: number?
         timeout: number?
+        trial: boolean?
 
     content:
       returns:
@@ -1163,6 +1134,7 @@ Frame:
           - right
           - middle
         timeout: number?
+        trial: boolean?
 
     dispatchEvent:
       parameters:
@@ -1176,11 +1148,6 @@ Frame:
         expression: string
         isFunction: boolean?
         arg: SerializedArgument
-        world:
-          type: enum?
-          literals:
-          - main
-          - utility
       returns:
         value: SerializedValue
 
@@ -1189,11 +1156,6 @@ Frame:
         expression: string
         isFunction: boolean?
         arg: SerializedArgument
-        world:
-          type: enum?
-          literals:
-          - main
-          - utility
       returns:
         handle: JSHandle
 
@@ -1250,6 +1212,7 @@ Frame:
             - Shift
         position: Point?
         timeout: number?
+        trial: boolean?
 
     innerHTML:
       parameters:
@@ -1370,7 +1333,7 @@ Frame:
             type: object
             properties:
               name: string
-              mimeType: string
+              mimeType: string?
               buffer: binary
         timeout: number?
         noWaitAfter: boolean?
@@ -1391,6 +1354,7 @@ Frame:
             - Shift
         position: Point?
         timeout: number?
+        trial: boolean?
 
     textContent:
       parameters:
@@ -1416,7 +1380,9 @@ Frame:
         selector: string
         force: boolean?
         noWaitAfter: boolean?
+        position: Point?
         timeout: number?
+        trial: boolean?
 
     waitForFunction:
       parameters:
@@ -1588,7 +1554,9 @@ ElementHandle:
       parameters:
         force: boolean?
         noWaitAfter: boolean?
+        position: Point?
         timeout: number?
+        trial: boolean?
 
     click:
       parameters:
@@ -1613,6 +1581,7 @@ ElementHandle:
           - middle
         clickCount: number?
         timeout: number?
+        trial: boolean?
 
     contentFrame:
       returns:
@@ -1640,6 +1609,7 @@ ElementHandle:
           - right
           - middle
         timeout: number?
+        trial: boolean?
 
     dispatchEvent:
       parameters:
@@ -1674,6 +1644,7 @@ ElementHandle:
             - Shift
         position: Point?
         timeout: number?
+        trial: boolean?
 
     innerHTML:
       returns:
@@ -1781,7 +1752,7 @@ ElementHandle:
             type: object
             properties:
               name: string
-              mimeType: string
+              mimeType: string?
               buffer: binary
         timeout: number?
         noWaitAfter: boolean?
@@ -1801,6 +1772,7 @@ ElementHandle:
             - Shift
         position: Point?
         timeout: number?
+        trial: boolean?
 
     textContent:
       returns:
@@ -1817,7 +1789,9 @@ ElementHandle:
       parameters:
         force: boolean?
         noWaitAfter: boolean?
+        position: Point?
         timeout: number?
+        trial: boolean?
 
     waitForElementState:
       parameters:
@@ -2039,16 +2013,15 @@ Dialog:
 
 
 
-Download:
+Artifact:
   type: interface
 
   initializer:
-    url: string
-    suggestedFilename: string
+    absolutePath: string
 
   commands:
 
-    path:
+    pathAfterFinished:
       returns:
         value: string?
 
@@ -2070,8 +2043,9 @@ Download:
       returns:
         stream: Stream?
 
-    delete:
+    cancel:
 
+    delete:
 
 
 Stream:
@@ -2127,6 +2101,47 @@ Electron:
           type: array?
           items: NameValue
         timeout: number?
+        acceptDownloads: boolean?
+        bypassCSP: boolean?
+        colorScheme:
+          type: enum?
+          literals:
+          - dark
+          - light
+          - no-preference
+        extraHTTPHeaders:
+          type: array?
+          items: NameValue
+        geolocation:
+          type: object?
+          properties:
+            longitude: number
+            latitude: number
+            accuracy: number?
+        httpCredentials:
+          type: object?
+          properties:
+            username: string
+            password: string
+        ignoreHTTPSErrors: boolean?
+        locale: string?
+        offline: boolean?
+        recordHar:
+          type: object?
+          properties:
+            omitContent: boolean?
+            path: string
+        recordVideo:
+          type: object?
+          properties:
+            dir: string
+            size:
+              type: object?
+              properties:
+                width: number
+                height: number
+        timezoneId: string?
+
       returns:
         electronApplication: ElectronApplication
 
@@ -2134,7 +2149,16 @@ Electron:
 ElectronApplication:
   type: interface
 
+  initializer:
+    context: BrowserContext
+
   commands:
+
+    browserWindow:
+      parameters:
+        page: Page
+      returns:
+        handle: JSHandle
 
     evaluateExpression:
       parameters:
@@ -2155,19 +2179,7 @@ ElectronApplication:
     close:
 
   events:
-
-    # This event happens once immediately after creation.
-    context:
-      parameters:
-        context: BrowserContext
-
     close:
-
-    window:
-      parameters:
-        page: Page
-        browserWindow: JSHandle
-
 
 
 Android:
@@ -2369,8 +2381,12 @@ AndroidDevice:
           - dark
           - light
           - no-preference
+        reducedMotion:
+          type: enum?
+          literals:
+          - reduce
+          - no-preference
         acceptDownloads: boolean?
-        _traceDir: string?
         _debugName: string?
         recordVideo:
           type: object?
@@ -2502,3 +2518,29 @@ AndroidElementInfo:
     longClickable: boolean
     scrollable: boolean
     selected: boolean
+
+SocksSocket:
+  type: interface
+
+  initializer:
+    dstAddr: string
+    dstPort: number
+
+  commands:
+    write:
+      parameters:
+        data: binary
+
+    error:
+      parameters:
+        error: string
+
+    connected:
+
+    end:
+
+  events:
+    data:
+      parameters:
+        data: binary
+    close:

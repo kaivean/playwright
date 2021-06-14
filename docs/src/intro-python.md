@@ -8,11 +8,22 @@ title: "Getting Started"
 
 ## Installation
 
-Use pip to install Playwright in your Python project. See [system requirements](#system-requirements).
+See [system requirements](#system-requirements).
 
-```sh
-$ pip install playwright
-$ playwright install
+### Pip
+
+```bash
+pip install playwright
+playwright install
+```
+
+### Conda
+
+```bash
+conda config --add channels conda-forge
+conda config --add channels microsoft
+conda install playwright
+playwright install
 ```
 
 These commands download the Playwright package and install browser binaries for Chromium, Firefox and WebKit. To modify this behavior see [installation parameters](./installation.md).
@@ -58,7 +69,7 @@ from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
     browser = p.webkit.launch()
-    page = await browser.new_page()
+    page = browser.new_page()
     page.goto("http://whatsmyuseragent.org/")
     page.screenshot(path="example.png")
     browser.close()
@@ -74,19 +85,32 @@ firefox.launch(headless=False, slow_mo=50)
 
 Command Line Interface [CLI](./cli.md) can be used to record user interactions and generate Python code.
 
-```sh
-$ playwright codegen wikipedia.org
+```bash
+playwright codegen wikipedia.org
 ```
 
 ## System requirements
 
-Playwright requires Python version 3.7 or above. The browser binaries for Chromium,
+Playwright requires Python 3.7 or above. The browser binaries for Chromium,
 Firefox and WebKit work across the 3 platforms (Windows, macOS, Linux):
 
-* **Windows**: Works with Windows and Windows Subsystem for Linux (WSL).
-* **macOS**: Requires 10.14 or above.
-* **Linux**: Depending on your Linux distribution, you might need to install additional
-  dependencies to run the browsers.
-  * Firefox requires Ubuntu 18.04+
-  * For Ubuntu 18.04, the additional dependencies are defined in [our Docker image](https://github.com/microsoft/playwright/blob/master/utils/docker/Dockerfile.bionic),
-    which is based on Ubuntu.
+### Windows
+
+Works with Windows and Windows Subsystem for Linux (WSL).
+
+### macOS
+
+Requires 10.14 (Mojave) or above.
+
+### Linux
+
+Depending on your Linux distribution, you might need to install additional
+dependencies to run the browsers.
+
+:::note
+Only Ubuntu 18.04 and Ubuntu 20.04 are officially supported.
+:::
+
+See also in the [Command Line Interface](./cli.md#install-system-dependencies)
+which has a command to install all necessary dependencies automatically for Ubuntu
+LTS releases.

@@ -171,7 +171,8 @@ function buildCandidates(injectedScript: InjectedScript, element: Element): Sele
 
   const idAttr = element.getAttribute('id');
   if (idAttr && !isGuidLike(idAttr))
-    candidates.push({ engine: 'css', selector: `#${idAttr}`, score: 100 });
+    candidates.push({ engine: 'css', selector: makeSelectorForId(idAttr), score: 100 });
+
 
   candidates.push({ engine: 'css', selector: element.nodeName.toLocaleLowerCase(), score: 200 });
   return candidates;
@@ -209,6 +210,10 @@ function parentElementOrShadowHost(element: Element): Element | null {
   return null;
 }
 
+function makeSelectorForId(id: string) {
+  return /^[a-zA-Z][a-zA-Z0-9\-\_]+$/.test(id) ? '#' + id : `[id="${id}"]`;
+}
+
 function cssFallback(injectedScript: InjectedScript, targetElement: Element): SelectorToken {
   const kFallbackScore = 10000000;
   const root: Node = targetElement.ownerDocument;
@@ -230,7 +235,7 @@ function cssFallback(injectedScript: InjectedScript, targetElement: Element): Se
     // Element ID is the strongest signal, use it.
     let bestTokenForLevel: string = '';
     if (element.id) {
-      const token = /^[a-zA-Z][a-zA-Z0-9\-\_]+$/.test(element.id) ? '#' + element.id : `[id="${element.id}"]`;
+      const token = makeSelectorForId(element.id);
       const selector = uniqueCSSSelector(token);
       if (selector)
         return { engine: 'css', selector, score: kFallbackScore };
@@ -240,7 +245,7 @@ function cssFallback(injectedScript: InjectedScript, targetElement: Element): Se
     const parent = element.parentNode as (Element | ShadowRoot);
 
     // Combine class names until unique.
-    const classes = Array.from(element.classList);
+    const classes = [...element.classList];
     for (let i = 0; i < classes.length; ++i) {
       const token = '.' + classes.slice(0, i + 1).join('.');
       const selector = uniqueCSSSelector(token);
@@ -256,7 +261,7 @@ function cssFallback(injectedScript: InjectedScript, targetElement: Element): Se
 
     // Ordinal is the weakest signal.
     if (parent) {
-      const siblings = Array.from(parent.children);
+      const siblings = [...parent.children];
       const sameTagSiblings = siblings.filter(sibling => (sibling).nodeName.toLowerCase() === nodeName);
       const token = sameTagSiblings.indexOf(element) === 0 ? nodeName : `${nodeName}:nth-child(${1 + siblings.indexOf(element)})`;
       const selector = uniqueCSSSelector(token);

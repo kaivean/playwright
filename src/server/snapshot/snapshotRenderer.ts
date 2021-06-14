@@ -14,19 +14,23 @@
  * limitations under the License.
  */
 
-import { ContextResources, FrameSnapshot, NodeSnapshot, RenderedFrameSnapshot } from './snapshot';
+import { ContextResources, FrameSnapshot, NodeSnapshot, RenderedFrameSnapshot } from './snapshotTypes';
 
 export class SnapshotRenderer {
   private _snapshots: FrameSnapshot[];
   private _index: number;
   private _contextResources: ContextResources;
-  readonly snapshotId: string;
+  readonly snapshotName: string | undefined;
 
   constructor(contextResources: ContextResources, snapshots: FrameSnapshot[], index: number) {
     this._contextResources = contextResources;
     this._snapshots = snapshots;
     this._index = index;
-    this.snapshotId = snapshots[index].snapshotId;
+    this.snapshotName = snapshots[index].snapshotName;
+  }
+
+  snapshot(): FrameSnapshot {
+    return this._snapshots[this._index];
   }
 
   render(): RenderedFrameSnapshot {
@@ -67,9 +71,15 @@ export class SnapshotRenderer {
 
     const snapshot = this._snapshots[this._index];
     let html = visit(snapshot.html, this._index);
+    if (!html)
+      return { html: '', resources: {} };
+
     if (snapshot.doctype)
       html = `<!DOCTYPE ${snapshot.doctype}>` + html;
-    html += `<script>${snapshotScript}</script>`;
+    html += `
+      <style>*[__playwright_target__="${this.snapshotName}"] { background-color: #6fa8dc7f; }</style>
+      <script>${snapshotScript()}</script>
+    `;
 
     const resources: { [key: string]: { resourceId: string, sha1?: string } } = {};
     for (const [url, contextResources] of this._contextResources) {
@@ -113,7 +123,7 @@ function snapshotNodes(snapshot: FrameSnapshot): NodeSnapshot[] {
   return (snapshot as any)._nodes;
 }
 
-export function snapshotScript() {
+function snapshotScript() {
   function applyPlaywrightAttributes(shadowAttribute: string, scrollTopAttribute: string, scrollLeftAttribute: string) {
     const scrollTops: Element[] = [];
     const scrollLefts: Element[] = [];
@@ -126,17 +136,13 @@ export function snapshotScript() {
         scrollLefts.push(e);
 
       for (const iframe of root.querySelectorAll('iframe')) {
-        const src = iframe.getAttribute('src') || '';
-        if (src.startsWith('data:text/html'))
-          continue;
-        // Rewrite iframes to use snapshot url (relative to window.location)
-        // instead of begin relative to the <base> tag.
-        const index = location.pathname.lastIndexOf('/');
-        if (index === -1)
-          continue;
-        const pathname = location.pathname.substring(0, index + 1) + src;
-        const href = location.href.substring(0, location.href.indexOf(location.pathname)) + pathname;
-        iframe.setAttribute('src', href);
+        const src = iframe.getAttribute('src');
+        if (!src) {
+          iframe.setAttribute('src', 'data:text/html,<body style="background: #ddd"></body>');
+        } else {
+          // Append query parameters to inherit ?name= or ?time= values from parent.
+          iframe.setAttribute('src', window.location.origin + src + window.location.search);
+        }
       }
 
       for (const element of root.querySelectorAll(`template[${shadowAttribute}]`)) {

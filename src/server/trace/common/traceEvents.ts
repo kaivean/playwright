@@ -14,133 +14,43 @@
  * limitations under the License.
  */
 
-import { StackFrame } from '../../../common/types';
-import { FrameSnapshot } from '../../snapshot/snapshot';
+import { CallMetadata } from '../../instrumentation';
+import { FrameSnapshot, ResourceSnapshot } from '../../snapshot/snapshotTypes';
+import { BrowserContextOptions } from '../../types';
 
 export type ContextCreatedTraceEvent = {
-  timestamp: number,
-  type: 'context-created',
+  type: 'context-options',
   browserName: string,
-  contextId: string,
-  deviceScaleFactor: number,
-  isMobile: boolean,
-  viewportSize?: { width: number, height: number },
-  debugName?: string,
+  options: BrowserContextOptions
 };
 
-export type ContextDestroyedTraceEvent = {
-  timestamp: number,
-  type: 'context-destroyed',
-  contextId: string,
-};
-
-export type NetworkResourceTraceEvent = {
-  timestamp: number,
-  type: 'resource',
-  contextId: string,
+export type ScreencastFrameTraceEvent = {
+  type: 'screencast-frame',
   pageId: string,
-  frameId: string,
-  resourceId: string,
-  url: string,
-  contentType: string,
-  responseHeaders: { name: string, value: string }[],
-  requestHeaders: { name: string, value: string }[],
-  method: string,
-  status: number,
-  requestSha1: string,
-  responseSha1: string,
-};
-
-export type PageCreatedTraceEvent = {
+  sha1: string,
+  width: number,
+  height: number,
   timestamp: number,
-  type: 'page-created',
-  contextId: string,
-  pageId: string,
-};
-
-export type PageDestroyedTraceEvent = {
-  timestamp: number,
-  type: 'page-destroyed',
-  contextId: string,
-  pageId: string,
-};
-
-export type PageVideoTraceEvent = {
-  timestamp: number,
-  type: 'page-video',
-  contextId: string,
-  pageId: string,
-  fileName: string,
 };
 
 export type ActionTraceEvent = {
-  timestamp: number,
-  type: 'action',
-  contextId: string,
-  objectType: string,
-  method: string,
-  params: any,
-  stack?: StackFrame[],
-  pageId?: string,
-  startTime: number,
-  endTime: number,
-  logs?: string[],
-  error?: string,
-  snapshots?: { name: string, snapshotId: string }[],
+  type: 'action' | 'event',
+  metadata: CallMetadata,
 };
 
-export type DialogOpenedEvent = {
-  timestamp: number,
-  type: 'dialog-opened',
-  contextId: string,
-  pageId: string,
-  dialogType: string,
-  message?: string,
-};
-
-export type DialogClosedEvent = {
-  timestamp: number,
-  type: 'dialog-closed',
-  contextId: string,
-  pageId: string,
-  dialogType: string,
-};
-
-export type NavigationEvent = {
-  timestamp: number,
-  type: 'navigation',
-  contextId: string,
-  pageId: string,
-  url: string,
-  sameDocument: boolean,
-};
-
-export type LoadEvent = {
-  timestamp: number,
-  type: 'load',
-  contextId: string,
-  pageId: string,
+export type ResourceSnapshotTraceEvent = {
+  type: 'resource-snapshot',
+  snapshot: ResourceSnapshot,
 };
 
 export type FrameSnapshotTraceEvent = {
-  timestamp: number,
-  type: 'snapshot',
-  contextId: string,
-  pageId: string,
-  frameId: string,
+  type: 'frame-snapshot',
   snapshot: FrameSnapshot,
 };
 
 export type TraceEvent =
     ContextCreatedTraceEvent |
-    ContextDestroyedTraceEvent |
-    PageCreatedTraceEvent |
-    PageDestroyedTraceEvent |
-    PageVideoTraceEvent |
-    NetworkResourceTraceEvent |
+    ScreencastFrameTraceEvent |
     ActionTraceEvent |
-    DialogOpenedEvent |
-    DialogClosedEvent |
-    NavigationEvent |
-    LoadEvent |
+    ResourceSnapshotTraceEvent |
     FrameSnapshotTraceEvent;

@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+import * as channels from '../protocol/channels';
 import { ConsoleMessage } from './console';
 import * as dom from './dom';
 import { helper, RegisteredListener } from './helper';
@@ -26,7 +27,7 @@ import { BrowserContext } from './browserContext';
 import { Progress, ProgressController } from './progress';
 import { assert, makeWaitForNextTask } from '../utils/utils';
 import { debugLogger } from '../utils/debugLogger';
-import { CallMetadata, SdkObject } from './instrumentation';
+import { CallMetadata, internalCallMetadata, SdkObject } from './instrumentation';
 import { ElementStateWithoutStable } from './injected/injectedScript';
 
 type ContextData = {
@@ -71,6 +72,7 @@ export class FrameManager {
   readonly _consoleMessageTags = new Map<string, ConsoleTagHandler>();
   readonly _signalBarriers = new Set<SignalBarrier>();
   private _webSockets = new Map<string, network.WebSocket>();
+  readonly _responses: network.Response[] = [];
 
   constructor(page: Page) {
     this._page = page;
@@ -132,11 +134,8 @@ export class FrameManager {
     if (progress)
       progress.cleanupWhenAborted(() => this._signalBarriers.delete(barrier));
     const result = await action();
-    if (source === 'input') {
+    if (source === 'input')
       await this._page._delegate.inputActionEpilogue();
-      if (progress)
-        await progress.afterInputAction();
-    }
     await barrier.waitFor();
     this._signalBarriers.delete(barrier);
     // Resolve in the next task, after all waitForNavigations.
@@ -160,11 +159,11 @@ export class FrameManager {
       return;
     for (const barrier of this._signalBarriers)
       barrier.addFrameNavigation(frame);
-    if (frame._pendingDocument && frame._pendingDocument.documentId === documentId) {
+    if (frame.pendingDocument() && frame.pendingDocument()!.documentId === documentId) {
       // Do not override request with undefined.
       return;
     }
-    frame._pendingDocument = { documentId, request: undefined };
+    frame.setPendingDocument({ documentId, request: undefined });
   }
 
   frameCommittedNewDocumentNavigation(frameId: string, url: string, name: string, documentId: string, initial: boolean) {
@@ -175,24 +174,25 @@ export class FrameManager {
     frame._name = name;
 
     let keepPending: DocumentInfo | undefined;
-    if (frame._pendingDocument) {
-      if (frame._pendingDocument.documentId === undefined) {
+    const pendingDocument = frame.pendingDocument();
+    if (pendingDocument) {
+      if (pendingDocument.documentId === undefined) {
         // Pending with unknown documentId - assume it is the one being committed.
-        frame._pendingDocument.documentId = documentId;
+        pendingDocument.documentId = documentId;
       }
-      if (frame._pendingDocument.documentId === documentId) {
+      if (pendingDocument.documentId === documentId) {
         // Committing a pending document.
-        frame._currentDocument = frame._pendingDocument;
+        frame._currentDocument = pendingDocument;
       } else {
         // Sometimes, we already have a new pending when the old one commits.
         // An example would be Chromium error page followed by a new navigation request,
         // where the error page commit arrives after Network.requestWillBeSent for the
         // new navigation.
         // We commit, but keep the pending request since it's not done yet.
-        keepPending = frame._pendingDocument;
+        keepPending = pendingDocument;
         frame._currentDocument = { documentId, request: undefined };
       }
-      frame._pendingDocument = undefined;
+      frame.setPendingDocument(undefined);
     } else {
       // No pending - just commit a new document.
       frame._currentDocument = { documentId, request: undefined };
@@ -201,12 +201,13 @@ export class FrameManager {
     frame._onClearLifecycle();
     const navigationEvent: NavigationEvent = { url, name, newDocument: frame._currentDocument };
     frame.emit(Frame.Events.Navigation, navigationEvent);
+    this._responses.length = 0;
     if (!initial) {
       debugLogger.log('api', `  navigated to "${url}"`);
       this._page.frameNavigatedToNewDocument(frame);
     }
     // Restore pending if any - see comments above about keepPending.
-    frame._pendingDocument = keepPending;
+    frame.setPendingDocument(keepPending);
   }
 
   frameCommittedSameDocumentNavigation(frameId: string, url: string) {
@@ -221,17 +222,17 @@ export class FrameManager {
 
   frameAbortedNavigation(frameId: string, errorText: string, documentId?: string) {
     const frame = this._frames.get(frameId);
-    if (!frame || !frame._pendingDocument)
+    if (!frame || !frame.pendingDocument())
       return;
-    if (documentId !== undefined && frame._pendingDocument.documentId !== documentId)
+    if (documentId !== undefined && frame.pendingDocument()!.documentId !== documentId)
       return;
     const navigationEvent: NavigationEvent = {
       url: frame._url,
       name: frame._name,
-      newDocument: frame._pendingDocument,
+      newDocument: frame.pendingDocument(),
       error: new Error(errorText),
     };
-    frame._pendingDocument = undefined;
+    frame.setPendingDocument(undefined);
     frame.emit(Frame.Events.Navigation, navigationEvent);
   }
 
@@ -256,38 +257,43 @@ export class FrameManager {
     const frame = request.frame();
     this._inflightRequestStarted(request);
     if (request._documentId)
-      frame._pendingDocument = { documentId: request._documentId, request };
+      frame.setPendingDocument({ documentId: request._documentId, request });
     if (request._isFavicon) {
       const route = request._route();
       if (route)
         route.continue();
       return;
     }
+    this._page._browserContext.emit(BrowserContext.Events.Request, request);
     this._page._requestStarted(request);
   }
 
   requestReceivedResponse(response: network.Response) {
-    if (!response.request()._isFavicon)
-      this._page.emit(Page.Events.Response, response);
+    if (response.request()._isFavicon)
+      return;
+    this._responses.push(response);
+    this._page._browserContext.emit(BrowserContext.Events.Response, response);
   }
 
   requestFinished(request: network.Request) {
     this._inflightRequestFinished(request);
-    if (!request._isFavicon)
-      this._page.emit(Page.Events.RequestFinished, request);
+    if (request._isFavicon)
+      return;
+    this._page._browserContext.emit(BrowserContext.Events.RequestFinished, request);
   }
 
   requestFailed(request: network.Request, canceled: boolean) {
     const frame = request.frame();
     this._inflightRequestFinished(request);
-    if (frame._pendingDocument && frame._pendingDocument.request === request) {
+    if (frame.pendingDocument() && frame.pendingDocument()!.request === request) {
       let errorText = request.failure()!.errorText;
       if (canceled)
         errorText += '; maybe frame was detached?';
-      this.frameAbortedNavigation(frame._id, errorText, frame._pendingDocument.documentId);
+      this.frameAbortedNavigation(frame._id, errorText, frame.pendingDocument()!.documentId);
     }
-    if (!request._isFavicon)
-      this._page.emit(Page.Events.RequestFailed, request);
+    if (request._isFavicon)
+      return;
+    this._page._browserContext.emit(BrowserContext.Events.RequestFailed, request);
   }
 
   removeChildFramesRecursively(frame: Frame) {
@@ -398,7 +404,7 @@ export class Frame extends SdkObject {
   private _firedLifecycleEvents = new Set<types.LifecycleEvent>();
   _subtreeLifecycleEvents = new Set<types.LifecycleEvent>();
   _currentDocument: DocumentInfo;
-  _pendingDocument?: DocumentInfo;
+  private _pendingDocument: DocumentInfo | undefined;
   readonly _page: Page;
   private _parentFrame: Frame | null;
   _url = '';
@@ -411,11 +417,10 @@ export class Frame extends SdkObject {
   private _setContentCounter = 0;
   readonly _detachedPromise: Promise<void>;
   private _detachedCallback = () => {};
-  readonly uniqueId: string;
+  private _nonStallingEvaluations = new Set<(error: Error) => void>();
 
   constructor(page: Page, id: string, parentFrame: Frame | null) {
-    super(page);
-    this.uniqueId = parentFrame ? `frame@${page.uniqueId}/${id}` : page.uniqueId;
+    super(page, 'frame');
     this.attribution.frame = this;
     this._id = id;
     this._page = page;
@@ -450,6 +455,64 @@ export class Frame extends SdkObject {
     this._stopNetworkIdleTimer();
     if (this._inflightRequests.size === 0)
       this._startNetworkIdleTimer();
+  }
+
+  setPendingDocument(documentInfo: DocumentInfo | undefined) {
+    this._pendingDocument = documentInfo;
+    if (documentInfo)
+      this._invalidateNonStallingEvaluations();
+  }
+
+  pendingDocument(): DocumentInfo | undefined {
+    return this._pendingDocument;
+  }
+
+  private async _invalidateNonStallingEvaluations() {
+    if (!this._nonStallingEvaluations)
+      return;
+    const error = new Error('Navigation interrupted the evaluation');
+    for (const callback of this._nonStallingEvaluations)
+      callback(error);
+  }
+
+  async nonStallingRawEvaluateInExistingMainContext(expression: string): Promise<any> {
+    if (this._pendingDocument)
+      throw new Error('Frame is currently attempting a navigation');
+    const context = this._existingMainContext();
+    if (!context)
+      throw new Error('Frame does not yet have a main execution context');
+
+    let callback = () => {};
+    const frameInvalidated = new Promise<void>((f, r) => callback = r);
+    this._nonStallingEvaluations.add(callback);
+    try {
+      return await Promise.race([
+        context.rawEvaluateJSON(expression),
+        frameInvalidated
+      ]);
+    } finally {
+      this._nonStallingEvaluations.delete(callback);
+    }
+  }
+
+  async nonStallingEvaluateInExistingContext(expression: string, isFunction: boolean|undefined, world: types.World): Promise<any> {
+    if (this._pendingDocument)
+      throw new Error('Frame is currently attempting a navigation');
+    const context = this._contextData.get(world)?.context;
+    if (!context)
+      throw new Error('Frame does not yet have the execution context');
+
+    let callback = () => {};
+    const frameInvalidated = new Promise<void>((f, r) => callback = r);
+    this._nonStallingEvaluations.add(callback);
+    try {
+      return await Promise.race([
+        context.evaluateExpression(expression, isFunction),
+        frameInvalidated
+      ]);
+    } finally {
+      this._nonStallingEvaluations.delete(callback);
+    }
   }
 
   private _recalculateLifecycle() {
@@ -585,7 +648,7 @@ export class Frame extends SdkObject {
     return this._context('main');
   }
 
-  _existingMainContext(): dom.FrameExecutionContext | null {
+  private _existingMainContext(): dom.FrameExecutionContext | null {
     return this._contextData.get('main')?.context || null;
   }
 
@@ -593,17 +656,25 @@ export class Frame extends SdkObject {
     return this._context('utility');
   }
 
-  async _evaluateExpressionHandle(expression: string, isFunction: boolean | undefined, arg: any, world: types.World = 'main'): Promise<any> {
+  async evaluateExpressionHandleAndWaitForSignals(expression: string, isFunction: boolean | undefined, arg: any, world: types.World = 'main'): Promise<any> {
     const context = await this._context(world);
-    const handle = await context.evaluateExpressionHandleInternal(expression, isFunction, arg);
+    const handle = await context.evaluateExpressionHandleAndWaitForSignals(expression, isFunction, arg);
     if (world === 'main')
       await this._page._doSlowMo();
     return handle;
   }
 
-  async _evaluateExpression(expression: string, isFunction: boolean | undefined, arg: any, world: types.World = 'main'): Promise<any> {
+  async evaluateExpression(expression: string, isFunction: boolean | undefined, arg: any, world: types.World = 'main'): Promise<any> {
     const context = await this._context(world);
-    const value = await context.evaluateExpressionInternal(expression, isFunction, arg);
+    const value = await context.evaluateExpression(expression, isFunction, arg);
+    if (world === 'main')
+      await this._page._doSlowMo();
+    return value;
+  }
+
+  async evaluateExpressionAndWaitForSignals(expression: string, isFunction: boolean | undefined, arg: any, world: types.World = 'main'): Promise<any> {
+    const context = await this._context(world);
+    const value = await context.evaluateExpressionAndWaitForSignals(expression, isFunction, arg);
     if (world === 'main')
       await this._page._doSlowMo();
     return value;
@@ -626,13 +697,26 @@ export class Frame extends SdkObject {
     const task = dom.waitForSelectorTask(info, state);
     return controller.run(async progress => {
       progress.log(`waiting for selector "${selector}"${state === 'attached' ? '' : ' to be ' + state}`);
-      const result = await this._scheduleRerunnableHandleTask(progress, info.world, task);
-      if (!result.asElement()) {
-        result.dispose();
-        return null;
+      while (progress.isRunning()) {
+        const result = await this._scheduleRerunnableHandleTask(progress, info.world, task);
+        if (!result.asElement()) {
+          result.dispose();
+          return null;
+        }
+        if ((options as any).__testHookBeforeAdoptNode)
+          await (options as any).__testHookBeforeAdoptNode();
+        try {
+          const handle = result.asElement() as dom.ElementHandle<Element>;
+          const adopted = await handle._adoptTo(await this._mainContext());
+          return adopted;
+        } catch (e) {
+          // Navigated while trying to adopt the node.
+          if (!js.isContextDestroyedError(e) && !e.message.includes(dom.kUnableToAdoptErrorMessage))
+            throw e;
+          result.dispose();
+        }
       }
-      const handle = result.asElement() as dom.ElementHandle<Element>;
-      return handle._adoptTo(await this._mainContext());
+      return null;
     }, this._page._timeoutSettings.timeout(options));
   }
 
@@ -648,18 +732,18 @@ export class Frame extends SdkObject {
     await this._page._doSlowMo();
   }
 
-  async _$evalExpression(selector: string, expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
+  async evalOnSelectorAndWaitForSignals(selector: string, expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     const handle = await this.$(selector);
     if (!handle)
       throw new Error(`Error: failed to find element matching selector "${selector}"`);
-    const result = await handle._evaluateExpression(expression, isFunction, true, arg);
+    const result = await handle.evaluateExpressionAndWaitForSignals(expression, isFunction, true, arg);
     handle.dispose();
     return result;
   }
 
-  async _$$evalExpression(selector: string, expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
+  async evalOnSelectorAllAndWaitForSignals(selector: string, expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     const arrayHandle = await this._page.selectors._queryArray(this, selector);
-    const result = await arrayHandle._evaluateExpression(expression, isFunction, true, arg);
+    const result = await arrayHandle.evaluateExpressionAndWaitForSignals(expression, isFunction, true, arg);
     arrayHandle.dispose();
     return result;
   }
@@ -670,7 +754,7 @@ export class Frame extends SdkObject {
 
   async content(): Promise<string> {
     const context = await this._utilityContext();
-    return context.evaluateInternal(() => {
+    return context.evaluate(() => {
       let retVal = '';
       if (document.doctype)
         retVal = new XMLSerializer().serializeToString(document.doctype);
@@ -694,7 +778,7 @@ export class Frame extends SdkObject {
           this._waitForLoadState(progress, waitUntil).then(resolve).catch(reject);
         });
       });
-      const contentPromise = context.evaluateInternal(({ html, tag }) => {
+      const contentPromise = context.evaluate(({ html, tag }) => {
         window.stop();
         document.open();
         console.debug(tag);  // eslint-disable-line no-console
@@ -738,12 +822,12 @@ export class Frame extends SdkObject {
     const context = await this._mainContext();
     return this._raceWithCSPError(async () => {
       if (url !== null)
-        return (await context.evaluateHandleInternal(addScriptUrl, { url, type })).asElement()!;
-      const result = (await context.evaluateHandleInternal(addScriptContent, { content: content!, type })).asElement()!;
+        return (await context.evaluateHandle(addScriptUrl, { url, type })).asElement()!;
+      const result = (await context.evaluateHandle(addScriptContent, { content: content!, type })).asElement()!;
       // Another round trip to the browser to ensure that we receive CSP error messages
       // (if any) logged asynchronously in a separate task on the content main thread.
       if (this._page._delegate.cspErrorsAsynchronousForInlineScipts)
-        await context.evaluateInternal(() => true);
+        await context.evaluate(() => true);
       return result;
     });
 
@@ -785,8 +869,8 @@ export class Frame extends SdkObject {
     const context = await this._mainContext();
     return this._raceWithCSPError(async () => {
       if (url !== null)
-        return (await context.evaluateHandleInternal(addStyleUrl, url)).asElement()!;
-      return (await context.evaluateHandleInternal(addStyleContent, content!)).asElement()!;
+        return (await context.evaluateHandle(addStyleUrl, url)).asElement()!;
+      return (await context.evaluateHandle(addStyleContent, content!)).asElement()!;
     });
 
     async function addStyleUrl(url: string): Promise<HTMLElement> {
@@ -1010,7 +1094,7 @@ export class Frame extends SdkObject {
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async setInputFiles(metadata: CallMetadata, selector: string, files: types.FilePayload[], options: types.NavigatingActionWaitOptions = {}): Promise<void> {
+  async setInputFiles(metadata: CallMetadata, selector: string, files: channels.ElementHandleSetInputFilesParams['files'], options: types.NavigatingActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, handle => handle._setInputFiles(progress, files, options)));
@@ -1045,7 +1129,7 @@ export class Frame extends SdkObject {
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _waitForFunctionExpression<R>(metadata: CallMetadata, expression: string, isFunction: boolean | undefined, arg: any, options: types.WaitForFunctionOptions = {}): Promise<js.SmartHandle<R>> {
+  async _waitForFunctionExpression<R>(metadata: CallMetadata, expression: string, isFunction: boolean | undefined, arg: any, options: types.WaitForFunctionOptions, world: types.World = 'main'): Promise<js.SmartHandle<R>> {
     const controller = new ProgressController(metadata, this);
     if (typeof options.pollingInterval === 'number')
       assert(options.pollingInterval > 0, 'Cannot poll with non-positive interval: ' + options.pollingInterval);
@@ -1069,13 +1153,24 @@ export class Frame extends SdkObject {
       return injectedScript.pollInterval(polling, (progress, continuePolling) => predicate(arg) || continuePolling);
     }, { expression, isFunction, polling: options.pollingInterval, arg });
     return controller.run(
-        progress => this._scheduleRerunnableHandleTask(progress, 'main', task),
+        progress => this._scheduleRerunnableHandleTask(progress, world, task),
         this._page._timeoutSettings.timeout(options));
+  }
+
+  async waitForFunctionValueInUtility<R>(progress: Progress, pageFunction: js.Func1<any, R>) {
+    const expression = `() => {
+      const result = (${pageFunction})();
+      if (!result)
+        return result;
+      return JSON.stringify(result);
+    }`;
+    const handle = await this._waitForFunctionExpression(internalCallMetadata(), expression, true, undefined, { timeout: progress.timeUntilDeadline() }, 'utility');
+    return JSON.parse(handle.rawValue()) as R;
   }
 
   async title(): Promise<string> {
     const context = await this._utilityContext();
-    return context.evaluateInternal(() => document.title);
+    return context.evaluate(() => document.title);
   }
 
   _onDetached() {
@@ -1158,9 +1253,9 @@ export class Frame extends SdkObject {
     this._networkIdleTimer = undefined;
   }
 
-  async extendInjectedScript(source: string, arg?: any): Promise<js.JSHandle> {
-    const mainContext = await this._mainContext();
-    const injectedScriptHandle = await mainContext.injectedScript();
+  async extendInjectedScript(world: types.World, source: string, arg?: any): Promise<js.JSHandle> {
+    const context = await this._context(world);
+    const injectedScriptHandle = await context.injectedScript();
     return injectedScriptHandle.evaluateHandle((injectedScript, {source, arg}) => {
       return injectedScript.extend(source, arg);
     }, { source, arg });
@@ -1201,16 +1296,9 @@ class RerunnableTask {
       this._contextData.rerunnableTasks.delete(this);
       this._resolve(result);
     } catch (e) {
-      // When the page is navigated, the promise is rejected.
       // We will try again in the new execution context.
-      if (e.message.includes('Execution context was destroyed'))
+      if (js.isContextDestroyedError(e))
         return;
-
-      // We could have tried to evaluate in a context which was already
-      // destroyed.
-      if (e.message.includes('Cannot find context with specified id'))
-        return;
-
       this._contextData.rerunnableTasks.delete(this);
       this._reject(e);
     }
@@ -1235,6 +1323,9 @@ class SignalBarrier {
   }
 
   async addFrameNavigation(frame: Frame) {
+    // Auto-wait top-level navigations only.
+    if (frame.parentFrame())
+      return;
     this.retain();
     const waiter = helper.waitForEvent(null, frame, Frame.Events.Navigation, (e: NavigationEvent) => {
       if (!e.error && this._progress)

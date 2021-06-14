@@ -14,69 +14,74 @@
   limitations under the License.
 */
 
-.action-list {
-  width: var(--sidebar-width);
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  position: relative;
-  padding: 0 var(--layout-gap);
+.action-list-title {
+  padding: 0 10px;
 }
 
-.action-entry {
-  position: relative;
+.action-list-content {
   display: flex;
   flex-direction: column;
-  flex: none;
-  overflow: hidden;
-  border: 3px solid var(--background);
-  margin-top: var(--layout-gap);
+  flex: auto;
+  position: relative;
   user-select: none;
-  padding: 0 5px 5px 5px;
-  cursor: pointer;
+  color: #555;
+  overflow: auto;
   outline: none;
 }
 
-.action-entry:hover {
-  border-color: var(--inactive-focus-ring);
+.action-entry {
+  display: flex;
+  flex: none;
+  cursor: pointer;
+  align-items: center;
+  white-space: nowrap;
+  line-height: 28px;
+  padding-left: 5px;
 }
 
+.action-entry.highlighted,
 .action-entry.selected {
-  border-color: var(--inactive-focus-ring);
+  color: white;
+  background-color: var(--gray);
 }
 
-.action-entry.selected:focus {
-  border-color: var(--orange);
+.action-entry.highlighted {
+  color: white;
+  background-color: var(--light-gray);
+}
+
+.action-list-content:focus .action-entry.selected {
+  background-color: var(--blue);
+}
+
+.action-entry.highlighted > div,
+.action-entry.selected > div {
+  color: white;
 }
 
 .action-title {
+  flex: none;
   display: inline;
   white-space: nowrap;
-  font-weight: 600;
 }
 
-.action-header {
-  display: block;
-  align-items: center;
-  margin: 5px 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.action-header .action-error {
+.action-error {
   color: red;
-  top: 2px;
   position: relative;
   margin-right: 2px;
+  flex: none;
 }
 
 .action-selector {
   display: inline;
+  flex: none;
   padding-left: 5px;
+  color: var(--orange);
 }
 
 .action-url {
   display: inline;
+  flex: none;
   padding-left: 5px;
+  color: var(--blue);
 }

@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-import { ActionEntry } from '../../../server/trace/viewer/traceModel';
 import * as React from 'react';
 import './logsTab.css';
+import { ActionTraceEvent } from '../../../server/trace/common/traceEvents';
 
 export const LogsTab: React.FunctionComponent<{
-  actionEntry: ActionEntry | undefined,
-}> = ({ actionEntry }) => {
-  let logs: string[] = [];
-  if (actionEntry) {
-    logs = actionEntry.action.logs || [];
-    if (actionEntry.action.error)
-      logs = [actionEntry.action.error, ...logs];
-  }
+  action: ActionTraceEvent | undefined,
+}> = ({ action }) => {
+  const logs = action?.metadata.log || [];
+  const error = action?.metadata.error;
   return <div className='logs-tab'>{
+    <div className='logs-error' key='error' hidden={!error}>
+      <div className='codicon codicon-issues'/>
+      {error}
+    </div>}{
     logs.map((logLine, index) => {
       return <div key={index} className='log-line'>
         {logLine}

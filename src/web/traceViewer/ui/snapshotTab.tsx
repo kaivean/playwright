@@ -14,78 +14,92 @@
  * limitations under the License.
  */
 
-import { ActionEntry } from '../../../server/trace/viewer/traceModel';
-import { Boundaries, Size } from '../geometry';
+import { Size } from '../geometry';
 import './snapshotTab.css';
+import './tabbedPane.css';
 import * as React from 'react';
 import { useMeasure } from './helpers';
-import { msToString } from '../../uiUtils';
+import type { Point } from '../../../common/types';
+import { ActionTraceEvent } from '../../../server/trace/common/traceEvents';
 
 export const SnapshotTab: React.FunctionComponent<{
-  actionEntry: ActionEntry | undefined,
+  action: ActionTraceEvent | undefined,
   snapshotSize: Size,
-  selection: { pageId: string, time: number } | undefined,
-  boundaries: Boundaries,
-}> = ({ actionEntry, snapshotSize, selection, boundaries }) => {
+}> = ({ action, snapshotSize }) => {
   const [measure, ref] = useMeasure<HTMLDivElement>();
-  const [snapshotIndex, setSnapshotIndex] = React.useState(0);
+  let [snapshotIndex, setSnapshotIndex] = React.useState(0);
 
-  let snapshots: { name: string, snapshotId?: string, snapshotTime?: number }[] = [];
-  snapshots = (actionEntry ? (actionEntry.action.snapshots || []) : []).slice();
-  if (actionEntry) {
-    if (!snapshots.length || snapshots[0].name !== 'before')
-      snapshots.unshift({ name: 'before', snapshotTime: actionEntry ? actionEntry.action.startTime : 0 });
-    if (snapshots[snapshots.length - 1].name !== 'after')
-      snapshots.push({ name: 'after', snapshotTime: actionEntry ? actionEntry.action.endTime : 0 });
-  }
-  const { pageId, time } = selection || { pageId: undefined, time: 0 };
+  const snapshotMap = new Map<string, { title: string, snapshotName: string }>();
+  for (const snapshot of action?.metadata.snapshots || [])
+    snapshotMap.set(snapshot.title, snapshot);
+  const actionSnapshot = snapshotMap.get('action') || snapshotMap.get('after');
+  const snapshots = [actionSnapshot ? { ...actionSnapshot, title: 'action' } : undefined, snapshotMap.get('before'), snapshotMap.get('after')].filter(Boolean) as { title: string, snapshotName: string }[];
+
+  if (snapshotIndex >= snapshots.length)
+    snapshotIndex = snapshots.length - 1;
 
   const iframeRef = React.createRef<HTMLIFrameElement>();
   React.useEffect(() => {
     if (!iframeRef.current)
       return;
-
-    // TODO: this logic is copied from SnapshotServer. Find a way to share.
-    let snapshotUrl = 'data:text/html,Snapshot is not available';
-    if (pageId) {
-      snapshotUrl = `/snapshot/pageId/${pageId}/timestamp/${time}/main`;
-    } else if (actionEntry) {
+    let snapshotUri = undefined;
+    let point: Point | undefined = undefined;
+    if (action) {
       const snapshot = snapshots[snapshotIndex];
-      if (snapshot && snapshot.snapshotTime)
-        snapshotUrl = `/snapshot/pageId/${actionEntry.action.pageId!}/timestamp/${snapshot.snapshotTime}/main`;
-      else if (snapshot && snapshot.snapshotId)
-        snapshotUrl = `/snapshot/pageId/${actionEntry.action.pageId!}/snapshotId/${snapshot.snapshotId}/main`;
+      if (snapshot && snapshot.snapshotName) {
+        snapshotUri = `${action.metadata.pageId}?name=${snapshot.snapshotName}`;
+        if (snapshot.snapshotName.includes('action'))
+          point = action.metadata.point;
+      }
     }
-
+    const snapshotUrl = snapshotUri ? `${window.location.origin}/snapshot/${snapshotUri}` : 'data:text/html,<body style="background: #ddd"></body>';
     try {
-      (iframeRef.current.contentWindow as any).showSnapshot(snapshotUrl);
+      (iframeRef.current.contentWindow as any).showSnapshot(snapshotUrl, { point });
     } catch (e) {
     }
-  }, [actionEntry, snapshotIndex, pageId, time]);
+  }, [action, snapshotIndex]);
 
   const scale = Math.min(measure.width / snapshotSize.width, measure.height / snapshotSize.height);
-  return <div className='snapshot-tab'>
-    <div className='snapshot-controls'>{
-      selection && <div key='selectedTime' className='snapshot-toggle'>
-        {msToString(selection.time - boundaries.minimum)}
-      </div>
-    }{!selection && snapshots.map((snapshot, index) => {
-        return <div
-          key={snapshot.name}
-          className={'snapshot-toggle' + (snapshotIndex === index ? ' toggled' : '')}
-          onClick={() => setSnapshotIndex(index)}>
-          {snapshot.name}
+  const scaledSize = {
+    width: snapshotSize.width * scale,
+    height: snapshotSize.height * scale,
+  };
+  return <div
+    className='snapshot-tab'
+    tabIndex={0}
+    onKeyDown={event => {
+      if (event.key === 'ArrowRight')
+        setSnapshotIndex(Math.min(snapshotIndex + 1, snapshots.length - 1));
+      if (event.key === 'ArrowLeft')
+        setSnapshotIndex(Math.max(snapshotIndex - 1, 0));
+    }}
+  ><div className='tab-strip'>
+      {snapshots.map((snapshot, index) => {
+        return <div className={'tab-element ' + (snapshotIndex === index ? ' selected' : '')}
+          onClick={() => setSnapshotIndex(index)}
+          key={snapshot.title}>
+          <div className='tab-label'>{renderTitle(snapshot.title)}</div>
         </div>
-      })
-    }</div>
+      })}
+    </div>
     <div ref={ref} className='snapshot-wrapper'>
       <div className='snapshot-container' style={{
         width: snapshotSize.width + 'px',
         height: snapshotSize.height + 'px',
-        transform: `translate(${-snapshotSize.width * (1 - scale) / 2}px, ${-snapshotSize.height * (1 - scale) / 2}px) scale(${scale})`,
+        transform: `translate(${-snapshotSize.width * (1 - scale) / 2 + (measure.width - scaledSize.width) / 2}px, ${-snapshotSize.height * (1 - scale) / 2  + (measure.height - scaledSize.height) / 2}px) scale(${scale})`,
       }}>
         <iframe ref={iframeRef} id='snapshot' name='snapshot' src='/snapshot/'></iframe>
       </div>
     </div>
   </div>;
 };
+
+function renderTitle(snapshotTitle: string): string {
+  if (snapshotTitle === 'before')
+    return 'Before';
+  if (snapshotTitle === 'after')
+    return 'After';
+  if (snapshotTitle === 'action')
+    return 'Action';
+  return snapshotTitle;
+}

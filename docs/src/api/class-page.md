@@ -73,6 +73,23 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class PageExamples
+{
+    public static async Task Run()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Webkit.LaunchAsync();
+        var page = await browser.NewPageAsync();
+        await page.GotoAsync("https://www.theverge.com");
+        await page.ScreenshotAsync("theverge.png");
+    }
+}
+```
+
 The Page class emits various events (described below) which can be handled using any of Node's native
 [`EventEmitter`](https://nodejs.org/api/events.html#events_class_eventemitter) methods, such as `on`, `once` or
 `removeListener`.
@@ -89,6 +106,10 @@ page.onLoad(p -> System.out.println("Page loaded!"));
 
 ```py
 page.once("load", lambda: print("page loaded!"))
+```
+
+```csharp
+page.Load += (_, _) => Console.WriteLine("Page loaded!");
 ```
 
 To unsubscribe from events use the `removeListener` method:
@@ -119,6 +140,16 @@ page.on("request", log_request)
 page.remove_listener("request", log_request)
 ```
 
+```csharp
+void PageLoadHandler(object _, IPage p) {
+    Console.WriteLine("Page loaded!");
+};
+
+page.Load += PageLoadHandler;
+// Do some work...
+page.Load -= PageLoadHandler;
+```
+
 ## event: Page.close
 - argument: <[Page]>
 
@@ -137,15 +168,15 @@ The arguments passed into `console.log` appear as arguments on the event handler
 An example of handling `console` event:
 
 ```js
-page.on('console', msg => {
+page.on('console', async msg => {
   for (let i = 0; i < msg.args().length; ++i)
     console.log(`${i}: ${await msg.args()[i].jsonValue()}`);
 });
-page.evaluate(() => console.log('hello', 5, {foo: 'bar'}));
+await page.evaluate(() => console.log('hello', 5, {foo: 'bar'}));
 ```
 
 ```java
-page.onConsole(msg -> {
+page.onConsoleMessage(msg -> {
   for (int i = 0; i < msg.args().size(); ++i)
     System.out.println(i + ": " + msg.args().get(i).jsonValue());
 });
@@ -168,6 +199,16 @@ def print_args(msg):
 
 page.on("console", print_args)
 page.evaluate("console.log('hello', 5, {foo: 'bar'})")
+```
+
+```csharp
+page.Console += async (_, msg) =>
+{
+    foreach (var arg in msg.Args)
+        Console.WriteLine(await arg.JsonValueAsync<object>());
+};
+
+await page.EvaluateAsync("console.log('hello', 5, { foo: 'bar' })");
 ```
 
 ## event: Page.crash
@@ -220,6 +261,17 @@ except Error as e:
     # when the page crashes, exception message contains "crash".
 ```
 
+```csharp
+try {
+  // Crash might happen during a click.
+  await page.ClickAsync("button");
+  // Or while waiting for an event.
+  await page.WaitForPopup();
+} catch (PlaywrightException e) {
+  // When the page crashes, exception message contains "crash".
+}
+```
+
 ## event: Page.dialog
 - argument: <[Dialog]>
 
@@ -267,6 +319,13 @@ page.onFileChooser(fileChooser -> {
 
 ```py
 page.on("filechooser", lambda file_chooser: file_chooser.set_files("/tmp/myfile.pdf"))
+```
+
+```csharp
+page.FileChooser += (_, fileChooser) =>
+{
+    fileChooser.SetFilesAsync(@"C:\temp\myfile.pdf");
+};
 ```
 
 ## event: Page.frameAttached
@@ -337,6 +396,14 @@ popup = page_info.value
 print(popup.evaluate("location.href"))
 ```
 
+```csharp
+var popup = await page.RunAndWaitForPopupAsync(async () =>
+{
+    await page.EvaluateAsync("() => window.open('https://microsoft.com')");
+});
+Console.WriteLine(await popup.EvaluateAsync<string>("location.href"));
+```
+
 :::note
 Use [`method: Page.waitForLoadState`] to wait until the page gets to a particular state (you should not need it in most
 cases).
@@ -355,7 +422,8 @@ Emitted when a request fails, for example by timing out.
 
 :::note
 HTTP Error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request will complete
-with [`event: Page.requestFinished`] event and not with [`event: Page.requestFailed`].
+with [`event: Page.requestFinished`] event and not with [`event: Page.requestFailed`]. A request will only be considered
+failed when the client cannot get an HTTP response from the server, e.g. due to network error net::ERR_FAILED.
 :::
 
 ## event: Page.requestFinished
@@ -420,6 +488,10 @@ await page.add_init_script(path="./preload.js")
 ```python sync
 # in your playwright script, assuming the preload.js file is in same directory
 page.add_init_script(path="./preload.js")
+```
+
+```csharp
+await page.AddInitScriptAsync(new PageAddInitScriptOption { ScriptPath = "./preload.js" });
 ```
 
 :::note
@@ -509,23 +581,25 @@ Brings page to front (activates tab).
 ## async method: Page.check
 
 This method checks an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
-1. Ensure that matched element is a checkbox or a radio input. If not, this method rejects. If the element is already
+1. Ensure that matched element is a checkbox or a radio input. If not, this method throws. If the element is already
    checked, this method returns immediately.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
 1. Scroll the element into view if needed.
 1. Use [`property: Page.mouse`] to click in the center of the element.
 1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set.
-1. Ensure that the element is now checked. If not, this method rejects.
+1. Ensure that the element is now checked. If not, this method throws.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 Shortcut for main frame's [`method: Frame.check`].
 
 ### param: Page.check.selector = %%-input-selector-%%
+
+### option: Page.check.position = %%-input-position-%%
 
 ### option: Page.check.force = %%-input-force-%%
 
@@ -533,10 +607,12 @@ Shortcut for main frame's [`method: Frame.check`].
 
 ### option: Page.check.timeout = %%-input-timeout-%%
 
+### option: Page.check.trial = %%-input-trial-%%
+
 ## async method: Page.click
 
 This method clicks an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
@@ -544,7 +620,7 @@ This method clicks an element matching [`param: selector`] by performing the fol
 1. Use [`property: Page.mouse`] to click in the center of the element, or the specified [`option: position`].
 1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 Shortcut for main frame's [`method: Frame.click`].
@@ -566,6 +642,8 @@ Shortcut for main frame's [`method: Frame.click`].
 ### option: Page.click.noWaitAfter = %%-input-no-wait-after-%%
 
 ### option: Page.click.timeout = %%-input-timeout-%%
+
+### option: Page.click.trial = %%-input-trial-%%
 
 ## async method: Page.close
 
@@ -597,24 +675,29 @@ Get the browser context that the page belongs to.
 
 ## property: Page.coverage
 * langs: js
-- type: <[null]|[ChromiumCoverage]>
+- type: <[Coverage]>
 
-Browser-specific Coverage implementation, only available for Chromium atm. See
-[ChromiumCoverage](#class-chromiumcoverage) for more details.
+:::note
+Only available for Chromium atm.
+:::
+
+Browser-specific Coverage implementation. See [Coverage](#class-coverage) for more details.
 
 ## async method: Page.dblclick
+* langs:
+  - alias-csharp: DblClickAsync
 
 This method double clicks an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
 1. Scroll the element into view if needed.
 1. Use [`property: Page.mouse`] to double click in the center of the element, or the specified [`option: position`].
 1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set. Note that
-   if the first click of the `dblclick()` triggers a navigation event, this method will reject.
+   if the first click of the `dblclick()` triggers a navigation event, this method will throw.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 :::note
@@ -639,10 +722,12 @@ Shortcut for main frame's [`method: Frame.dblclick`].
 
 ### option: Page.dblclick.timeout = %%-input-timeout-%%
 
+### option: Page.dblclick.trial = %%-input-trial-%%
+
 ## async method: Page.dispatchEvent
 
-The snippet below dispatches the `click` event on the element. Regardless of the visibility state of the elment, `click`
-is dispatched. This is equivalend to calling
+The snippet below dispatches the `click` event on the element. Regardless of the visibility state of the element, `click`
+is dispatched. This is equivalent to calling
 [element.click()](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/click).
 
 ```js
@@ -659,6 +744,10 @@ await page.dispatch_event("button#submit", "click")
 
 ```python sync
 page.dispatch_event("button#submit", "click")
+```
+
+```csharp
+await page.DispatchEventAsync("button#submit", "click");
 ```
 
 Under the hood, it creates an instance of an event based on the given [`param: type`], initializes it with
@@ -703,6 +792,11 @@ data_transfer = page.evaluate_handle("new DataTransfer()")
 page.dispatch_event("#source", "dragstart", { "dataTransfer": data_transfer })
 ```
 
+```csharp
+var dataTransfer = await page.EvaluateHandleAsync("() => new DataTransfer()");
+await page.DispatchEventAsync("#source", "dragstart", new { dataTransfer });
+```
+
 ### param: Page.dispatchEvent.selector = %%-input-selector-%%
 
 ### param: Page.dispatchEvent.type
@@ -718,6 +812,8 @@ Optional event-specific initialization properties.
 ### option: Page.dispatchEvent.timeout = %%-input-timeout-%%
 
 ## async method: Page.emulateMedia
+
+This method changes the `CSS media type` through the `media` argument, and/or the `'prefers-colors-scheme'` media feature, using the `colorScheme` argument.
 
 ```js
 await page.evaluate(() => matchMedia('screen').matches);
@@ -795,6 +891,25 @@ page.evaluate("matchMedia('print').matches")
 # → False
 ```
 
+```csharp
+await page.EvaluateAsync("() => matchMedia('screen').matches");
+// → true
+await page.EvaluateAsync("() => matchMedia('print').matches");
+// → false
+
+await page.EmulateMediaAsync(new PageEmulateMediaOptions { Media = Media.Print });
+await page.EvaluateAsync("() => matchMedia('screen').matches");
+// → false
+await page.EvaluateAsync("() => matchMedia('print').matches");
+// → true
+
+await page.EmulateMediaAsync(new PageEmulateMediaOptions { Media = Media.Screen });
+await page.EvaluateAsync("() => matchMedia('screen').matches");
+// → true
+await page.EvaluateAsync("() => matchMedia('print').matches");
+// → false
+```
+
 ```js
 await page.emulateMedia({ colorScheme: 'dark' });
 await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
@@ -834,17 +949,55 @@ page.evaluate("matchMedia('(prefers-color-scheme: light)').matches")
 page.evaluate("matchMedia('(prefers-color-scheme: no-preference)').matches")
 ```
 
+```csharp
+await page.EmulateMediaAsync(new PageEmulateMediaOptions { ColorScheme = ColorScheme.Dark });
+await page.EvaluateAsync("matchMedia('(prefers-color-scheme: dark)').matches");
+// → true
+await page.EvaluateAsync("matchMedia('(prefers-color-scheme: light)').matches");
+// → false
+await page.EvaluateAsync("matchMedia('(prefers-color-scheme: no-preference)').matches");
+// → false
+```
+
 ### option: Page.emulateMedia.media
+* langs: js, python, java
 - `media` <null|[Media]<"screen"|"print">>
 
 Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`.
 Passing `null` disables CSS media emulation.
 
+### option: Page.emulateMedia.media
+* langs: csharp
+- `media` <[Media]<"screen"|"print"|"null">>
+
+Changes the CSS media type of the page. The only allowed values are `'Screen'`, `'Print'` and `'Null'`.
+Passing `'Null'` disables CSS media emulation.
+
 ### option: Page.emulateMedia.colorScheme
+* langs: js, python, java
 - `colorScheme` <null|[ColorScheme]<"light"|"dark"|"no-preference">>
 
 Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. Passing
 `null` disables color scheme emulation.
+
+### option: Page.emulateMedia.colorScheme
+* langs: csharp
+- `colorScheme` <[ColorScheme]<"light"|"dark"|"no-preference"|"null">>
+
+Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. Passing
+`'Null'` disables color scheme emulation.
+
+### option: Page.emulateMedia.reducedMotion
+* langs: js, python, java
+- `reducedMotion` <null|[ReducedMotion]<"reduce"|"no-preference">>
+
+Emulates `'prefers-reduced-motion'` media feature, supported values are `'reduce'`, `'no-preference'`. Passing `null` disables reduced motion emulation.
+
+### option: Page.emulateMedia.reducedMotion
+* langs: csharp
+- `reducedMotion` <[ReducedMotion]<"reduce"|"no-preference"|"null">>
+
+Emulates `'prefers-reduced-motion'` media feature, supported values are `'reduce'`, `'no-preference'`. Passing `null` disables reduced motion emulation.
 
 ## async method: Page.evalOnSelector
 * langs:
@@ -865,6 +1018,8 @@ Examples:
 const searchValue = await page.$eval('#search', el => el.value);
 const preloadHref = await page.$eval('link[rel=preload]', el => el.href);
 const html = await page.$eval('.main-container', (e, suffix) => e.outerHTML + suffix, 'hello');
+// In TypeScript, this example requires an explicit type annotation (HTMLLinkElement) on el:
+const preloadHrefTS = await page.$eval('link[rel=preload]', (el: HTMLLinkElement) => el.href);
 ```
 
 ```java
@@ -883,6 +1038,12 @@ html = await page.eval_on_selector(".main-container", "(e, suffix) => e.outer_ht
 search_value = page.eval_on_selector("#search", "el => el.value")
 preload_href = page.eval_on_selector("link[rel=preload]", "el => el.href")
 html = page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
+```
+
+```csharp
+var searchValue = await page.EvalOnSelectorAsync<string>("#search", "el => el.value");
+var preloadHref = await page.EvalOnSelectorAsync<string>("link[rel=preload]", "el => el.href");
+var html = await page.EvalOnSelectorAsync(".main-container", "(e, suffix) => e.outerHTML + suffix", "hello");
 ```
 
 Shortcut for main frame's [`method: Frame.evalOnSelector`].
@@ -924,6 +1085,10 @@ div_counts = await page.eval_on_selector_all("div", "(divs, min) => divs.length 
 
 ```python sync
 div_counts = page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
+```
+
+```csharp
+var divsCount = await page.EvalOnSelectorAllAsync<bool>("div", "(divs, min) => divs.length >= min", 10);
 ```
 
 ### param: Page.evalOnSelectorAll.selector = %%-query-selector-%%
@@ -973,6 +1138,11 @@ result = page.evaluate("([x, y]) => Promise.resolve(x * y)", [7, 8])
 print(result) # prints "56"
 ```
 
+```csharp
+var result = await page.EvaluateAsync<int>("([x, y]) => Promise.resolve(x * y)", new[] { 7, 8 });
+Console.WriteLine(result);
+```
+
 A string can also be passed in instead of a function:
 
 ```js
@@ -995,6 +1165,10 @@ print(await page.evaluate(f"1 + {x}")) # prints "11"
 print(page.evaluate("1 + 2")) # prints "3"
 x = 10
 print(page.evaluate(f"1 + {x}")) # prints "11"
+```
+
+```csharp
+Console.WriteLine(await page.EvaluateAsync<int>("1 + 2")); // prints "3"
 ```
 
 [ElementHandle] instances can be passed as an argument to the [`method: Page.evaluate`]:
@@ -1021,6 +1195,12 @@ await body_handle.dispose()
 body_handle = page.query_selector("body")
 html = page.evaluate("([body, suffix]) => body.innerHTML + suffix", [body_handle, "hello"])
 body_handle.dispose()
+```
+
+```csharp
+var bodyHandle = await page.QuerySelectorAsync("body");
+var html = await page.EvaluateAsync<string>("([body, suffix]) => body.innerHTML + suffix", new object [] { bodyHandle, "hello" });
+await bodyHandle.DisposeAsync();
 ```
 
 Shortcut for main frame's [`method: Frame.evaluate`].
@@ -1062,6 +1242,11 @@ a_window_handle = page.evaluate_handle("Promise.resolve(window)")
 a_window_handle # handle for the window object.
 ```
 
+```csharp
+// Handle for the window object.
+var aWindowHandle = await page.EvaluateHandleAsync("() => Promise.resolve(window)");
+```
+
 A string can also be passed in instead of a function:
 
 ```js
@@ -1078,6 +1263,10 @@ a_handle = await page.evaluate_handle("document") # handle for the "document"
 
 ```python sync
 a_handle = page.evaluate_handle("document") # handle for the "document"
+```
+
+```csharp
+var docHandle = await page.EvalueHandleAsync("document"); // Handle for the `document`
 ```
 
 [JSHandle] instances can be passed as an argument to the [`method: Page.evaluateHandle`]:
@@ -1108,6 +1297,13 @@ a_handle = page.evaluate_handle("document.body")
 result_handle = page.evaluate_handle("body => body.innerHTML", a_handle)
 print(result_handle.json_value())
 result_handle.dispose()
+```
+
+```csharp
+var handle = await page.EvaluateHandleAsync("() => document.body");
+var resultHandle = await page.EvaluateHandleAsync("([body, suffix]) => body.innerHTML + suffix", new object[] { handle, "hello" });
+Console.WriteLine(await resultHandle.JsonValueAsync<string>());
+await resultHandle.DisposeAsync();
 ```
 
 ### param: Page.evaluateHandle.expression = %%-evaluate-expression-%%
@@ -1230,6 +1426,35 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class PageExamples
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Webkit.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless: false
+        });
+        var page = await browser.NewPageAsync();
+
+        await page.ExposeBindingAsync("pageUrl", (source) => source.Page.Url);
+        await page.SetContentAsync("<script>\n" +
+        "  async function onClick() {\n" +
+        "    document.querySelector('div').textContent = await window.pageURL();\n" +
+        "  }\n" +
+        "</script>\n" +
+        "<button onclick=\"onClick()\">Click me</button>\n" +
+        "<div></div>");
+
+        await page.ClickAsync("button");
+    }
+}
+```
+
 An example of passing an element handle:
 
 ```js
@@ -1287,6 +1512,23 @@ page.set_content("""
 """)
 ```
 
+```csharp
+var result = new TaskCompletionSource<string>();
+await page.ExposeBindingAsync("clicked", async (BindingSource _, IJSHandle t) =>
+{
+    return result.TrySetResult(await t.AsElement().TextContentAsync());
+});
+
+await page.SetContentAsync("<script>\n" +
+  "  document.addEventListener('click', event => window.clicked(event.target));\n" +
+  "</script>\n" +
+  "<div>Click me</div>\n" +
+  "<div>Or click me</div>\n");
+
+await page.ClickAsync("div");
+Console.WriteLine(await result.Task);
+```
+
 ### param: Page.exposeBinding.name
 - `name` <[string]>
 
@@ -1316,7 +1558,7 @@ See [`method: BrowserContext.exposeFunction`] for context-wide exposed function.
 Functions installed via [`method: Page.exposeFunction`] survive navigations.
 :::
 
-An example of adding an `sha1` function to the page:
+An example of adding a `sha256` function to the page:
 
 ```js
 const { webkit } = require('playwright');  // Or 'chromium' or 'firefox'.
@@ -1325,11 +1567,11 @@ const crypto = require('crypto');
 (async () => {
   const browser = await webkit.launch({ headless: false });
   const page = await browser.newPage();
-  await page.exposeFunction('sha1', text => crypto.createHash('sha1').update(text).digest('hex'));
+  await page.exposeFunction('sha256', text => crypto.createHash('sha256').update(text).digest('hex'));
   await page.setContent(`
     <script>
       async function onClick() {
-        document.querySelector('div').textContent = await window.sha1('PLAYWRIGHT');
+        document.querySelector('div').textContent = await window.sha256('PLAYWRIGHT');
       }
     </script>
     <button onclick="onClick()">Click me</button>
@@ -1353,11 +1595,11 @@ public class Example {
       BrowserType webkit = playwright.webkit();
       Browser browser = webkit.launch({ headless: false });
       Page page = browser.newPage();
-      page.exposeFunction("sha1", args -> {
+      page.exposeFunction("sha256", args -> {
         String text = (String) args[0];
         MessageDigest crypto;
         try {
-          crypto = MessageDigest.getInstance("SHA-1");
+          crypto = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
           return null;
         }
@@ -1366,7 +1608,7 @@ public class Example {
       });
       page.setContent("<script>\n" +
         "  async function onClick() {\n" +
-        "    document.querySelector('div').textContent = await window.sha1('PLAYWRIGHT');\n" +
+        "    document.querySelector('div').textContent = await window.sha256('PLAYWRIGHT');\n" +
         "  }\n" +
         "</script>\n" +
         "<button onclick=\"onClick()\">Click me</button>\n" +
@@ -1382,8 +1624,8 @@ import asyncio
 import hashlib
 from playwright.async_api import async_playwright
 
-async def sha1(text):
-    m = hashlib.sha1()
+def sha256(text):
+    m = hashlib.sha256()
     m.update(bytes(text, "utf8"))
     return m.hexdigest()
 
@@ -1392,11 +1634,11 @@ async def run(playwright):
     webkit = playwright.webkit
     browser = await webkit.launch(headless=False)
     page = await browser.new_page()
-    await page.expose_function("sha1", sha1)
+    await page.expose_function("sha256", sha256)
     await page.set_content("""
         <script>
           async function onClick() {
-            document.querySelector('div').textContent = await window.sha1('PLAYWRIGHT');
+            document.querySelector('div').textContent = await window.sha256('PLAYWRIGHT');
           }
         </script>
         <button onclick="onClick()">Click me</button>
@@ -1414,8 +1656,8 @@ asyncio.run(main())
 import hashlib
 from playwright.sync_api import sync_playwright
 
-def sha1(text):
-    m = hashlib.sha1()
+def sha256(text):
+    m = hashlib.sha256()
     m.update(bytes(text, "utf8"))
     return m.hexdigest()
 
@@ -1424,11 +1666,11 @@ def run(playwright):
     webkit = playwright.webkit
     browser = webkit.launch(headless=False)
     page = browser.new_page()
-    page.expose_function("sha1", sha1)
+    page.expose_function("sha256", sha256)
     page.set_content("""
         <script>
           async function onClick() {
-            document.querySelector('div').textContent = await window.sha1('PLAYWRIGHT');
+            document.querySelector('div').textContent = await window.sha256('PLAYWRIGHT');
           }
         </script>
         <button onclick="onClick()">Click me</button>
@@ -1438,6 +1680,43 @@ def run(playwright):
 
 with sync_playwright() as playwright:
     run(playwright)
+```
+
+```csharp
+using Microsoft.Playwright;
+using System;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
+
+class PageExamples
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Webkit.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless: false
+        });
+        var page = await browser.NewPageAsync();
+
+        await page.ExposeFunctionAsync("sha256", (string input) =>
+        {
+            return Convert.ToBase64String(
+                SHA256.Create().ComputeHash(System.Text.Encoding.UTF8.GetBytes(input)));
+        });
+
+        await page.SetContentAsync("<script>\n" +
+        "  async function onClick() {\n" +
+        "    document.querySelector('div').textContent = await window.sha256('PLAYWRIGHT');\n" +
+        "  }\n" +
+        "</script>\n" +
+        "<button onclick=\"onClick()\">Click me</button>\n" +
+        "<div></div>");
+
+        await page.ClickAsync("button");
+        Console.WriteLine(await page.TextContentAsync("div"));
+    }
+}
 ```
 
 ### param: Page.exposeFunction.name
@@ -1452,14 +1731,13 @@ Callback function which will be called in Playwright's context.
 
 ## async method: Page.fill
 
-This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks, focuses the element, fills it and triggers an `input` event after filling.
-If the element is inside the `<label>` element that has associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be filled instead.
-If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error.
-Note that you can pass an empty string to clear the input field.
+This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks, focuses the element, fills it and triggers an `input` event after filling. Note that you can pass an empty string to clear the input field.
+
+If the target element is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error. However, if the element is inside the `<label>` element that has an associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), the control will be filled instead.
 
 To send fine-grained keyboard events, use [`method: Page.type`].
 
-Shortcut for main frame's [`method: Frame.fill`]
+Shortcut for main frame's [`method: Frame.fill`].
 
 ### param: Page.fill.selector = %%-input-selector-%%
 
@@ -1500,6 +1778,10 @@ Frame frame = page.frame("frame-name");
 frame = page.frame(name="frame-name")
 ```
 
+```csharp
+var frame = page.Frame("frame-name");
+```
+
 ```js
 const frame = page.frame({ url: /.*domain.*/ });
 ```
@@ -1510,6 +1792,10 @@ Frame frame = page.frameByUrl(Pattern.compile(".*domain.*");
 
 ```py
 frame = page.frame(url=r".*domain.*")
+```
+
+```csharp
+var frame = page.FrameByUrl(".*domain.*");
 ```
 
 ### param: Page.frame.frameSelector
@@ -1566,9 +1852,9 @@ last redirect. If can not go back, returns `null`.
 
 Navigate to the previous page in history.
 
-### option: Page.goBack.timeout = %%-navigation-timeout-%%
-
 ### option: Page.goBack.waitUntil = %%-navigation-wait-until-%%
+
+### option: Page.goBack.timeout = %%-navigation-timeout-%%
 
 ## async method: Page.goForward
 - returns: <[null]|[Response]>
@@ -1578,9 +1864,9 @@ last redirect. If can not go forward, returns `null`.
 
 Navigate to the next page in history.
 
-### option: Page.goForward.timeout = %%-navigation-timeout-%%
-
 ### option: Page.goForward.waitUntil = %%-navigation-wait-until-%%
+
+### option: Page.goForward.timeout = %%-navigation-timeout-%%
 
 ## async method: Page.goto
 * langs:
@@ -1618,9 +1904,9 @@ Shortcut for main frame's [`method: Frame.goto`]
 
 URL to navigate page to. The url should include scheme, e.g. `https://`.
 
-### option: Page.goto.timeout = %%-navigation-timeout-%%
-
 ### option: Page.goto.waitUntil = %%-navigation-wait-until-%%
+
+### option: Page.goto.timeout = %%-navigation-timeout-%%
 
 ### option: Page.goto.referer
 - `referer` <[string]>
@@ -1631,7 +1917,7 @@ Referer header value. If provided it will take preference over the referer heade
 ## async method: Page.hover
 
 This method hovers over an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
@@ -1639,7 +1925,7 @@ This method hovers over an element matching [`param: selector`] by performing th
 1. Use [`property: Page.mouse`] to hover over the center of the element, or the specified [`option: position`].
 1. Wait for initiated navigations to either succeed or fail, unless `noWaitAfter` option is set.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 Shortcut for main frame's [`method: Frame.hover`].
@@ -1653,6 +1939,8 @@ Shortcut for main frame's [`method: Frame.hover`].
 ### option: Page.hover.force = %%-input-force-%%
 
 ### option: Page.hover.timeout = %%-input-timeout-%%
+
+### option: Page.hover.trial = %%-input-trial-%%
 
 ## async method: Page.innerHTML
 - returns: <[string]>
@@ -1800,6 +2088,12 @@ await page.pdf(path="page.pdf")
 # generates a pdf with "screen" media type.
 page.emulate_media(media="screen")
 page.pdf(path="page.pdf")
+```
+
+```csharp
+// Generates a PDF with 'screen' media type
+await page.EmulateMediaAsync(new PageEmulateMediaOptions { Media = Media.Screen });
+await page.PdfAsync(new PagePdfOptions { Path = "page.pdf" });
 ```
 
 The [`option: width`], [`option: height`], and [`option: margin`] options accept values labeled with units. Unlabeled
@@ -1956,7 +2250,7 @@ Holding down `Shift` will type the text that corresponds to the [`param: key`] i
 If [`param: key`] is a single character, it is case-sensitive, so the values `a` and `A` will generate different
 respective texts.
 
-Shortcuts such as `key: "Control+o"` or `key: "Control+Shift+T"` are supported as well. When speficied with the
+Shortcuts such as `key: "Control+o"` or `key: "Control+Shift+T"` are supported as well. When specified with the
 modifier, modifier is pressed and being held while the subsequent key is being pressed.
 
 ```js
@@ -2006,6 +2300,17 @@ page.screenshot(path="o.png")
 browser.close()
 ```
 
+```csharp
+var page = await browser.NewPageAsync();
+await page.GotoAsync("https://keycode.info");
+await page.PressAsync("body", "A");
+await page.ScreenshotAsync("A.png");
+await page.PressAsync("body", "ArrowLeft");
+await page.ScreenshotAsync("ArrowLeft.png");
+await page.PressAsync("body", "Shift+O");
+await page.ScreenshotAsync("O.png");
+```
+
 ### param: Page.press.selector = %%-input-selector-%%
 
 ### param: Page.press.key
@@ -2029,7 +2334,7 @@ Time to wait between `keydown` and `keyup` in milliseconds. Defaults to 0.
 - returns: <[null]|[ElementHandle]>
 
 The method finds an element matching the specified selector within the page. If no elements match the selector, the
-return value resolves to `null`.
+return value resolves to `null`. To wait for an element on the page, use [`method: Page.waitForSelector`].
 
 Shortcut for main frame's [`method: Frame.querySelector`].
 
@@ -2054,9 +2359,9 @@ Shortcut for main frame's [`method: Frame.querySelectorAll`].
 Returns the main resource response. In case of multiple redirects, the navigation will resolve with the response of the
 last redirect.
 
-### option: Page.reload.timeout = %%-navigation-timeout-%%
-
 ### option: Page.reload.waitUntil = %%-navigation-wait-until-%%
+
+### option: Page.reload.timeout = %%-navigation-timeout-%%
 
 ## async method: Page.route
 
@@ -2068,7 +2373,7 @@ Once routing is enabled, every request matching the url pattern will stall unles
 The handler will only be called for the first url if the response is a redirect.
 :::
 
-An example of a naïve handler that aborts all image requests:
+An example of a naive handler that aborts all image requests:
 
 ```js
 const page = await browser.newPage();
@@ -2096,6 +2401,12 @@ page = browser.new_page()
 page.route("**/*.{png,jpg,jpeg}", lambda route: route.abort())
 page.goto("https://example.com")
 browser.close()
+```
+
+```csharp
+var page = await browser.NewPageAsync();
+await page.RouteAsync("**/*.{png,jpg,jpeg}", async r => await r.AbortAsync());
+await page.GotoAsync("https://www.microsoft.com");
 ```
 
 or the same snippet using a regex pattern instead:
@@ -2128,8 +2439,64 @@ page.goto("https://example.com")
 browser.close()
 ```
 
+```csharp
+var page = await browser.NewPageAsync();
+await page.RouteAsync(new Regex("(\\.png$)|(\\.jpg$)"), async r => await r.AbortAsync());
+await page.GotoAsync("https://www.microsoft.com");
+```
+
+It is possible to examine the request to decide the route action. For example, mocking all requests that contain some post data, and leaving all other requests as is:
+
+```js
+await page.route('/api/**', route => {
+  if (route.request().postData().includes('my-string'))
+    route.fulfill({ body: 'mocked-data' });
+  else
+    route.continue();
+});
+```
+
+```java
+page.route("/api/**", route -> {
+  if (route.request().postData().contains("my-string"))
+    route.fulfill(new Route.FulfillOptions().setBody("mocked-data"));
+  else
+    route.resume();
+});
+```
+
+```python async
+def handle_route(route):
+  if ("my-string" in route.request.post_data)
+    route.fulfill(body="mocked-data")
+  else
+    route.continue_()
+await page.route("/api/**", handle_route)
+```
+
+```python sync
+def handle_route(route):
+  if ("my-string" in route.request.post_data)
+    route.fulfill(body="mocked-data")
+  else
+    route.continue_()
+page.route("/api/**", handle_route)
+```
+
+```csharp
+await page.RouteAsync("/api/**", async r =>
+{
+  if (r.Request.PostData.Contains("my-string"))
+      await r.FulfillAsync(new RouteFulfillOptions { Body = "mocked-data" });
+  else
+      await r.ContinueAsync();
+});
+```
+
 Page routes take precedence over browser context routes (set up with [`method: BrowserContext.route`]) when request
 matches both handlers.
+
+To remove a route with its handler you can use [`method: Page.unroute`].
 
 :::note
 Enabling routing disables http cache.
@@ -2156,10 +2523,6 @@ handler function to route the request.
 - returns: <[Buffer]>
 
 Returns the buffer with the captured screenshot.
-
-:::note
-Screenshots take at least 1/6 second on Chromium OS X and Chromium Windows. See https://crbug.com/741689 for discussion.
-:::
 
 ### option: Page.screenshot.path
 - `path` <[path]>
@@ -2201,12 +2564,13 @@ Defaults to `false`.
 ## async method: Page.selectOption
 - returns: <[Array]<[string]>>
 
+This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks, waits until all specified options are present in the `<select>` element and selects these options.
+
+If the target element is not a `<select>` element, this method throws an error. However, if the element is inside the `<label>` element that has an associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), the control will be used instead.
+
 Returns the array of option values that have been successfully selected.
 
-Triggers a `change` and `input` event once all the provided options have been selected. If there's no `<select>` element
-matching [`param: selector`], the method throws an error.
-
-Will wait until all specified options are present in the `<select>` element.
+Triggers a `change` and `input` event once all the provided options have been selected.
 
 ```js
 // single selection matching the value
@@ -2247,7 +2611,16 @@ page.select_option("select#colors", label="blue")
 page.select_option("select#colors", value=["red", "green", "blue"])
 ```
 
-Shortcut for main frame's [`method: Frame.selectOption`]
+```csharp
+// single selection matching the value
+await page.SelectOptionAsync("select#colors", new[] { "blue" });
+// single selection matching both the value and the label
+await page.SelectOptionAsync("select#colors", new[] { new SelectOptionValue() { Label = "blue" } });
+// multiple 
+await page.SelectOptionAsync("select#colors", new[] { "red", "green", "blue" });
+```
+
+Shortcut for main frame's [`method: Frame.selectOption`].
 
 ### param: Page.selectOption.selector = %%-input-selector-%%
 
@@ -2277,6 +2650,7 @@ This setting will change the default maximum navigation time for the following m
 * [`method: Page.reload`]
 * [`method: Page.setContent`]
 * [`method: Page.waitForNavigation`]
+* [`method: Page.waitForURL`]
 
 :::note
 [`method: Page.setDefaultNavigationTimeout`] takes priority over [`method: Page.setDefaultTimeout`],
@@ -2365,6 +2739,12 @@ page.set_viewport_size({"width": 640, "height": 480})
 page.goto("https://example.com")
 ```
 
+```csharp
+var page = await browser.NewPageAsync();
+await page.SetViewportSizeAsync(640, 480);
+await page.GotoAsync("https://www.microsoft.com");
+```
+
 ### param: Page.setViewportSize.viewportSize
 * langs: js, python
 - `viewportSize` <[Object]>
@@ -2382,7 +2762,7 @@ page.goto("https://example.com")
 ## async method: Page.tap
 
 This method taps an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
@@ -2390,7 +2770,7 @@ This method taps an element matching [`param: selector`] by performing the follo
 1. Use [`property: Page.touchscreen`] to tap the center of the element, or the specified [`option: position`].
 1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 :::note
@@ -2410,6 +2790,8 @@ Shortcut for main frame's [`method: Frame.tap`].
 ### option: Page.tap.force = %%-input-force-%%
 
 ### option: Page.tap.timeout = %%-input-timeout-%%
+
+### option: Page.tap.trial = %%-input-trial-%%
 
 ## async method: Page.textContent
 - returns: <[null]|[string]>
@@ -2457,6 +2839,11 @@ page.type("#mytextarea", "hello") # types instantly
 page.type("#mytextarea", "world", delay=100) # types slower, like a user
 ```
 
+```csharp
+await page.TypeAsync("#mytextarea", "hello"); // types instantly
+await page.TypeAsync("#mytextarea", "world"); // types slower, like a user
+```
+
 Shortcut for main frame's [`method: Frame.type`].
 
 ### param: Page.type.selector = %%-input-selector-%%
@@ -2478,29 +2865,33 @@ Time to wait between key presses in milliseconds. Defaults to 0.
 ## async method: Page.uncheck
 
 This method unchecks an element matching [`param: selector`] by performing the following steps:
-1. Find an element match matching [`param: selector`]. If there is none, wait until a matching element is attached to
+1. Find an element matching [`param: selector`]. If there is none, wait until a matching element is attached to
    the DOM.
-1. Ensure that matched element is a checkbox or a radio input. If not, this method rejects. If the element is already
+1. Ensure that matched element is a checkbox or a radio input. If not, this method throws. If the element is already
    unchecked, this method returns immediately.
 1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
    set. If the element is detached during the checks, the whole action is retried.
 1. Scroll the element into view if needed.
 1. Use [`property: Page.mouse`] to click in the center of the element.
 1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set.
-1. Ensure that the element is now unchecked. If not, this method rejects.
+1. Ensure that the element is now unchecked. If not, this method throws.
 
-When all steps combined have not finished during the specified [`option: timeout`], this method rejects with a
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
 [TimeoutError]. Passing zero timeout disables this.
 
 Shortcut for main frame's [`method: Frame.uncheck`].
 
 ### param: Page.uncheck.selector = %%-input-selector-%%
 
+### option: Page.uncheck.position = %%-input-position-%%
+
 ### option: Page.uncheck.force = %%-input-force-%%
 
 ### option: Page.uncheck.noWaitAfter = %%-input-no-wait-after-%%
 
 ### option: Page.uncheck.timeout = %%-input-timeout-%%
+
+### option: Page.uncheck.trial = %%-input-trial-%%
 
 ## async method: Page.unroute
 
@@ -2539,8 +2930,8 @@ Video object associated with this page.
   - `width` <[int]> page width in pixels.
   - `height` <[int]> page height in pixels.
 
-## method: Page.waitForClose
-* langs: csharp, java
+## async method: Page.waitForClose
+* langs: java
 - returns: <[Page]>
 
 Performs action and waits for the Page to close.
@@ -2548,13 +2939,14 @@ Performs action and waits for the Page to close.
 ### option: Page.waitForClose.timeout = %%-wait-for-event-timeout-%%
 
 ## async method: Page.waitForConsoleMessage
-* langs: csharp, java, python
+* langs: java, python, csharp
   - alias-python: expect_console_message
+  - alias-csharp: RunAndWaitForConsoleMessage
 - returns: <[ConsoleMessage]>
 
-Performs action and waits for a [ConoleMessage] to be logged by in the page. If predicate is provided, it passes
+Performs action and waits for a [ConsoleMessage] to be logged by in the page. If predicate is provided, it passes
 [ConsoleMessage] value into the `predicate` function and waits for `predicate(message)` to return a truthy value.
-Will throw an error if the page is closed before the console event is fired.
+Will throw an error if the page is closed before the [`event: Page.console`] event is fired.
 
 ### option: Page.waitForConsoleMessage.predicate =
 - `predicate` <[function]\([ConsoleMessage]\):[boolean]>
@@ -2564,8 +2956,9 @@ Receives the [ConsoleMessage] object and resolves to truthy value when the waiti
 ### option: Page.waitForConsoleMessage.timeout = %%-wait-for-event-timeout-%%
 
 ## async method: Page.waitForDownload
-* langs: csharp, java, python
+* langs: java, python, csharp
   - alias-python: expect_download
+  - alias-csharp: RunAndWaitForDownload
 - returns: <[Download]>
 
 Performs action and waits for a new [Download]. If predicate is provided, it passes
@@ -2580,7 +2973,7 @@ Receives the [Download] object and resolves to truthy value when the waiting sho
 ### option: Page.waitForDownload.timeout = %%-wait-for-event-timeout-%%
 
 ## async method: Page.waitForEvent
-* langs: csharp, js, python
+* langs: js, python
   - alias-python: expect_event
 - returns: <[any]>
 
@@ -2618,8 +3011,9 @@ frame = event_info.value
 Either a predicate that receives an event or an options object. Optional.
 
 ## async method: Page.waitForFileChooser
-* langs: csharp, java, python
+* langs: java, python, csharp
   - alias-python: expect_file_chooser
+  - alias-csharp: RunAndWaitForFileChooser
 - returns: <[FileChooser]>
 
 Performs action and waits for a new [FileChooser] to be created. If predicate is provided, it passes
@@ -2703,6 +3097,23 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class FrameExamples
+{
+  public static async Task WaitForFunction()
+  {
+    using var playwright = await Playwright.CreateAsync();
+    await using var browser = await playwright.Webkit.LaunchAsync();
+    var page = await browser.NewPageAsync();
+    await page.SetViewportSizeAsync(50, 50);
+    await page.MainFrame.WaitForFunctionAsync("window.innerWidth < 100");
+  }
+}
+```
+
 To pass an argument to the predicate of [`method: Page.waitForFunction`] function:
 
 ```js
@@ -2723,6 +3134,11 @@ await page.wait_for_function("selector => !!document.querySelector(selector)", s
 ```python sync
 selector = ".foo"
 page.wait_for_function("selector => !!document.querySelector(selector)", selector)
+```
+
+```csharp
+var selector = ".foo";
+await page.WaitForFunctionAsync("selector => !!document.querySelector(selector)", selector);
 ```
 
 Shortcut for main frame's [`method: Frame.waitForFunction`].
@@ -2767,6 +3183,11 @@ page.click("button") # click triggers navigation.
 page.wait_for_load_state() # the promise resolves after "load" event.
 ```
 
+```csharp
+await page.ClickAsync("button"); // Click triggers navigation.
+await page.WaitForLoadStateAsync(); // The promise resolves after 'load' event.
+```
+
 ```js
 const [popup] = await Promise.all([
   page.waitForEvent('popup'),
@@ -2802,6 +3223,15 @@ popup.wait_for_load_state("domcontentloaded")
 print(popup.title()) # popup is ready to use.
 ```
 
+```csharp
+var popup = await page.RunAndWaitForPopupAsync(async () =>
+{
+    await page.ClickAsync("button"); // click triggers the popup/
+});
+await popup.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+Console.WriteLine(await popup.TitleAsync()); // popup is ready to use.
+```
+
 Shortcut for main frame's [`method: Frame.waitForLoadState`].
 
 ### param: Page.waitForLoadState.state = %%-wait-for-load-state-state-%%
@@ -2811,6 +3241,7 @@ Shortcut for main frame's [`method: Frame.waitForLoadState`].
 ## async method: Page.waitForNavigation
 * langs:
   * alias-python: expect_navigation
+  * alias-csharp: RunAndWaitForNavigation
 - returns: <[null]|[Response]>
 
 Waits for the main frame navigation and returns the main resource response. In case of multiple redirects, the navigation
@@ -2847,6 +3278,16 @@ with page.expect_navigation():
 # Resolves after navigation has finished
 ```
 
+```csharp
+await page.RunAndWaitForNavigationAsync(async () =>
+{
+    // Clicking the link will indirectly cause a navigation.
+    await page.ClickAsync("a.delayed-navigation");
+});
+
+// The method continues after navigation has finished
+```
+
 :::note
 Usage of the [History API](https://developer.mozilla.org/en-US/docs/Web/API/History_API) to change the URL is considered
 a navigation.
@@ -2854,15 +3295,16 @@ a navigation.
 
 Shortcut for main frame's [`method: Frame.waitForNavigation`].
 
-### option: Page.waitForNavigation.timeout = %%-navigation-timeout-%%
-
 ### option: Page.waitForNavigation.url = %%-wait-for-navigation-url-%%
 
 ### option: Page.waitForNavigation.waitUntil = %%-navigation-wait-until-%%
 
+### option: Page.waitForNavigation.timeout = %%-navigation-timeout-%%
+
 ## async method: Page.waitForPopup
-* langs: csharp, java, python
+* langs: java, python, csharp
   - alias-python: expect_popup
+  - alias-csharp: RunAndWaitForPopup
 - returns: <[Page]>
 
 Performs action and waits for a popup [Page]. If predicate is provided, it passes
@@ -2879,21 +3321,42 @@ Receives the [Page] object and resolves to truthy value when the waiting should 
 ## async method: Page.waitForRequest
 * langs:
   * alias-python: expect_request
+  * alias-csharp: RunAndWaitForRequest
 - returns: <[Request]>
 
-Waits for the matching request and returns it.
+Waits for the matching request and returns it.  See [waiting for event](./events.md#waiting-for-event) for more details about events.
 
 ```js
-const firstRequest = await page.waitForRequest('http://example.com/resource');
-const finalRequest = await page.waitForRequest(request => request.url() === 'http://example.com' && request.method() === 'GET');
-return firstRequest.url();
+// Note that Promise.all prevents a race condition
+// between clicking and waiting for the request.
+const [request] = await Promise.all([
+  // Waits for the next request with the specified url
+  page.waitForRequest('https://example.com/resource'),
+  // Triggers the request
+  page.click('button.triggers-request'),
+]);
+
+// Alternative way with a predicate.
+const [request] = await Promise.all([
+  // Waits for the next request matching some conditions
+  page.waitForRequest(request => request.url() === 'https://example.com' && request.method() === 'GET'),
+  // Triggers the request
+  page.click('button.triggers-request'),
+]);
 ```
 
 ```java
-Request firstRequest = page.waitForRequest("http://example.com/resource");
-Object finalRequest = page.waitForRequest(
-  request -> "http://example.com".equals(request.url()) && "GET".equals(request.method()), () -> {});
-return firstRequest.url();
+// Waits for the next request with the specified url
+Request request = page.waitForRequest("https://example.com/resource", () -> {
+  // Triggers the request
+  page.click("button.triggers-request");
+});
+
+// Waits for the next request matching some conditions
+Request request = page.waitForRequest(request -> "https://example.com".equals(request.url()) && "GET".equals(request.method()), () -> {
+  // Triggers the request
+  page.click("button.triggers-request");
+});
 ```
 
 ```python async
@@ -2901,6 +3364,7 @@ async with page.expect_request("http://example.com/resource") as first:
     await page.click('button')
 first_request = await first.value
 
+# or with a lambda
 async with page.expect_request(lambda request: request.url == "http://example.com" and request.method == "get") as second:
     await page.click('img')
 second_request = await second.value
@@ -2911,17 +3375,36 @@ with page.expect_request("http://example.com/resource") as first:
     page.click('button')
 first_request = first.value
 
+# or with a lambda
 with page.expect_request(lambda request: request.url == "http://example.com" and request.method == "get") as second:
     page.click('img')
 second_request = second.value
 ```
 
-```js
-await page.waitForRequest(request => request.url().searchParams.get('foo') === 'bar' && request.url().searchParams.get('foo2') === 'bar2');
+```csharp
+// Waits for the next request with the specified url.
+await page.RunAndWaitForRequestAsync(async () =>
+{
+    await page.ClickAsync("button");
+}, "http://example.com/resource");
+
+// Alternative way with a predicate.
+await page.RunAndWaitForRequestAsync(async () =>
+{
+    await page.ClickAsync("button");
+}, request => request.Url == "https://example.com" && request.Method == "GET");
 ```
+
+### param: Page.waitForRequest.action = %%-csharp-wait-for-event-action-%%
 
 ### param: Page.waitForRequest.urlOrPredicate
 - `urlOrPredicate` <[string]|[RegExp]|[function]\([Request]\):[boolean]>
+
+Request URL string, regex or predicate receiving [Request] object.
+
+### param: Page.waitForRequest.urlOrPredicate
+* langs: js
+- `urlOrPredicate` <[string]|[RegExp]|[function]\([Request]\):[boolean]|[Promise]<[boolean]>>
 
 Request URL string, regex or predicate receiving [Request] object.
 
@@ -2931,23 +3414,64 @@ Request URL string, regex or predicate receiving [Request] object.
 Maximum wait time in milliseconds, defaults to 30 seconds, pass `0` to disable the timeout. The default value can be
 changed by using the [`method: Page.setDefaultTimeout`] method.
 
+
+## async method: Page.waitForRequestFinished
+* langs: java, python, csharp
+  - alias-python: expect_request_finished
+  - alias-csharp: RunAndWaitForRequestFinished
+- returns: <[Request]>
+
+Performs action and waits for a [Request] to finish loading. If predicate is provided, it passes
+[Request] value into the `predicate` function and waits for `predicate(request)` to return a truthy value.
+Will throw an error if the page is closed before the [`event: Page.requestFinished`] event is fired.
+
+### option: Page.waitForRequestFinished.predicate =
+- `predicate` <[function]\([Request]\):[boolean]>
+
+Receives the [Request] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForRequestFinished.timeout = %%-wait-for-event-timeout-%%
+
+
 ## async method: Page.waitForResponse
 * langs:
   * alias-python: expect_response
+  * alias-csharp: RunAndWaitForResponse
 - returns: <[Response]>
 
-Returns the matched response.
+Returns the matched response. See [waiting for event](./events.md#waiting-for-event) for more details about events.
 
 ```js
-const firstResponse = await page.waitForResponse('https://example.com/resource');
-const finalResponse = await page.waitForResponse(response => response.url() === 'https://example.com' && response.status() === 200);
-return finalResponse.ok();
+// Note that Promise.all prevents a race condition
+// between clicking and waiting for the response.
+const [response] = await Promise.all([
+  // Waits for the next response with the specified url
+  page.waitForResponse('https://example.com/resource'),
+  // Triggers the response
+  page.click('button.triggers-response'),
+]);
+
+// Alternative way with a predicate.
+const [response] = await Promise.all([
+  // Waits for the next response matching some conditions
+  page.waitForResponse(response => response.url() === 'https://example.com' && response.status() === 200),
+  // Triggers the response
+  page.click('button.triggers-response'),
+]);
 ```
 
 ```java
-Response firstResponse = page.waitForResponse("https://example.com/resource", () -> {});
-Response finalResponse = page.waitForResponse(response -> "https://example.com".equals(response.url()) && response.status() == 200, () -> {});
-return finalResponse.ok();
+// Waits for the next response with the specified url
+Response response = page.waitForResponse("https://example.com/resource", () -> {
+  // Triggers the response
+  page.click("button.triggers-response");
+});
+
+// Waits for the next response matching some conditions
+Response response = page.waitForResponse(response -> "https://example.com".equals(response.url()) && response.status() == 200, () -> {
+  // Triggers the response
+  page.click("button.triggers-response");
+});
 ```
 
 ```python async
@@ -2976,8 +3500,30 @@ response = response_info.value
 return response.ok
 ```
 
+```csharp
+// Waits for the next response with the specified url.
+await page.RunAndWaitForResponseAsync(async () =>
+{
+    await page.ClickAsync("button.triggers-response");
+}, "http://example.com/resource");
+
+// Alternative way with a predicate.
+await page.RunAndWaitForResponseAsync(async () =>
+{
+    await page.ClickAsync("button");
+}, response => response.Url == "https://example.com" && response.Status == 200);
+```
+
+### param: Page.waitForResponse.action = %%-csharp-wait-for-event-action-%%
+
 ### param: Page.waitForResponse.urlOrPredicate
 - `urlOrPredicate` <[string]|[RegExp]|[function]\([Response]\):[boolean]>
+
+Request URL string, regex or predicate receiving [Response] object.
+
+### param: Page.waitForResponse.urlOrPredicate
+* langs: js
+- `urlOrPredicate` <[string]|[RegExp]|[function]\([Response]\):[boolean]|[Promise]<[boolean]>>
 
 Request URL string, regex or predicate receiving [Response] object.
 
@@ -3072,6 +3618,31 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System;
+using System.Threading.Tasks;
+
+class FrameExamples
+{
+  public static async Task Images()
+  {
+      using var playwright = await Playwright.CreateAsync();
+      await using var browser = await playwright.Chromium.LaunchAsync();
+      var page = await browser.NewPageAsync();
+
+      foreach (var currentUrl in new[] { "https://www.google.com", "https://bbc.com" })
+      {
+          await page.GotoAsync(currentUrl);
+          var element = await page.WaitForSelectorAsync("img");
+          Console.WriteLine($"Loaded image: {await element.GetAttributeAsync("src")}");
+      }
+
+      await browser.CloseAsync();
+  }
+}
+```
+
 ### param: Page.waitForSelector.selector = %%-query-selector-%%
 
 ### option: Page.waitForSelector.state = %%-wait-for-selector-state-%%
@@ -3105,6 +3676,11 @@ await page.wait_for_timeout(1000)
 page.wait_for_timeout(1000)
 ```
 
+```csharp
+// Wait for 1 second
+await page.WaitForTimeoutAsync(1000);
+```
+
 Shortcut for main frame's [`method: Frame.waitForTimeout`].
 
 ### param: Page.waitForTimeout.timeout
@@ -3112,8 +3688,45 @@ Shortcut for main frame's [`method: Frame.waitForTimeout`].
 
 A timeout to wait for
 
+## async method: Page.waitForURL
+
+Waits for the main frame to navigate to the given URL.
+
+```js
+await page.click('a.delayed-navigation'); // Clicking the link will indirectly cause a navigation
+await page.waitForURL('**/target.html');
+```
+
+```java
+page.click("a.delayed-navigation"); // Clicking the link will indirectly cause a navigation
+page.waitForURL("**/target.html");
+```
+
+```python async
+await page.click("a.delayed-navigation") # clicking the link will indirectly cause a navigation
+await page.wait_for_url("**/target.html")
+```
+
+```python sync
+page.click("a.delayed-navigation") # clicking the link will indirectly cause a navigation
+page.wait_for_url("**/target.html")
+```
+
+```csharp
+await page.ClickAsync("a.delayed-navigation"); // clicking the link will indirectly cause a navigation
+await page.WaitForURLAsync("**/target.html");
+```
+
+Shortcut for main frame's [`method: Frame.waitForURL`].
+
+### param: Page.waitForURL.url = %%-wait-for-navigation-url-%%
+### option: Page.waitForURL.timeout = %%-navigation-timeout-%%
+### option: Page.waitForURL.waitUntil = %%-navigation-wait-until-%%
+
 ## async method: Page.waitForWebSocket
-* langs: csharp, java
+* langs: java, python, csharp
+  - alias-python: expect_websocket
+  - alias-csharp: RunAndWaitForWebSocket
 - returns: <[WebSocket]>
 
 Performs action and waits for a new [WebSocket]. If predicate is provided, it passes
@@ -3128,8 +3741,9 @@ Receives the [WebSocket] object and resolves to truthy value when the waiting sh
 ### option: Page.waitForWebSocket.timeout = %%-wait-for-event-timeout-%%
 
 ## async method: Page.waitForWorker
-* langs: csharp, java, python
+* langs: java, python, csharp
   - alias-python: expect_worker
+  - alias-csharp: RunAndWaitForWorker
 - returns: <[Worker]>
 
 Performs action and waits for a new [Worker]. If predicate is provided, it passes
@@ -3152,3 +3766,20 @@ associated with the page.
 :::note
 This does not contain ServiceWorkers
 :::
+
+## async method: Page.waitForEvent2
+* langs: python
+  - alias-python: wait_for_event
+- returns: <[any]>
+
+:::note
+In most cases, you should use [`method: Page.waitForEvent`].
+:::
+
+Waits for given `event` to fire. If predicate is provided, it passes
+event's value into the `predicate` function and waits for `predicate(event)` to return a truthy value.
+Will throw an error if the page is closed before the `event` is fired.
+
+### param: Page.waitForEvent2.event = %%-wait-for-event-event-%%
+### option: Page.waitForEvent2.predicate = %%-wait-for-event-predicate-%%
+### option: Page.waitForEvent2.timeout = %%-wait-for-event-timeout-%%
