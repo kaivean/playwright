@@ -633,33 +633,35 @@ export class Frame extends SdkObject {
 
   async _waitForLoadState(progress: Progress, state: types.LifecycleEvent): Promise<void> {
     const waitUntil = verifyLifecycle('state', state);
-    if (!this._subtreeLifecycleEvents.has(waitUntil)) {
-      const context = await this._utilityContext();
-      if (waitUntil === 'load') {
-        const state = await context.evaluateInternal(() => document.readyState);
-        if (state === 'complete')
-          return;
-      }
-      return new Promise((resolve, reject) => {
-        const timer = setInterval(async () => {
-          const state = await context.evaluateInternal(() => document.readyState);
-          if (state === 'complete') {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 500);
+    if (!this._subtreeLifecycleEvents.has(waitUntil))
+      await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
+    // if (!this._subtreeLifecycleEvents.has(waitUntil)) {
+    //   const context = await this._utilityContext();
+    //   if (waitUntil === 'load') {
+    //     const state = await context.evaluateInternal(() => document.readyState);
+    //     if (state === 'complete')
+    //       return;
+    //   }
+    //   return new Promise((resolve, reject) => {
+    //     const timer = setInterval(async () => {
+    //       const state = await context.evaluateInternal(() => document.readyState);
+    //       if (state === 'complete') {
+    //         clearInterval(timer);
+    //         resolve();
+    //       }
+    //     }, 500);
 
-        helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise
-            .then(() => {
-              clearInterval(timer);
-              resolve();
-            })
-            .catch(e => {
-              clearInterval(timer);
-              reject(e);
-            });
-      });
-    }
+    //     helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise
+    //         .then(() => {
+    //           clearInterval(timer);
+    //           resolve();
+    //         })
+    //         .catch(e => {
+    //           clearInterval(timer);
+    //           reject(e);
+    //         });
+    //   });
+    // }
   }
 
   async frameElement(): Promise<dom.ElementHandle> {
