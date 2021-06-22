@@ -19,11 +19,11 @@ import { LanguageGenerator, LanguageGeneratorOptions, sanitizeDeviceOptions, toS
 import { ActionInContext } from './codeGenerator';
 import { actionTitle, Action } from './recorderActions';
 import { MouseClickOptions, toModifiers } from './utils';
-import deviceDescriptors = require('../../deviceDescriptors');
+import deviceDescriptors from '../../deviceDescriptors';
 
 export class PythonLanguageGenerator implements LanguageGenerator {
   id = 'python';
-  fileName = '<python>';
+  fileName = 'Python';
   highlighter = 'python';
 
   private _awaitPrefix: '' | 'await ';
@@ -32,7 +32,7 @@ export class PythonLanguageGenerator implements LanguageGenerator {
 
   constructor(isAsync: boolean) {
     this.id = isAsync ? 'python-async' : 'python';
-    this.fileName = isAsync ? '<async python>' : '<python>';
+    this.fileName = isAsync ? 'Python Async' : 'Python';
     this._isAsync = isAsync;
     this._awaitPrefix = isAsync ? 'await ' : '';
     this._asyncPrefix = isAsync ? 'async ' : '';
@@ -47,7 +47,7 @@ export class PythonLanguageGenerator implements LanguageGenerator {
     if (action.name === 'openPage') {
       formatter.add(`${pageAlias} = ${this._awaitPrefix}context.new_page()`);
       if (action.url && action.url !== 'about:blank' && action.url !== 'chrome://newtab/')
-        formatter.add(`${pageAlias}.goto('${action.url}')`);
+        formatter.add(`${this._awaitPrefix}${pageAlias}.goto(${quote(action.url)})`);
       return formatter.format();
     }
 

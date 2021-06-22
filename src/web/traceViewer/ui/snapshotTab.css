@@ -16,35 +16,58 @@
 
 .snapshot-tab {
   display: flex;
+  flex: auto;
   flex-direction: column;
   align-items: stretch;
+  outline: none;
 }
 
 .snapshot-controls {
-  flex: 0 0 24px;
+  flex: none;
+  color: var(--toolbar-color);
   display: flex;
-  flex-direction: row;
+  box-shadow: var(--box-shadow);
+  background-color: var(--toolbar-bg-color);
+  height: 32px;
   align-items: center;
+  justify-content: center;
 }
 
 .snapshot-toggle {
-  padding: 5px 10px;
+  margin-top: 4px;
+  padding: 4px 8px;
   cursor: pointer;
+  border-radius: 20px;
+  margin-left: 4px;
+  width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.snapshot-toggle:hover {
+  background-color: #ededed;
 }
 
 .snapshot-toggle.toggled {
-  background: var(--inactive-focus-ring);
+  background: var(--gray);
+  color: white;
+}
+
+.snapshot-tab:focus .snapshot-toggle.toggled {
+  background: var(--blue);
 }
 
 .snapshot-wrapper {
   flex: auto;
   margin: 1px;
+  padding: 10px;
 }
 
 .snapshot-container {
   display: block;
   background: white;
-  outline: 1px solid #aaa;
+  box-shadow: rgb(0 0 0 / 15%) 0px 0.1em 4.5em;
 }
 
 iframe#snapshot {

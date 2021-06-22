@@ -50,12 +50,26 @@ download = download_info.value
 path = download.path()
 ```
 
+```csharp
+// Start the task of waiting for the download
+var waitForDownloadTask = page.WaitForDownloadAsync();
+// Perform the action that initiates download
+await page.ClickAsync("#downloadButton");
+// Wait for the download process to complete
+var download = await waitForDownloadTask;
+Console.WriteLine(await download.PathAsync());
+```
+
 #### Variations
 
 If you have no idea what initiates the download, you can still handle the event:
 
 ```js
 page.on('download', download => download.path().then(console.log));
+```
+
+```java
+page.onDownload(download -> System.out.println(download.path()));
 ```
 
 ```python async
@@ -68,10 +82,13 @@ page.on("download", handle_download)
 page.on("download", lambda download: print(download.path()))
 ```
 
+```csharp
+page.Download += (sender, download) => Console.WriteLine(download.Url);
+```
+
 Note that handling the event forks the control flow and makes script harder to follow. Your scenario might end while you
 are downloading a file since your main control flow is not awaiting for this operation to resolve.
 
 ### API reference
 - [Download]
 - [`event: Page.download`]
-- [`method: Page.waitForEvent`]

@@ -16,6 +16,11 @@ page.on('dialog', dialog => dialog.accept());
 await page.click('button');
 ```
 
+```java
+page.onDialog(dialog -> dialog.accept());
+page.click("button");
+```
+
 ```python async
 page.on("dialog", lambda dialog: dialog.accept())
 await page.click("button")
@@ -26,19 +31,29 @@ page.on("dialog", lambda dialog: dialog.accept())
 page.click("button")
 ```
 
+```csharp
+page.Dialog += (_, dialog) => dialog.AcceptAsync();
+await page.ClickAsync("button");
+```
+
 :::note
 [`event: Page.dialog`] listener **must handle** the dialog. Otherwise your action will stall, be it [`method: Page.click`], [`method: Page.evaluate`] or any other. That's because dialogs in Web are modal and block further page execution until they are handled.
 :::
 
 As a result, following snippet will never resolve:
 
-:::warn
+:::warning
 WRONG!
 :::
 
 ```js
 page.on('dialog', dialog => console.log(dialog.message()));
 await page.click('button'); // Will hang here
+```
+
+```java
+page.onDialog(dialog -> System.out.println(dialog.message()));
+page.click("button"); // Will hang here
 ```
 
 ```python async
@@ -51,13 +66,18 @@ page.on("dialog", lambda dialog: print(dialog.message))
 page.click("button") # Will hang here
 ```
 
+```csharp
+page.Dialog += (_, dialog) => Console.WriteLine(dialog.Message);
+await page.ClickAsync("button"); // Will hang here
+```
+
 :::note
 If there is no listener for [`event: Page.dialog`], all dialogs are automatically dismissed.
 :::
 
 ### API reference
 
-- [`Dialog`]
+- [Dialog]
 - [`method: Dialog.accept`]
 - [`method: Dialog.dismiss`]
 
@@ -73,6 +93,14 @@ page.on('dialog', async dialog => {
   await dialog.dismiss();
 });
 await page.close({runBeforeUnload: true});
+```
+
+```java
+page.onDialog(dialog -> {
+  assertEquals("beforeunload", dialog.type());
+  dialog.dismiss();
+});
+page.close(new Page.CloseOptions().setRunBeforeUnload(true));
 ```
 
 ```python async
@@ -91,4 +119,13 @@ def handle_dialog(dialog):
 
 page.on('dialog', lambda: handle_dialog)
 page.close(run_before_unload=True)
+```
+
+```csharp
+page.Dialog += (_, dialog) =>
+{
+    Assert.Equal("beforeunload", dialog.Type);
+    dialog.DismissAsync();
+};
+await page.CloseAsync(runBeforeUnload: true);
 ```

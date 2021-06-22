@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 import fs from 'fs';
-import * as util from 'util';
 import path from 'path';
 import * as os from 'os';
-import { spawn } from 'child_process';
 import { getUbuntuVersion } from '../utils/ubuntuVersion';
 import * as registry from '../utils/registry';
+import * as utils from '../utils/utils';
 import { printDepsWindowsExecutable } from '../utils/binaryPaths';
 
-const accessAsync = util.promisify(fs.access.bind(fs));
-const checkExecutable = (filePath: string) => accessAsync(filePath, fs.constants.X_OK).then(() => true).catch(e => false);
-const statAsync = util.promisify(fs.stat.bind(fs));
-const readdirAsync = util.promisify(fs.readdir.bind(fs));
+const checkExecutable = (filePath: string) => fs.promises.access(filePath, fs.constants.X_OK).then(() => true).catch(e => false);
 
 export async function validateHostRequirements(registry: registry.Registry, browserName: registry.BrowserName) {
+  if (utils.getAsBooleanFromENV('PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS')) {
+    process.stdout.write('Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.\n');
+    return;
+  }
   const ubuntuVersion = await getUbuntuVersion();
   if (browserName === 'firefox' && ubuntuVersion === '16.04')
     throw new Error(`Cannot launch firefox on Ubuntu 16.04! Minimum required Ubuntu version for Firefox browser is 18.04`);
@@ -38,11 +38,13 @@ export async function validateHostRequirements(registry: registry.Registry, brow
 }
 
 const DL_OPEN_LIBRARIES = {
-  chromium: [],
-  webkit: ['libGLESv2.so.2', 'libx264.so'],
-  firefox: [],
-  clank: [],
-  ffmpeg: [],
+  'chromium': [],
+  'webkit': ['libGLESv2.so.2', 'libx264.so'],
+  'webkit-technology-preview': ['libGLESv2.so.2', 'libx264.so'],
+  'firefox': [],
+  'firefox-beta': [],
+  'clank': [],
+  'ffmpeg': [],
 };
 
 function isSupportedWindowsVersion(): boolean {
@@ -140,6 +142,8 @@ async function validateDependenciesLinux(registry: registry.Registry, browserNam
     libraryToPackageNameMapping = LIBRARY_TO_PACKAGE_NAME_UBUNTU_18_04;
   else if (ubuntuVersion === '20.04')
     libraryToPackageNameMapping = LIBRARY_TO_PACKAGE_NAME_UBUNTU_20_04;
+  else if (ubuntuVersion === '21.04')
+    libraryToPackageNameMapping = LIBRARY_TO_PACKAGE_NAME_UBUNTU_21_04;
   libraryToPackageNameMapping = Object.assign({}, libraryToPackageNameMapping, MANUAL_LIBRARY_TO_PACKAGE_NAME_UBUNTU);
   if (libraryToPackageNameMapping) {
     // Translate missing dependencies to package names to install with apt.
@@ -187,8 +191,8 @@ function isSharedLib(basename: string) {
 }
 
 async function executablesOrSharedLibraries(directoryPath: string): Promise<string[]> {
-  const allPaths = (await readdirAsync(directoryPath)).map(file => path.resolve(directoryPath, file));
-  const allStats = await Promise.all(allPaths.map(aPath => statAsync(aPath)));
+  const allPaths = (await fs.promises.readdir(directoryPath)).map(file => path.resolve(directoryPath, file));
+  const allStats = await Promise.all(allPaths.map(aPath => fs.promises.stat(aPath)));
   const filePaths = allPaths.filter((aPath, index) => (allStats[index] as any).isFile());
 
   const executablersOrLibraries = (await Promise.all(filePaths.map(async filePath => {
@@ -209,7 +213,7 @@ async function missingFileDependenciesWindows(filePath: string): Promise<Array<s
     return [];
 
   const dirname = path.dirname(filePath);
-  const {stdout, code} = await spawnAsync(executable, [filePath], {
+  const {stdout, code} = await utils.spawnAsync(executable, [filePath], {
     cwd: dirname,
     env: {
       ...process.env,
@@ -227,7 +231,7 @@ async function missingFileDependencies(filePath: string, extraLDPaths: string[])
   let LD_LIBRARY_PATH = extraLDPaths.join(':');
   if (process.env.LD_LIBRARY_PATH)
     LD_LIBRARY_PATH = `${process.env.LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}`;
-  const {stdout, code} = await spawnAsync('ldd', [filePath], {
+  const {stdout, code} = await utils.spawnAsync('ldd', [filePath], {
     cwd: dirname,
     env: {
       ...process.env,
@@ -247,24 +251,11 @@ async function missingDLOPENLibraries(browserName: registry.BrowserName): Promis
   // NOTE: Using full-qualified path to `ldconfig` since `/sbin` is not part of the
   // default PATH in CRON.
   // @see https://github.com/microsoft/playwright/issues/3397
-  const {stdout, code, error} = await spawnAsync('/sbin/ldconfig', ['-p'], {});
+  const {stdout, code, error} = await utils.spawnAsync('/sbin/ldconfig', ['-p'], {});
   if (code !== 0 || error)
     return [];
   const isLibraryAvailable = (library: string) => stdout.toLowerCase().includes(library.toLowerCase());
   return libraries.filter(library => !isLibraryAvailable(library));
-}
-
-export function spawnAsync(cmd: string, args: string[], options: any): Promise<{stdout: string, stderr: string, code: number, error?: Error}> {
-  const process = spawn(cmd, args, options);
-
-  return new Promise(resolve => {
-    let stdout = '';
-    let stderr = '';
-    process.stdout.on('data', data => stdout += data);
-    process.stderr.on('data', data => stderr += data);
-    process.on('close', code => resolve({stdout, stderr, code}));
-    process.on('error', error => resolve({stdout, stderr, code: 0, error}));
-  });
 }
 
 // This list is generted with the following program:
@@ -297,16 +288,16 @@ const LIBRARY_TO_PACKAGE_NAME_UBUNTU_18_04: { [s: string]: string} = {
   'libglib-2.0.so.0': 'libglib2.0-0',
   'libgmodule-2.0.so.0': 'libglib2.0-0',
   'libgobject-2.0.so.0': 'libglib2.0-0',
-  'libgstapp-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
-  'libgstaudio-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstapp-1.0.so.0': 'gstreamer1.0-plugins-base',
+  'libgstaudio-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstbase-1.0.so.0': 'libgstreamer1.0-0',
-  'libgstcodecparsers-1.0.so.0': 'libgstreamer-plugins-bad1.0-0',
-  'libgstfft-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstcodecparsers-1.0.so.0': 'gstreamer1.0-plugins-bad',
+  'libgstfft-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstgl-1.0.so.0': 'libgstreamer-gl1.0-0',
-  'libgstpbutils-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstpbutils-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstreamer-1.0.so.0': 'libgstreamer1.0-0',
-  'libgsttag-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
-  'libgstvideo-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgsttag-1.0.so.0': 'gstreamer1.0-plugins-base',
+  'libgstvideo-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgthread-2.0.so.0': 'libglib2.0-0',
   'libgtk-3.so.0': 'libgtk-3-0',
   'libgtk-x11-2.0.so.0': 'libgtk2.0-0',
@@ -384,16 +375,16 @@ const LIBRARY_TO_PACKAGE_NAME_UBUNTU_20_04: { [s: string]: string} = {
   'libglib-2.0.so.0': 'libglib2.0-0',
   'libgmodule-2.0.so.0': 'libglib2.0-0',
   'libgobject-2.0.so.0': 'libglib2.0-0',
-  'libgstapp-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
-  'libgstaudio-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstapp-1.0.so.0': 'gstreamer1.0-plugins-base',
+  'libgstaudio-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstbase-1.0.so.0': 'libgstreamer1.0-0',
-  'libgstcodecparsers-1.0.so.0': 'libgstreamer-plugins-bad1.0-0',
-  'libgstfft-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstcodecparsers-1.0.so.0': 'gstreamer1.0-plugins-bad',
+  'libgstfft-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstgl-1.0.so.0': 'libgstreamer-gl1.0-0',
-  'libgstpbutils-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstpbutils-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgstreamer-1.0.so.0': 'libgstreamer1.0-0',
-  'libgsttag-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
-  'libgstvideo-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgsttag-1.0.so.0': 'gstreamer1.0-plugins-base',
+  'libgstvideo-1.0.so.0': 'gstreamer1.0-plugins-base',
   'libgthread-2.0.so.0': 'libglib2.0-0',
   'libgtk-3.so.0': 'libgtk-3-0',
   'libgtk-x11-2.0.so.0': 'libgtk2.0-0',
@@ -441,6 +432,93 @@ const LIBRARY_TO_PACKAGE_NAME_UBUNTU_20_04: { [s: string]: string} = {
   'libxslt.so.1': 'libxslt1.1',
   'libXt.so.6': 'libxt6',
   'libXtst.so.6': 'libxtst6',
+};
+
+const LIBRARY_TO_PACKAGE_NAME_UBUNTU_21_04: { [s: string]: string} = {
+  'libasound.so.2': 'libasound2',
+  'libatk-1.0.so.0': 'libatk1.0-0',
+  'libatk-bridge-2.0.so.0': 'libatk-bridge2.0-0',
+  'libatspi.so.0': 'libatspi2.0-0',
+  'libcairo-gobject.so.2': 'libcairo-gobject2',
+  'libcairo.so.2': 'libcairo2',
+  'libcups.so.2': 'libcups2',
+  'libdbus-1.so.3': 'libdbus-1-3',
+  'libdbus-glib-1.so.2': 'libdbus-glib-1-2',
+  'libdrm.so.2': 'libdrm2',
+  'libEGL.so.1': 'libegl1',
+  'libepoxy.so.0': 'libepoxy0',
+  'libfontconfig.so.1': 'libfontconfig1',
+  'libfreetype.so.6': 'libfreetype6',
+  'libgbm.so.1': 'libgbm1',
+  'libgdk_pixbuf-2.0.so.0': 'libgdk-pixbuf-2.0-0',
+  'libgdk-3.so.0': 'libgtk-3-0',
+  'libgdk-x11-2.0.so.0': 'libgtk2.0-0',
+  'libgio-2.0.so.0': 'libglib2.0-0',
+  'libGL.so.1': 'libgl1',
+  'libGLESv2.so.2': 'libgles2',
+  'libglib-2.0.so.0': 'libglib2.0-0',
+  'libgmodule-2.0.so.0': 'libglib2.0-0',
+  'libgobject-2.0.so.0': 'libglib2.0-0',
+  'libgstapp-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstaudio-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstbase-1.0.so.0': 'libgstreamer1.0-0',
+  'libgstcodecparsers-1.0.so.0': 'libgstreamer-plugins-bad1.0-0',
+  'libgstfft-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstgl-1.0.so.0': 'libgstreamer-gl1.0-0',
+  'libgstpbutils-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstreamer-1.0.so.0': 'libgstreamer1.0-0',
+  'libgsttag-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgstvideo-1.0.so.0': 'libgstreamer-plugins-base1.0-0',
+  'libgthread-2.0.so.0': 'libglib2.0-0',
+  'libgtk-3.so.0': 'libgtk-3-0',
+  'libgtk-x11-2.0.so.0': 'libgtk2.0-0',
+  'libharfbuzz-icu.so.0': 'libharfbuzz-icu0',
+  'libharfbuzz.so.0': 'libharfbuzz0b',
+  'libhyphen.so.0': 'libhyphen0',
+  'libjavascriptcoregtk-4.0.so.18': 'libjavascriptcoregtk-4.0-18',
+  'libjpeg.so.8': 'libjpeg-turbo8',
+  'liblcms2.so.2': 'liblcms2-2',
+  'libnotify.so.4': 'libnotify4',
+  'libnspr4.so': 'libnspr4',
+  'libnss3.so': 'libnss3',
+  'libnssutil3.so': 'libnss3',
+  'libopenjp2.so.7': 'libopenjp2-7',
+  'libopus.so.0': 'libopus0',
+  'libpango-1.0.so.0': 'libpango-1.0-0',
+  'libpangocairo-1.0.so.0': 'libpangocairo-1.0-0',
+  'libpangoft2-1.0.so.0': 'libpangoft2-1.0-0',
+  'libpng16.so.16': 'libpng16-16',
+  'libsecret-1.so.0': 'libsecret-1-0',
+  'libsmime3.so': 'libnss3',
+  'libsoup-2.4.so.1': 'libsoup2.4-1',
+  'libvpx.so.6': 'libvpx6',
+  'libwayland-client.so.0': 'libwayland-client0',
+  'libwayland-egl.so.1': 'libwayland-egl1',
+  'libwayland-server.so.0': 'libwayland-server0',
+  'libwebkit2gtk-4.0.so.37': 'libwebkit2gtk-4.0-37',
+  'libwebp.so.6': 'libwebp6',
+  'libwebpdemux.so.2': 'libwebpdemux2',
+  'libwoff2dec.so.1.0.2': 'libwoff1',
+  'libwpe-1.0.so.1': 'libwpe-1.0-1',
+  'libWPEBackend-fdo-1.0.so.1': 'libwpebackend-fdo-1.0-1',
+  'libWPEWebKit-1.0.so.3': 'libwpewebkit-1.0-3',
+  'libX11-xcb.so.1': 'libx11-xcb1',
+  'libX11.so.6': 'libx11-6',
+  'libxcb-shm.so.0': 'libxcb-shm0',
+  'libxcb.so.1': 'libxcb1',
+  'libXcomposite.so.1': 'libxcomposite1',
+  'libXcursor.so.1': 'libxcursor1',
+  'libXdamage.so.1': 'libxdamage1',
+  'libXext.so.6': 'libxext6',
+  'libXfixes.so.3': 'libxfixes3',
+  'libXi.so.6': 'libxi6',
+  'libxkbcommon.so.0': 'libxkbcommon0',
+  'libxml2.so.2': 'libxml2',
+  'libXrandr.so.2': 'libxrandr2',
+  'libXrender.so.1': 'libxrender1',
+  'libxshmfence.so.1': 'libxshmfence1',
+  'libxslt.so.1': 'libxslt1.1',
+  'libXt.so.6': 'libxt6',
 };
 
 const MANUAL_LIBRARY_TO_PACKAGE_NAME_UBUNTU: { [s: string]: string} = {

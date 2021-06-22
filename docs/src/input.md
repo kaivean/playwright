@@ -26,6 +26,23 @@ await page.fill('#local', '2020-03-02T05:15');
 await page.fill('text=First Name', 'Peter');
 ```
 
+```java
+// Text input
+page.fill("#name", "Peter");
+
+// Date input
+page.fill("#date", "2020-02-02");
+
+// Time input
+page.fill("#time", "13-15");
+
+// Local datetime input
+page.fill("#local", "2020-03-02T05:15");
+
+// Input through label
+page.fill("text=First Name", "Peter");
+```
+
 ```python async
 # Text input
 await page.fill('#name', 'Peter')
@@ -60,6 +77,23 @@ page.fill('#local', '2020-03-02T05:15')
 page.fill('text=First Name', 'Peter')
 ```
 
+```csharp
+// Text input
+await page.FillAsync("#name", "Peter");
+
+// Date input
+await page.FillAsync("#date", "2020-02-02");
+
+// Time input
+await page.FillAsync("#time", "13-15");
+
+// Local datetime input
+await page.FillAsync("#local", "2020-03-02T05:15");
+
+// Input through label
+await page.FillAsync("text=First Name", "Peter");
+```
+
 ### API reference
 
 - [`method: Page.fill`]
@@ -84,6 +118,20 @@ await page.uncheck('#subscribe-label');
 
 // Select the radio button
 await page.check('text=XL');
+```
+
+```java
+// Check the checkbox
+page.check("#agree");
+
+// Assert the checked state
+assertTrue(page.isChecked("#agree"));
+
+// Uncheck by input <label>.
+page.uncheck("#subscribe-label");
+
+// Select the radio button
+page.check("text=XL");
 ```
 
 ```python async
@@ -112,6 +160,20 @@ page.uncheck('#subscribe-label')
 
 # Select the radio button
 page.check('text=XL')
+```
+
+```csharp
+// Check the checkbox
+await page.CheckAsync("#agree");
+
+// Assert the checked state
+Assert.True(await page.IsCheckedAsync("#agree"));
+
+// Uncheck by input <label>.
+await page.UncheckAsync("#subscribe-label");
+
+// Select the radio button
+await page.CheckAsync("text=XL");
 ```
 
 ### API reference
@@ -145,6 +207,21 @@ const option = await page.$('#best-option');
 await page.selectOption('select#colors', option);
 ```
 
+```java
+// Single selection matching the value
+page.selectOption("select#colors", "blue");
+
+// Single selection matching the label
+page.selectOption("select#colors", new SelectOption().setLabel("Blue"));
+
+// Multiple selected items
+page.selectOption("select#colors", new String[] {"red", "green", "blue"});
+
+// Select the option via element handle
+ElementHandle option = page.querySelector("#best-option");
+page.selectOption("select#colors", option);
+```
+
 ```python async
 # Single selection matching the value
 await page.select_option('select#colors', 'blue')
@@ -173,6 +250,21 @@ page.select_option('select#colors', ['red', 'green', 'blue'])
 # Select the option via element handle
 option = page.query_selector('#best-option')
 page.select_option('select#colors', option)
+```
+
+```csharp
+// Single selection matching the value
+await page.SelectOptionAsync("select#colors", "blue");
+
+// Single selection matching the label
+await page.SelectOptionAsync("select#colors", new SelectOptionValue { Label = "blue" }));
+
+// Multiple selected items
+await page.SelectOptionAsync("select#colors", new[] { "blue", "green", "red" });
+
+// Select the option via element handle
+var option = await page.QuerySelectorAsync("#best-option");
+await page.SelectOptionAsync("select#colors", option);
 ```
 
 ### API reference
@@ -205,6 +297,26 @@ await page.hover('#item');
 
 // Click the top left corner
 await page.click('#item', { position: { x: 0, y: 0} });
+```
+
+```java
+// Generic click
+page.click("button#submit");
+
+// Double click
+page.dblclick("#item");
+
+// Right click
+page.click("#item", new Page.ClickOptions().setButton(MouseButton.RIGHT));
+
+// Shift + click
+page.click("#item", new Page.ClickOptions().setModifiers(Arrays.asList(KeyboardModifier.SHIFT)));
+
+// Hover over element
+page.hover("#item");
+
+// Click the top left corner
+page.click("#item", new Page.ClickOptions().setPosition(0, 0));
 ```
 
 ```python async
@@ -247,6 +359,26 @@ page.hover('#item')
 page.click('#item', position={ 'x': 0, 'y': 0})
 ```
 
+```csharp
+// Generic click
+await page.ClickAsync("button#submit");
+
+// Double click
+await page.DblClickAsync("#item");
+
+// Right click
+await page.ClickAsync("#item", new PageClickOptions { Button = MouseButton.Right });
+
+// Shift + click
+await page.ClickAsync("#item", new PageClickOptions { Modifiers = new[] { KeyboardModifier.Shift } });
+
+// Hover over element
+await page.HoverAsync("#item");
+
+// Click the top left corner
+await page.ClickAsync("#item", new PageClickOptions { position = new Position { X = 0, Y = 0 } });
+```
+
 Under the hood, this and other pointer-related methods:
 
 - wait for element with given selector to be in DOM
@@ -264,12 +396,20 @@ Sometimes, apps use non-trivial logic where hovering the element overlays it wit
 await page.click('button#submit', { force: true });
 ```
 
+```java
+page.click("button#submit", new Page.ClickOptions().setForce(true));
+```
+
 ```python async
 await page.click('button#submit', force=True)
 ```
 
 ```python sync
 page.click('button#submit', force=True)
+```
+
+```csharp
+await page.ClickAsync("button#submit", new PageClickOptions { Force = true });
 ```
 
 #### Programmatic click
@@ -280,12 +420,20 @@ If you are not interested in testing your app under the real conditions and want
 await page.dispatchEvent('button#submit', 'click');
 ```
 
+```java
+page.dispatchEvent("button#submit", "click");
+```
+
 ```python async
 await page.dispatch_event('button#submit', 'click')
 ```
 
 ```python sync
 page.dispatch_event('button#submit', 'click')
+```
+
+```csharp
+await page.DispatchEventAsync("button#submit", "click");
 ```
 
 ### API reference
@@ -314,6 +462,11 @@ Type into the field character by character, as if it was a user with a real keyb
 await page.type('#area', 'Hello World!');
 ```
 
+```java
+// Type character by character
+page.type("#area", "Hello World!");
+```
+
 ```python async
 # Type character by character
 await page.type('#area', 'Hello World!')
@@ -322,6 +475,11 @@ await page.type('#area', 'Hello World!')
 ```python sync
 # Type character by character
 page.type('#area', 'Hello World!')
+```
+
+```csharp
+// Type character by character
+await page.TypeAsync("#area", "Hello World!");
 ```
 
 This method will emit all the necessary keyboard events, with all the `keydown`, `keyup`, `keypress` events in place. You can even specify the optional `delay` between the key presses to simulate real user behavior.
@@ -352,6 +510,17 @@ await page.press('#name', 'Control+ArrowRight');
 await page.press('#value', '$');
 ```
 
+```java
+// Hit Enter
+page.press("#submit", "Enter");
+
+// Dispatch Control+Right
+page.press("#name", "Control+ArrowRight");
+
+// Press $ sign on keyboard
+page.press("#value", "$");
+```
+
 ```python async
 # Hit Enter
 await page.press('#submit', 'Enter')
@@ -372,6 +541,17 @@ page.press('#name', 'Control+ArrowRight')
 
 # Press $ sign on keyboard
 page.press('#value', '$')
+```
+
+```csharp
+// Hit Enter
+await page.PressAsync("#submit", "Enter");
+
+// Dispatch Control+Right
+await page.PressAsync("#name", "Control+ArrowRight");
+
+// Press $ sign on keyboard
+await page.PressAsync("#value", "$");
 ```
 
 This method focuses the selected element and produces a single keystroke. It accepts the logical key names that are emitted in the [keyboardEvent.key](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key) property of the keyboard events:
@@ -397,6 +577,14 @@ await page.press('#name', 'Shift+A');
 await page.press('#name', 'Shift+ArrowLeft');
 ```
 
+```java
+// <input id=name>
+page.press("#name", "Shift+A");
+
+// <input id=name>
+page.press("#name", "Shift+ArrowLeft");
+```
+
 ```python async
 # <input id=name>
 await page.press('#name', 'Shift+A')
@@ -411,6 +599,14 @@ page.press('#name', 'Shift+A')
 
 # <input id=name>
 page.press('#name', 'Shift+ArrowLeft')
+```
+
+```csharp
+// <input id=name>
+await page.PressAsync("#name", "Shift+A");
+
+// <input id=name>
+await page.PressAsync("#name", "Shift+ArrowLeft");
 ```
 
 Shortcuts such as `"Control+o"` or `"Control+Shift+T"` are supported as well. When specified with the modifier, modifier is pressed and being held while the subsequent key is being pressed.
@@ -447,6 +643,21 @@ await page.setInputFiles('input#upload', {
   mimeType: 'text/plain',
   buffer: Buffer.from('this is test')
 });
+```
+
+```java
+// Select one file
+page.setInputFiles("input#upload", Paths.get("myfile.pdf"));
+
+// Select multiple files
+page.setInputFiles("input#upload", new Path[] {Paths.get("file1.txt"), Paths.get("file2.txt")});
+
+// Remove all the selected files
+page.setInputFiles("input#upload", new Path[0]);
+
+// Upload buffer from memory
+page.setInputFiles("input#upload", new FilePayload(
+  "file.txt", "text/plain", "this is test".getBytes(StandardCharsets.UTF_8)));
 ```
 
 ```python async
@@ -487,6 +698,25 @@ page.set_input_files(
 )
 ```
 
+```csharp
+// Select one file
+await page.SetInputFilesAsync("input#upload", "myfile.pdf");
+
+// Select multiple files
+await page.SetInputFilesAsync("input#upload", new[] { "file1.txt", "file12.txt" });
+
+// Remove all the selected files
+await page.SetInputFilesAsync("input#upload", new[] {});
+
+// Upload buffer from memory
+await page.SetInputFilesAsync("input#upload", new FilePayload
+{
+    Name = "file.txt",
+    MimeType = "text/plain",
+    Buffer = "this is a test".getBytes(StandardCharsets.UTF_8),
+});
+```
+
 If you don't have input element in hand (it is created dynamically), you can handle the [`event: Page.fileChooser`] event
 or use a corresponding waiting method upon your action:
 
@@ -496,6 +726,13 @@ const [fileChooser] = await Promise.all([
   page.click('upload')
 ]);
 await fileChooser.setFiles('myfile.pdf');
+```
+
+```java
+FileChooser fileChooser = page.waitForFileChooser(() -> {
+  page.click("upload");
+});
+fileChooser.setFiles(Paths.get("myfile.pdf"));
 ```
 
 ```python async
@@ -510,6 +747,14 @@ with page.expect_file_chooser() as fc_info:
     page.click("upload")
 file_chooser = fc_info.value
 file_chooser.set_files("myfile.pdf")
+```
+
+```csharp
+var fileChooser = page.RunAndWaitForFileChooserAsync(async () =>
+{
+    await page.ClickAsync("upload");
+});
+await fileChooser.SetFilesAsync("myfile.pdf");
 ```
 
 ### API reference
@@ -528,12 +773,20 @@ For the dynamic pages that handle focus events, you can focus the given element.
 await page.focus('input#name');
 ```
 
+```java
+page.focus("input#name");
+```
+
 ```python async
 await page.focus('input#name')
 ```
 
 ```python sync
 page.focus('input#name')
+```
+
+```csharp
+await page.FocusAsync("input#name");
 ```
 
 ### API reference

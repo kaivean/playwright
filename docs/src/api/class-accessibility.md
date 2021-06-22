@@ -1,4 +1,5 @@
 # class: Accessibility
+* langs: csharp, js, python
 
 The Accessibility class provides methods for inspecting Chromium's accessibility tree. The accessibility tree is used by
 assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Screen_reader) or
@@ -7,7 +8,7 @@ assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Scre
 Accessibility is a very platform-specific thing. On different platforms, there are different screen readers that might
 have wildly different output.
 
-Rendering engines of Chromium, Firefox and Webkit have a concept of "accessibility tree", which is then translated into different
+Rendering engines of Chromium, Firefox and WebKit have a concept of "accessibility tree", which is then translated into different
 platform-specific APIs. Accessibility namespace gives access to this Accessibility Tree.
 
 Most of the accessibility tree gets filtered out when converting from internal browser AX Tree to Platform-specific AX-Tree or by
@@ -58,6 +59,11 @@ const snapshot = await page.accessibility.snapshot();
 console.log(snapshot);
 ```
 
+```java
+String snapshot = page.accessibility().snapshot();
+System.out.println(snapshot);
+```
+
 ```python async
 snapshot = await page.accessibility.snapshot()
 print(snapshot)
@@ -66,6 +72,11 @@ print(snapshot)
 ```python sync
 snapshot = page.accessibility.snapshot()
 print(snapshot)
+```
+
+```csharp
+var accessibilitySnapshot = await page.Accessibility.SnapshotAsync();
+Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(accessibilitySnapshot));
 ```
 
 An example of logging the focused node's name:
@@ -84,6 +95,16 @@ function findFocusedNode(node) {
   }
   return null;
 }
+```
+
+```csharp
+var accessibilitySnapshot = await page.Accessibility.SnapshotAsync();
+Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(accessibilitySnapshot));
+```
+
+```java
+// FIXME
+String snapshot = page.accessibility().snapshot();
 ```
 
 ```python async
@@ -117,8 +138,12 @@ if node:
 ```
 
 ## async method: Accessibility.snapshot
-* langs: csharp, java
+* langs: java
 - returns: <[null]|[string]>
+
+## async method: Accessibility.snapshot
+* langs: csharp
+- returns: <[JsonElement?]>
 
 ### option: Accessibility.snapshot.interestingOnly
 - `interestingOnly` <[boolean]>

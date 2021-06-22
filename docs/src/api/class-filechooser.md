@@ -10,6 +10,11 @@ const [fileChooser] = await Promise.all([
 await fileChooser.setFiles('myfile.pdf');
 ```
 
+```java
+FileChooser fileChooser = page.waitForFileChooser(() -> page.click("upload"));
+fileChooser.setFiles(Paths.get("myfile.pdf"));
+```
+
 ```python async
 async with page.expect_file_chooser() as fc_info:
     await page.click("upload")
@@ -22,6 +27,14 @@ with page.expect_file_chooser() as fc_info:
     page.click("upload")
 file_chooser = fc_info.value
 file_chooser.set_files("myfile.pdf")
+```
+
+```csharp
+var fileChooser = await page.RunAndWaitForFileChooserAsync(async () =>
+{
+    await page.ClickAsync("upload");
+});
+await fileChooser.SetFilesAsync("temp.txt");
 ```
 
 ## method: FileChooser.element

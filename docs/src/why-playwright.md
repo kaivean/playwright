@@ -15,7 +15,7 @@ Playwright enables fast, reliable and capable automation across all modern brows
 
 * **Test for mobile**. Use [device emulation](./emulation.md) to test your responsive web apps in mobile web browsers.
 
-* **Headless and headful**. Playwright supports headless (without browser UI) and headful (with browser UI) modes for all browsers and all platforms. Headful is great for debugging, and headless is faster and suited for CI/cloud executions.
+* **Headless and headed**. Playwright supports headless (without browser UI) and headed (with browser UI) modes for all browsers and all platforms. Headed is great for debugging, and headless is faster and suited for CI/cloud executions.
 
 ## Fast and reliable execution
 * **Auto-wait APIs**. Playwright interactions [auto-wait for elements](./actionability.md) to be ready. This improves reliability and simplifies test authoring.
@@ -37,12 +37,12 @@ Playwright enables fast, reliable and capable automation across all modern brows
 
 ## Integrates with your workflow
 * **One-line installation**. Installing Playwright auto-downloads browser dependencies for your team to be onboarded quickly.
-  ```sh js
-  $ npm i playwright
+  ```bash js
+  npm i playwright
   ```
-  ```sh python
-  $ pip install playwright
-  $ playwright install
+  ```bash python
+  pip install playwright
+  playwright install
   ```
 
 * **TypeScript support**. Playwright ships with built-in types for auto-completion and other benefits.
@@ -58,4 +58,4 @@ Playwright enables fast, reliable and capable automation across all modern brows
 
 * **Legacy Edge and IE11 support**. Playwright does not support legacy Microsoft Edge or IE11 ([deprecation notice](https://techcommunity.microsoft.com/t5/microsoft-365-blog/microsoft-365-apps-say-farewell-to-internet-explorer-11-and/ba-p/1591666)). The new Microsoft Edge (on Chromium) is supported.
 
-* **Test on real mobile devices**: Playwright uses desktop browsers to emulate mobile devices. If you are interested in running on real mobile devices, please [upvote this issue](https://github.com/microsoft/playwright/issues/1122).
+* **Test on real mobile devices**: Playwright uses desktop browsers to emulate mobile devices. There is experimental Android support available see [here](https://playwright.dev/docs/mobile). If you are interested in iOS, please [upvote this issue](https://github.com/microsoft/playwright/issues/1122).

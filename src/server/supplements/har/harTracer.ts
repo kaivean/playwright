@@ -15,41 +15,18 @@
  */
 
 import fs from 'fs';
-import * as util from 'util';
 import { BrowserContext } from '../../browserContext';
 import { helper } from '../../helper';
 import * as network from '../../network';
 import { Page } from '../../page';
-import { InstrumentationListener } from '../../instrumentation';
 import * as har from './har';
-
-const fsWriteFileAsync = util.promisify(fs.writeFile.bind(fs));
-
-export class HarTracer implements InstrumentationListener {
-  private _contextTracers = new Map<BrowserContext, HarContextTracer>();
-
-  async onContextCreated(context: BrowserContext): Promise<void> {
-    if (!context._options.recordHar)
-      return;
-    const contextTracer = new HarContextTracer(context, context._options.recordHar);
-    this._contextTracers.set(context, contextTracer);
-  }
-
-  async onContextWillDestroy(context: BrowserContext): Promise<void> {
-    const contextTracer = this._contextTracers.get(context);
-    if (contextTracer) {
-      this._contextTracers.delete(context);
-      await contextTracer.flush();
-    }
-  }
-}
 
 type HarOptions = {
   path: string;
   omitContent?: boolean;
 };
 
-class HarContextTracer {
+export class HarTracer {
   private _options: HarOptions;
   private _log: har.Log;
   private _pageEntries = new Map<Page, har.Page>();
@@ -72,53 +49,63 @@ class HarContextTracer {
       pages: [],
       entries: []
     };
-    context.on(BrowserContext.Events.Page, page => this._onPage(page));
+    context.on(BrowserContext.Events.Page, (page: Page) => this._ensurePageEntry(page));
+    context.on(BrowserContext.Events.Request, (request: network.Request) => this._onRequest(request));
+    context.on(BrowserContext.Events.Response, (response: network.Response) => this._onResponse(response));
   }
 
-  private _onPage(page: Page) {
-    const pageEntry: har.Page = {
-      startedDateTime: new Date(),
-      id: `page_${this._lastPage++}`,
-      title: '',
-      pageTimings: {
-        onContentLoad: -1,
-        onLoad: -1,
-      },
-    };
-    this._pageEntries.set(page, pageEntry);
-    this._log.pages.push(pageEntry);
-    page.on(Page.Events.Request, (request: network.Request) => this._onRequest(page, request));
-    page.on(Page.Events.Response, (response: network.Response) => this._onResponse(page, response));
+  private _ensurePageEntry(page: Page) {
+    let pageEntry = this._pageEntries.get(page);
+    if (!pageEntry) {
+      page.on(Page.Events.DOMContentLoaded, () => this._onDOMContentLoaded(page));
+      page.on(Page.Events.Load, () => this._onLoad(page));
 
-    page.on(Page.Events.DOMContentLoaded, () => {
-      const promise = page.mainFrame()._evaluateExpression(String(() => {
-        return {
-          title: document.title,
-          domContentLoaded: performance.timing.domContentLoadedEventStart,
-        };
-      }), true, undefined, 'utility').then(result => {
-        pageEntry.title = result.title;
-        pageEntry.pageTimings.onContentLoad = result.domContentLoaded;
-      }).catch(() => {});
-      this._addBarrier(page, promise);
-    });
-    page.on(Page.Events.Load, () => {
-      const promise = page.mainFrame()._evaluateExpression(String(() => {
-        return {
-          title: document.title,
-          loaded: performance.timing.loadEventStart,
-        };
-      }), true, undefined, 'utility').then(result => {
-        pageEntry.title = result.title;
-        pageEntry.pageTimings.onLoad = result.loaded;
-      }).catch(() => {});
-      this._addBarrier(page, promise);
-    });
+      pageEntry = {
+        startedDateTime: new Date(),
+        id: `page_${this._lastPage++}`,
+        title: '',
+        pageTimings: {
+          onContentLoad: -1,
+          onLoad: -1,
+        },
+      };
+      this._pageEntries.set(page, pageEntry);
+      this._log.pages.push(pageEntry);
+    }
+    return pageEntry;
+  }
+
+  private _onDOMContentLoaded(page: Page) {
+    const pageEntry = this._ensurePageEntry(page);
+    const promise = page.mainFrame().evaluateExpression(String(() => {
+      return {
+        title: document.title,
+        domContentLoaded: performance.timing.domContentLoadedEventStart,
+      };
+    }), true, undefined, 'utility').then(result => {
+      pageEntry.title = result.title;
+      pageEntry.pageTimings.onContentLoad = result.domContentLoaded;
+    }).catch(() => {});
+    this._addBarrier(page, promise);
+  }
+
+  private _onLoad(page: Page) {
+    const pageEntry = this._ensurePageEntry(page);
+    const promise = page.mainFrame().evaluateExpression(String(() => {
+      return {
+        title: document.title,
+        loaded: performance.timing.loadEventStart,
+      };
+    }), true, undefined, 'utility').then(result => {
+      pageEntry.title = result.title;
+      pageEntry.pageTimings.onLoad = result.loaded;
+    }).catch(() => {});
+    this._addBarrier(page, promise);
   }
 
   private _addBarrier(page: Page, promise: Promise<void>) {
     const race = Promise.race([
-      new Promise(f => page.on('close', () => {
+      new Promise<void>(f => page.on('close', () => {
         this._barrierPromises.delete(race);
         f();
       })),
@@ -127,12 +114,13 @@ class HarContextTracer {
     this._barrierPromises.add(race);
   }
 
-  private _onRequest(page: Page, request: network.Request) {
-    const pageEntry = this._pageEntries.get(page)!;
+  private _onRequest(request: network.Request) {
+    const page = request.frame()._page;
     const url = network.parsedURL(request.url());
     if (!url)
       return;
 
+    const pageEntry = this._ensurePageEntry(page);
     const harEntry: har.Entry = {
       pageref: pageEntry.id,
       startedDateTime: new Date(),
@@ -180,8 +168,9 @@ class HarContextTracer {
     this._entries.set(request, harEntry);
   }
 
-  private _onResponse(page: Page, response: network.Response) {
-    const pageEntry = this._pageEntries.get(page)!;
+  private _onResponse(response: network.Response) {
+    const page = response.frame()._page;
+    const pageEntry = this._ensurePageEntry(page);
     const harEntry = this._entries.get(response.request())!;
     // Rewrite provisional headers with actual
     const request = response.request();
@@ -206,14 +195,20 @@ class HarContextTracer {
     const timing = response.timing();
     if (pageEntry.startedDateTime.valueOf() > timing.startTime)
       pageEntry.startedDateTime = new Date(timing.startTime);
+    const dns = timing.domainLookupEnd !== -1 ? helper.millisToRoundishMillis(timing.domainLookupEnd - timing.domainLookupStart) : -1;
+    const connect = timing.connectEnd !== -1 ? helper.millisToRoundishMillis(timing.connectEnd - timing.connectStart) : -1;
+    const ssl = timing.connectEnd !== -1 ? helper.millisToRoundishMillis(timing.connectEnd - timing.secureConnectionStart) : -1;
+    const wait = timing.responseStart !== -1 ? helper.millisToRoundishMillis(timing.responseStart - timing.requestStart) : -1;
+    const receive = response.request()._responseEndTiming !== -1 ? helper.millisToRoundishMillis(response.request()._responseEndTiming - timing.responseStart) : -1;
     harEntry.timings = {
-      dns: timing.domainLookupEnd !== -1 ? helper.millisToRoundishMillis(timing.domainLookupEnd - timing.domainLookupStart) : -1,
-      connect: timing.connectEnd !== -1 ? helper.millisToRoundishMillis(timing.connectEnd - timing.connectStart) : -1,
-      ssl: timing.connectEnd !== -1 ? helper.millisToRoundishMillis(timing.connectEnd - timing.secureConnectionStart) : -1,
+      dns,
+      connect,
+      ssl,
       send: 0,
-      wait: timing.responseStart !== -1 ? helper.millisToRoundishMillis(timing.responseStart - timing.requestStart) : -1,
-      receive: response.request()._responseEndTiming !== -1 ? helper.millisToRoundishMillis(response.request()._responseEndTiming - timing.responseStart) : -1,
+      wait,
+      receive,
     };
+    harEntry.time = [dns, connect, ssl, wait, receive].reduce((pre, cur) => cur > 0 ? cur + pre : pre, 0);
     if (!this._options.omitContent && response.status() === 200) {
       const promise = response.body().then(buffer => {
         harEntry.response.content.text = buffer.toString('base64');
@@ -235,7 +230,7 @@ class HarContextTracer {
       else
         pageEntry.pageTimings.onLoad = -1;
     }
-    await fsWriteFileAsync(this._options.path, JSON.stringify({ log: this._log }, undefined, 2));
+    await fs.promises.writeFile(this._options.path, JSON.stringify({ log: this._log }, undefined, 2));
   }
 }
 

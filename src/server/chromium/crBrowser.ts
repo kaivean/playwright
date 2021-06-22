@@ -50,6 +50,9 @@ export class CRBrowser extends Browser {
     const browser = new CRBrowser(connection, options);
     browser._devtools = devtools;
     const session = connection.rootSession;
+    if ((options as any).__testHookOnConnectToBrowser)
+      await (options as any).__testHookOnConnectToBrowser();
+
     const version = await session.send('Browser.getVersion');
     browser._isMac = version.userAgent.includes('Macintosh');
     browser._version = version.product.substring(version.product.indexOf('/') + 1);
@@ -58,33 +61,16 @@ export class CRBrowser extends Browser {
       return browser;
     }
     browser._defaultContext = new CRBrowserContext(browser, undefined, options.persistent);
-
-    const existingTargetAttachPromises: Promise<any>[] = [];
-    // First page, background pages and their service workers in the persistent context
-    // are created automatically and may be initialized before we enable auto-attach.
-    function attachToExistingPage({targetInfo}: Protocol.Target.targetCreatedPayload) {
-      if (targetInfo.type !== 'page' && targetInfo.type !== 'background_page' && targetInfo.type !== 'service_worker')
-        return;
-      // TODO: should we handle the error during 'Target.attachToTarget'? Can the target disappear?
-      existingTargetAttachPromises.push(session.send('Target.attachToTarget', {targetId: targetInfo.targetId, flatten: true}));
-    }
-    session.on('Target.targetCreated', attachToExistingPage);
-
-    const startDiscover = session.send('Target.setDiscoverTargets', { discover: true });
-    const autoAttachAndStopDiscover = session.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }).then(() => {
-      // All targets collected before setAutoAttach response will not be auto-attached, the rest will be.
-      // TODO: We should fix this upstream and remove this tricky logic.
-      session.off('Target.targetCreated', attachToExistingPage);
-      return session.send('Target.setDiscoverTargets', { discover: false });
-    });
     await Promise.all([
-      startDiscover,
-      autoAttachAndStopDiscover,
+      session.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }).then(async () => {
+        // Target.setAutoAttach has a bug where it does not wait for new Targets being attached.
+        // However making a dummy call afterwards fixes this.
+        // This can be removed after https://chromium-review.googlesource.com/c/chromium/src/+/2885888 lands in stable.
+        await session.send('Target.getTargetInfo');
+      }),
       (browser._defaultContext as CRBrowserContext)._initialize(),
     ]);
-
-    // Wait for initial targets to arrive.
-    await Promise.all(existingTargetAttachPromises);
+    await browser._waitForAllPagesToBeInitialized();
     return browser;
   }
 
@@ -95,6 +81,8 @@ export class CRBrowser extends Browser {
     this._connection.on(ConnectionEvents.Disconnected, () => this._didClose());
     this._session.on('Target.attachedToTarget', this._onAttachedToTarget.bind(this));
     this._session.on('Target.detachedFromTarget', this._onDetachedFromTarget.bind(this));
+    this._session.on('Browser.downloadWillBegin', this._onDownloadWillBegin.bind(this));
+    this._session.on('Browser.downloadProgress', this._onDownloadProgress.bind(this));
   }
 
   async newContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
@@ -120,6 +108,10 @@ export class CRBrowser extends Browser {
 
   isClank(): boolean {
     return this.options.name === 'clank';
+  }
+
+  async _waitForAllPagesToBeInitialized() {
+    await Promise.all([...this._crPages.values()].map(page => page.pageOrError()));
   }
 
   _onAttachedToTarget({targetInfo, sessionId, waitingForDebugger}: Protocol.Target.attachedToTargetPayload) {
@@ -154,20 +146,15 @@ export class CRBrowser extends Browser {
     assert(!this._serviceWorkers.has(targetInfo.targetId), 'Duplicate target ' + targetInfo.targetId);
 
     if (targetInfo.type === 'background_page') {
-      const backgroundPage = new CRPage(session, targetInfo.targetId, context, null, false);
+      const backgroundPage = new CRPage(session, targetInfo.targetId, context, null, false, true);
       this._backgroundPages.set(targetInfo.targetId, backgroundPage);
-      backgroundPage.pageOrError().then(pageOrError => {
-        if (pageOrError instanceof Page)
-          context!.emit(CRBrowserContext.CREvents.BackgroundPage, backgroundPage._page);
-      });
       return;
     }
 
     if (targetInfo.type === 'page') {
       const opener = targetInfo.openerId ? this._crPages.get(targetInfo.openerId) || null : null;
-      const crPage = new CRPage(session, targetInfo.targetId, context, opener, true);
+      const crPage = new CRPage(session, targetInfo.targetId, context, opener, true, false);
       this._crPages.set(targetInfo.targetId, crPage);
-      crPage._page.reportAsNew();
       return;
     }
 
@@ -201,6 +188,36 @@ export class CRBrowser extends Browser {
       serviceWorker.emit(Worker.Events.Close);
       return;
     }
+  }
+
+  private _findOwningPage(frameId: string) {
+    for (const crPage of this._crPages.values()) {
+      const frame = crPage._page._frameManager.frame(frameId);
+      if (frame)
+        return crPage;
+    }
+    return null;
+  }
+
+  _onDownloadWillBegin(payload: Protocol.Browser.downloadWillBeginPayload) {
+    const page = this._findOwningPage(payload.frameId);
+    assert(page, 'Download started in unknown page: ' + JSON.stringify(payload));
+    page.willBeginDownload();
+
+    let originPage = page._initializedPage;
+    // If it's a new window download, report it on the opener page.
+    if (!originPage && page._opener)
+      originPage = page._opener._initializedPage;
+    if (!originPage)
+      return;
+    this._downloadCreated(originPage, payload.guid, payload.url, payload.suggestedFilename);
+  }
+
+  _onDownloadProgress(payload: any) {
+    if (payload.state === 'completed')
+      this._downloadFinished(payload.guid, '');
+    if (payload.state === 'canceled')
+      this._downloadFinished(payload.guid, 'canceled');
   }
 
   async _closePage(crPage: CRPage) {
@@ -294,11 +311,12 @@ export class CRBrowserContext extends BrowserContext {
   async _initialize() {
     assert(!Array.from(this._browser._crPages.values()).some(page => page._browserContext === this));
     const promises: Promise<any>[] = [ super._initialize() ];
-    if (this._browser.options.downloadsPath) {
+    if (this._browser.options.name !== 'electron' && this._browser.options.name !== 'clank') {
       promises.push(this._browser._session.send('Browser.setDownloadBehavior', {
         behavior: this._options.acceptDownloads ? 'allowAndName' : 'deny',
         browserContextId: this._browserContextId,
-        downloadPath: this._browser.options.downloadsPath
+        downloadPath: this._browser.options.downloadsPath,
+        eventsEnabled: true,
       }));
     }
     if (this._options.permissions)
@@ -349,6 +367,8 @@ export class CRBrowserContext extends BrowserContext {
       delete copy.priority;
       delete copy.session;
       delete copy.sameParty;
+      delete copy.sourceScheme;
+      delete copy.sourcePort;
       return copy as types.NetworkCookie;
     }), urls);
   }
@@ -447,6 +467,15 @@ export class CRBrowserContext extends BrowserContext {
       // "close" event here and forget about the serivce worker.
       serviceWorker.emit(Worker.Events.Close);
       this._browser._serviceWorkers.delete(targetId);
+    }
+  }
+
+  async _onClosePersistent() {
+    for (const [targetId, backgroundPage] of this._browser._backgroundPages.entries()) {
+      if (backgroundPage._browserContext === this && backgroundPage._initializedPage) {
+        backgroundPage.didClose();
+        this._browser._backgroundPages.delete(targetId);
+      }
     }
   }
 

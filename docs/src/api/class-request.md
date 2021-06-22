@@ -29,8 +29,21 @@ page.on('requestfailed', request => {
 });
 ```
 
+```java
+page.onRequestFailed(request -> {
+  System.out.println(request.url() + " " + request.failure());
+});
+```
+
 ```py
 page.on("requestfailed", lambda request: print(request.url + " " + request.failure))
+```
+
+```csharp
+page.RequestFailed += (_, request) =>
+{
+    Console.WriteLine(request.Failure);
+};
 ```
 
 ## method: Request.frame
@@ -88,6 +101,11 @@ const response = await page.goto('http://example.com');
 console.log(response.request().redirectedFrom().url()); // 'http://example.com'
 ```
 
+```java
+Response response = page.navigate("http://example.com");
+System.out.println(response.request().redirectedFrom().url()); // "http://example.com"
+```
+
 ```python async
 response = await page.goto("http://example.com")
 print(response.request.redirected_from.url) # "http://example.com"
@@ -98,11 +116,21 @@ response = page.goto("http://example.com")
 print(response.request.redirected_from.url) # "http://example.com"
 ```
 
+```csharp
+var response = await page.GotoAsync("http://www.microsoft.com");
+Console.WriteLine(response.Request.RedirectedFrom?.Url); // http://www.microsoft.com
+```
+
 If the website `https://google.com` has no redirects:
 
 ```js
 const response = await page.goto('https://google.com');
 console.log(response.request().redirectedFrom()); // null
+```
+
+```java
+Response response = page.navigate("https://google.com");
+System.out.println(response.request().redirectedFrom()); // null
 ```
 
 ```python async
@@ -113,6 +141,11 @@ print(response.request.redirected_from) # None
 ```python sync
 response = page.goto("https://google.com")
 print(response.request.redirected_from) # None
+```
+
+```csharp
+var response = await page.GotoAsync("https://www.google.com");
+Console.WriteLine(response.Request.RedirectedFrom?.Url); // null
 ```
 
 ## method: Request.redirectedTo
@@ -126,8 +159,16 @@ This method is the opposite of [`method: Request.redirectedFrom`]:
 console.log(request.redirectedFrom().redirectedTo() === request); // true
 ```
 
+```java
+System.out.println(request.redirectedFrom().redirectedTo() == request); // true
+```
+
 ```py
 assert request.redirected_from.redirected_to == request
+```
+
+```csharp
+Console.WriteLine(request.RedirectedFrom?.RedirectedTo == request); // True
 ```
 
 ## method: Request.resourceType
@@ -175,6 +216,14 @@ const [request] = await Promise.all([
 console.log(request.timing());
 ```
 
+```java
+page.onRequestFinished(request -> {
+  Timing timing = request.timing();
+  System.out.println(timing.responseEnd - timing.startTime);
+});
+page.navigate("http://example.com");
+```
+
 ```python async
 async with page.expect_event("requestfinished") as request_info:
     await page.goto("http://example.com")
@@ -187,6 +236,14 @@ with page.expect_event("requestfinished") as request_info:
     page.goto("http://example.com")
 request = request_info.value
 print(request.timing)
+```
+
+```csharp
+var request = await page.RunAndWaitForRequestFinishedAsync(async () =>
+{
+    await page.GotoAsync("https://www.microsoft.com");
+});
+Console.WriteLine(request.Timing.ResponseEnd);
 ```
 
 ## method: Request.url

@@ -68,8 +68,8 @@ Defaults to `left`.
 
 ## input-files
 - `files` <[path]|[Array]<[path]>|[Object]|[Array]<[Object]>>
-  - `name` <[string]> [File] name
-  - `mimeType` <[string]> [File] type
+  - `name` <[string]> File name
+  - `mimeType` <[string]> File type
   - `buffer` <[Buffer]> File content
 
 ## input-down-up-delay
@@ -81,6 +81,11 @@ Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
 - `clickCount` <[int]>
 
 defaults to 1. See [UIEvent.detail].
+
+## input-trial
+- `trial` <[boolean]>
+
+When set, this method only performs the [actionability](./actionability.md) checks and skips the action. Defaults to `false`. Useful to wait until the element is ready for the action without performing it.
 
 ## query-selector
 - `selector` <[string]>
@@ -169,7 +174,7 @@ Specify environment variables that will be visible to the browser. Defaults to `
     - `expires` <[float]> Optional Unix time in seconds.
     - `httpOnly` <[boolean]> Optional httpOnly flag
     - `secure` <[boolean]> Optional secure flag
-    - `sameSite` <["SameSiteAttribute"]<"Strict"|"Lax"|"None">> Optional sameSite flag
+    - `sameSite` <[SameSiteAttribute]<"Strict"|"Lax"|"None">> Optional sameSite flag
   - `origins` <[Array]<[Object]>> Optional localStorage to set for context
     - `origin` <[string]>
     - `localStorage` <[Array]<[Object]>>
@@ -211,12 +216,31 @@ Toggles bypassing page's Content-Security-Policy.
 ## context-option-viewport
 * langs: js, java
   - alias-java: viewportSize
+- `viewport` <[null]|[Object]>
+  - `width` <[int]> page width in pixels.
+  - `height` <[int]> page height in pixels.
+
+Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
+
+## csharp-context-option-viewport
+* langs: csharp
   - alias-csharp: viewportSize
 - `viewport` <[null]|[Object]>
   - `width` <[int]> page width in pixels.
   - `height` <[int]> page height in pixels.
 
-Sets a consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
+Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. Use `ViewportSize.NoViewport` to disable the default viewport.
+
+## context-option-screen
+* langs:
+  - alias-java: screenSize
+  - alias-csharp: screenSize
+- `screen` <[Object]>
+  - `width` <[int]> page width in pixels.
+  - `height` <[int]> page height in pixels.
+
+Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the
+[`option: viewport`] is set.
 
 ## evaluate-expression
 - `expression` <[string]>
@@ -340,7 +364,13 @@ Credentials for [HTTP authentication](https://developer.mozilla.org/en-US/docs/W
 - `colorScheme` <[ColorScheme]<"light"|"dark"|"no-preference">>
 
 Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
-[`method: Page.emulateMedia`] for more details. Defaults to '`light`'.
+[`method: Page.emulateMedia`] for more details. Defaults to `'light'`.
+
+## context-option-reducedMotion
+- `reducedMotion` <[ReducedMotion]<"reduce"|"no-preference">>
+
+Emulates `'prefers-reduced-motion'` media feature, supported values are `'reduce'`, `'no-preference'`. See [`method: Page.emulateMedia`] for more details. Defaults
+to `'no-preference'`.
 
 ## context-option-logger
 * langs: js
@@ -378,7 +408,9 @@ saved.
   - alias-python: record_har_path
 - `recordHarPath` <[path]>
 
-Path on the filesystem to write the HAR file to.
+Enables [HAR](http://www.softwareishard.com/blog/har-12-spec) recording for all pages into the
+specified HAR file on the filesystem. If not specified, the HAR is not recorded. Make sure to
+call [`method: BrowserContext.close`] for the HAR to be saved.
 
 ## context-option-recordhar-omit-content
 * langs: csharp, java, python
@@ -405,7 +437,8 @@ sure to await [`method: BrowserContext.close`] for videos to be saved.
   - alias-python: record_video_dir
 - `recordVideoDir` <[path]>
 
-Path to the directory to put videos into.
+Enables video recording for all pages into the specified directory. If not specified videos are
+not recorded. Make sure to call [`method: BrowserContext.close`] for videos to be saved.
 
 ## context-option-recordvideo-size
 * langs: csharp, java, python
@@ -428,12 +461,16 @@ Actual picture of each page will be scaled down if necessary to fit the specifie
   - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
   - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
 
-Network proxy settings to use with this context. Note that browser needs to be launched with the global proxy for this
-option to work. If all contexts override the proxy, global proxy will be never used and can be any string, for example
-`launch({ proxy: { server: 'per-context' } })`.
+Network proxy settings to use with this context.
+
+:::note
+For Chromium on Windows the browser needs to be launched with the global proxy for this option to work. If all
+contexts override the proxy, global proxy will be never used and can be any string, for example
+`launch({ proxy: { server: 'http://per-context' } })`.
+:::
 
 ## select-options-values
-* langs: java, js
+* langs: java, js, csharp
 - `values` <[null]|[string]|[ElementHandle]|[Array]<[string]>|[Object]|[Array]<[ElementHandle]>|[Array]<[Object]>>
   - `value` <[string]> Matches by `option.value`. Optional.
   - `label` <[string]> Matches by `option.label`. Optional.
@@ -449,6 +486,7 @@ is considered matching if all specified properties match.
 A glob pattern, regex pattern or predicate receiving [URL] to match while waiting for the navigation.
 
 ## wait-for-event-event
+* langs: js, python, java
 - `event` <[string]>
 
 Event name, same one typically passed into `*.on(event)`.
@@ -472,6 +510,12 @@ Specify screenshot type, defaults to `png`.
 - `callback` <[Runnable]>
 
 Callback that performs the action triggering the event.
+
+## csharp-wait-for-event-action
+* langs: csharp
+- `action` <[Func<Task>]>
+
+Action that triggers the event.
 
 ## python-select-options-element
 * langs: python
@@ -499,8 +543,7 @@ only the first option matching one of the passed options is selected. Optional.
 Options to select by label. If the `<select>` has the `multiple` attribute, all given options are selected, otherwise
 only the first option matching one of the passed options is selected. Optional.
 
-## python-wait-for-event-predicate
-* langs: python
+## wait-for-event-predicate
 - `predicate` <[function]>
 
 Receives the event data and resolves to truthy value when the waiting should resolve.
@@ -524,7 +567,9 @@ using the [`method: AndroidDevice.setDefaultTimeout`] method.
 - %%-context-option-ignorehttpserrors-%%
 - %%-context-option-bypasscsp-%%
 - %%-context-option-viewport-%%
+- %%-csharp-context-option-viewport-%%
 - %%-python-context-option-viewport-%%
+- %%-context-option-screen-%%
 - %%-python-context-option-no-viewport-%%
 - %%-context-option-useragent-%%
 - %%-context-option-devicescalefactor-%%
@@ -539,6 +584,7 @@ using the [`method: AndroidDevice.setDefaultTimeout`] method.
 - %%-context-option-offline-%%
 - %%-context-option-httpcredentials-%%
 - %%-context-option-colorscheme-%%
+- %%-context-option-reducedMotion-%%
 - %%-context-option-logger-%%
 - %%-context-option-videospath-%%
 - %%-context-option-videosize-%%
@@ -548,3 +594,116 @@ using the [`method: AndroidDevice.setDefaultTimeout`] method.
 - %%-context-option-recordvideo-%%
 - %%-context-option-recordvideo-dir-%%
 - %%-context-option-recordvideo-size-%%
+
+## browser-option-args
+- `args` <[Array]<[string]>>
+
+Additional arguments to pass to the browser instance. The list of Chromium flags can be found
+[here](http://peter.sh/experiments/chromium-command-line-switches/).
+
+## browser-option-channel
+- `channel` <[string]>
+
+Browser distribution channel.  Supported values are "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary". Read more about using [Google Chrome and Microsoft Edge](./browsers.md#google-chrome--microsoft-edge).
+
+## browser-option-chromiumsandbox
+- `chromiumSandbox` <[boolean]>
+
+Enable Chromium sandboxing. Defaults to `false`.
+
+
+## browser-option-downloadspath
+- `downloadsPath` <[path]>
+
+If specified, accepted downloads are downloaded into this directory. Otherwise, temporary directory is created and is
+deleted when browser is closed.
+
+## browser-option-executablepath
+- `executablePath` <[path]>
+
+Path to a browser executable to run instead of the bundled one. If [`option: executablePath`] is a relative path, then
+it is resolved relative to the current working directory. Note that Playwright only works with the bundled Chromium,
+Firefox or WebKit, use at your own risk.
+
+## browser-option-handlesigint
+- `handleSIGINT` <[boolean]>
+
+Close the browser process on Ctrl-C. Defaults to `true`.
+
+## browser-option-handlesigterm
+- `handleSIGTERM` <[boolean]>
+
+Close the browser process on SIGTERM. Defaults to `true`.
+
+## browser-option-handlesighup
+- `handleSIGHUP` <[boolean]>
+
+Close the browser process on SIGHUP. Defaults to `true`.
+
+## browser-option-headless
+- `headless` <[boolean]>
+
+Whether to run browser in headless mode. More details for
+[Chromium](https://developers.google.com/web/updates/2017/04/headless-chrome) and
+[Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Headless_mode). Defaults to `true` unless the
+[`option: devtools`] option is `true`.
+
+## js-python-browser-option-firefoxuserprefs
+* langs: js, python
+- `firefoxUserPrefs` <[Object]<[string], [string]|[float]|[boolean]>>
+
+Firefox user preferences. Learn more about the Firefox user preferences at
+[`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+
+## csharp-java-browser-option-firefoxuserprefs
+* langs: csharp, java
+- `firefoxUserPrefs` <[Object]<[string], [any]>>
+
+Firefox user preferences. Learn more about the Firefox user preferences at
+[`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+
+## browser-option-logger
+* langs: js
+- `logger` <[Logger]>
+
+Logger sink for Playwright logging.
+
+## browser-option-timeout
+- `timeout` <[float]>
+
+Maximum time in milliseconds to wait for the browser instance to start. Defaults to `30000` (30 seconds). Pass `0` to
+disable timeout.
+
+## browser-option-tracesdir
+- `tracesDir` <[path]>
+
+If specified, traces are saved into this directory.
+
+## browser-option-devtools
+- `devtools` <[boolean]>
+
+**Chromium-only** Whether to auto-open a Developer Tools panel for each tab. If this option is `true`, the
+[`option: headless`] option will be set `false`.
+
+## browser-option-slowmo
+- `slowMo` <[float]>
+
+Slows down Playwright operations by the specified amount of milliseconds. Useful so that you can see what is going on.
+
+## shared-browser-options-list
+- %%-browser-option-args-%%
+- %%-browser-option-channel-%%
+- %%-browser-option-chromiumsandbox-%%
+- %%-browser-option-devtools-%%
+- %%-browser-option-downloadspath-%%
+- %%-csharp-java-browser-option-env-%%
+- %%-js-python-browser-option-env-%%
+- %%-browser-option-executablepath-%%
+- %%-browser-option-handlesigint-%%
+- %%-browser-option-handlesigterm-%%
+- %%-browser-option-handlesighup-%%
+- %%-browser-option-headless-%%
+- %%-browser-option-ignoredefaultargs-%%
+- %%-browser-option-proxy-%%
+- %%-browser-option-timeout-%%
+- %%-browser-option-tracesdir-%%

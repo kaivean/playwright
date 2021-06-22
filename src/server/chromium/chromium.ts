@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { CRBrowser } from './crBrowser';
 import { Env } from '../processLauncher';
@@ -25,12 +27,16 @@ import { ConnectionTransport, ProtocolRequest, WebSocketTransport } from '../tra
 import { CRDevTools } from './crDevTools';
 import { BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
 import * as types from '../types';
-import { isDebugMode } from '../../utils/utils';
+import { debugMode, headersArrayToObject, removeFolders } from '../../utils/utils';
 import { RecentLogsCollector } from '../../utils/debugLogger';
 import { ProgressController } from '../progress';
 import { TimeoutSettings } from '../../utils/timeoutSettings';
 import { helper } from '../helper';
 import { CallMetadata } from '../instrumentation';
+import { findChromiumChannel } from './findChromiumChannel';
+import http from 'http';
+
+const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
 export class Chromium extends BrowserType {
   private _devtools: CRDevTools | undefined;
@@ -38,21 +44,35 @@ export class Chromium extends BrowserType {
   constructor(playwrightOptions: PlaywrightOptions) {
     super('chromium', playwrightOptions);
 
-    if (isDebugMode())
+    if (debugMode())
       this._devtools = this._createDevTools();
   }
 
-  async connectOverCDP(metadata: CallMetadata, wsEndpoint: string, options: { slowMo?: number, sdkLanguage: string }, timeout?: number) {
+  executablePath(channel?: string): string {
+    if (channel)
+      return findChromiumChannel(channel);
+    return super.executablePath(channel);
+  }
+
+  async connectOverCDP(metadata: CallMetadata, endpointURL: string, options: { slowMo?: number, sdkLanguage: string, headers?: types.HeadersArray }, timeout?: number) {
     const controller = new ProgressController(metadata, this);
     controller.setLogName('browser');
     const browserLogsCollector = new RecentLogsCollector();
     return controller.run(async progress => {
-      const chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint);
+      let headersMap: { [key: string]: string; } | undefined;
+      if (options.headers)
+        headersMap = headersArrayToObject(options.headers, false);
+
+      const artifactsDir = await fs.promises.mkdtemp(ARTIFACTS_FOLDER);
+  
+      const chromeTransport = await WebSocketTransport.connect(progress, await urlToWSEndpoint(endpointURL), headersMap);
       const browserProcess: BrowserProcess = {
         close: async () => {
+          await removeFolders([ artifactsDir ]);
           await chromeTransport.closeAndWait();
         },
         kill: async () => {
+          await removeFolders([ artifactsDir ]);
           await chromeTransport.closeAndWait();
         }
       };
@@ -65,6 +85,9 @@ export class Chromium extends BrowserType {
         browserProcess,
         protocolLogger: helper.debugProtocolLogger(),
         browserLogsCollector,
+        artifactsDir,
+        downloadsPath: artifactsDir,
+        tracesDir: artifactsDir
       };
       return await CRBrowser.connect(chromeTransport, browserOptions);
     }, TimeoutSettings.timeout({timeout}));
@@ -112,7 +135,7 @@ export class Chromium extends BrowserType {
     const { args = [], proxy } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)
-      throw new Error('Pass userDataDir parameter instead of specifying --user-data-dir argument');
+      throw new Error('Pass userDataDir parameter to `browserType.launchPersistentContext(userDataDir, ...)` instead of specifying --user-data-dir argument');
     if (args.find(arg => arg.startsWith('--remote-debugging-pipe')))
       throw new Error('Playwright manages remote debugging connection itself.');
     if (args.find(arg => !arg.startsWith('-')))
@@ -144,10 +167,14 @@ export class Chromium extends BrowserType {
         chromeArguments.push(`--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE ${proxyURL.hostname}"`);
       }
       chromeArguments.push(`--proxy-server=${proxy.server}`);
-      if (proxy.bypass) {
-        const patterns = proxy.bypass.split(',').map(t => t.trim()).map(t => t.startsWith('.') ? '*' + t : t);
-        chromeArguments.push(`--proxy-bypass-list=${patterns.join(';')}`);
-      }
+      const proxyBypassRules = [];
+      // https://source.chromium.org/chromium/chromium/src/+/master:net/docs/proxy.md;l=548;drc=71698e610121078e0d1a811054dcf9fd89b49578
+      if (this._playwrightOptions.loopbackProxyOverride)
+        proxyBypassRules.push('<-loopback>');
+      if (proxy.bypass)
+        proxyBypassRules.push(...proxy.bypass.split(',').map(t => t.trim()).map(t => t.startsWith('.') ? '*' + t : t));
+      if (proxyBypassRules.length > 0)
+        chromeArguments.push(`--proxy-bypass-list=${proxyBypassRules.join(';')}`);
     }
     chromeArguments.push(...args);
     if (isPersistent)
@@ -170,7 +197,8 @@ const DEFAULT_ARGS = [
   '--disable-dev-shm-usage',
   '--disable-extensions',
   // BlinkGenPropertyTrees disabled due to crbug.com/937609
-  '--disable-features=TranslateUI,BlinkGenPropertyTrees,ImprovedCookieControls,SameSiteByDefaultCookies,LazyFrameLoading',
+  '--disable-features=TranslateUI,BlinkGenPropertyTrees,ImprovedCookieControls,SameSiteByDefaultCookies,LazyFrameLoading,GlobalMediaControls',
+  '--allow-pre-commit-input',
   '--disable-hang-monitor',
   '--disable-ipc-flooding-protection',
   '--disable-popup-blocking',
@@ -183,4 +211,20 @@ const DEFAULT_ARGS = [
   '--enable-automation',
   '--password-store=basic',
   '--use-mock-keychain',
+  // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
+  '--no-service-autorun',
 ];
+
+async function urlToWSEndpoint(endpointURL: string) {
+  if (endpointURL.startsWith('ws'))
+    return endpointURL;
+  const httpURL = endpointURL.endsWith('/') ? `${endpointURL}json/version/` : `${endpointURL}/json/version/`;
+  const json = await new Promise<string>((resolve, reject) => {
+    http.get(httpURL, resp => {
+      let data = '';
+      resp.on('data', chunk => data += chunk);
+      resp.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+  return JSON.parse(json).webSocketDebuggerUrl;
+}

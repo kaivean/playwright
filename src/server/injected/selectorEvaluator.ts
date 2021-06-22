@@ -43,7 +43,7 @@ export class SelectorEvaluatorImpl implements SelectorEvaluator {
   private _cacheCallMatches: QueryCache = new Map();
   private _cacheCallQuery: QueryCache = new Map();
   private _cacheQuerySimple: QueryCache = new Map();
-  _cacheText = new Map<Element | ShadowRoot, string>();
+  _cacheText = new Map<Element | ShadowRoot, ElementText>();
   private _scoreMap: Map<Element, number> | undefined;
   private _retainCacheCounter = 0;
 
@@ -68,12 +68,12 @@ export class SelectorEvaluatorImpl implements SelectorEvaluator {
     this._engines.set('near', createPositionEngine('near', boxNear));
     this._engines.set('nth-match', nthMatchEngine);
 
-    const allNames = Array.from(this._engines.keys());
+    const allNames = [...this._engines.keys()];
     allNames.sort();
-    const parserNames = Array.from(customCSSNames).slice();
+    const parserNames = [...customCSSNames];
     parserNames.sort();
     if (allNames.join('|') !== parserNames.join('|'))
-      throw new Error(`Please keep customCSSNames in sync with evaluator engines`);
+      throw new Error(`Please keep customCSSNames in sync with evaluator engines: ${allNames.join('|')} vs ${parserNames.join('|')}`);
   }
 
   begin() {
@@ -427,7 +427,7 @@ const textEngine: SelectorEngine = {
   matches(element: Element, args: (string | number | Selector)[], context: QueryContext, evaluator: SelectorEvaluator): boolean {
     if (args.length !== 1 || typeof args[0] !== 'string')
       throw new Error(`"text" engine expects a single string`);
-    const matcher = textMatcher(args[0], true);
+    const matcher = createLaxTextMatcher(args[0]);
     return elementMatchesText(evaluator as SelectorEvaluatorImpl, element, matcher) === 'self';
   },
 };
@@ -436,8 +436,8 @@ const textIsEngine: SelectorEngine = {
   matches(element: Element, args: (string | number | Selector)[], context: QueryContext, evaluator: SelectorEvaluator): boolean {
     if (args.length !== 1 || typeof args[0] !== 'string')
       throw new Error(`"text-is" engine expects a single string`);
-    const matcher = textMatcher(args[0], false);
-    return elementMatchesText(evaluator as SelectorEvaluatorImpl, element, matcher) === 'self';
+    const matcher = createStrictTextMatcher(args[0]);
+    return elementMatchesText(evaluator as SelectorEvaluatorImpl, element, matcher) !== 'none';
   },
 };
 
@@ -445,8 +445,7 @@ const textMatchesEngine: SelectorEngine = {
   matches(element: Element, args: (string | number | Selector)[], context: QueryContext, evaluator: SelectorEvaluator): boolean {
     if (args.length === 0 || typeof args[0] !== 'string' || args.length > 2 || (args.length === 2 && typeof args[1] !== 'string'))
       throw new Error(`"text-matches" engine expects a regexp body and optional regexp flags`);
-    const re = new RegExp(args[0], args.length === 2 ? args[1] : undefined);
-    const matcher = (s: string) => re.test(s);
+    const matcher = createRegexTextMatcher(args[0], args.length === 2 ? args[1] : undefined);
     return elementMatchesText(evaluator as SelectorEvaluatorImpl, element, matcher) === 'self';
   },
 };
@@ -457,20 +456,30 @@ const hasTextEngine: SelectorEngine = {
       throw new Error(`"has-text" engine expects a single string`);
     if (shouldSkipForTextMatching(element))
       return false;
-    const matcher = textMatcher(args[0], true);
+    const matcher = createLaxTextMatcher(args[0]);
     return matcher(elementText(evaluator as SelectorEvaluatorImpl, element));
   },
 };
 
-function textMatcher(text: string, caseInsensitive: boolean): (s: string) => boolean {
-  text = text.trim().replace(/\s+/g, ' ');
-  if (caseInsensitive)
-    text = text.toLowerCase();
-  return (s: string) => {
-    s = s.trim().replace(/\s+/g, ' ');
-    if (caseInsensitive)
-      s = s.toLowerCase();
+export function createLaxTextMatcher(text: string): TextMatcher {
+  text = text.trim().replace(/\s+/g, ' ').toLowerCase();
+  return (elementText: ElementText) => {
+    const s = elementText.full.trim().replace(/\s+/g, ' ').toLowerCase();
     return s.includes(text);
+  };
+}
+
+export function createStrictTextMatcher(text: string): TextMatcher {
+  text = text.trim().replace(/\s+/g, ' ');
+  return (elementText: ElementText) => {
+    return elementText.immediate.some(s => s.trim().replace(/\s+/g, ' ') === text);
+  };
+}
+
+export function createRegexTextMatcher(source: string, flags?: string): TextMatcher {
+  const re = new RegExp(source, flags);
+  return (elementText: ElementText) => {
+    return re.test(elementText.full);
   };
 }
 
@@ -478,22 +487,34 @@ function shouldSkipForTextMatching(element: Element | ShadowRoot) {
   return element.nodeName === 'SCRIPT' || element.nodeName === 'STYLE' || document.head && document.head.contains(element);
 }
 
-export function elementText(evaluator: SelectorEvaluatorImpl, root: Element | ShadowRoot): string {
+export type ElementText = { full: string, immediate: string[] };
+export type TextMatcher = (text: ElementText) => boolean;
+
+export function elementText(evaluator: SelectorEvaluatorImpl, root: Element | ShadowRoot): ElementText {
   let value = evaluator._cacheText.get(root);
   if (value === undefined) {
-    value = '';
+    value = { full: '', immediate: [] };
     if (!shouldSkipForTextMatching(root)) {
+      let currentImmediate = '';
       if ((root instanceof HTMLInputElement) && (root.type === 'submit' || root.type === 'button')) {
-        value = root.value;
+        value = { full: root.value, immediate: [root.value] };
       } else {
         for (let child = root.firstChild; child; child = child.nextSibling) {
-          if (child.nodeType === Node.ELEMENT_NODE)
-            value += elementText(evaluator, child as Element);
-          else if (child.nodeType === Node.TEXT_NODE)
-            value += child.nodeValue || '';
+          if (child.nodeType === Node.TEXT_NODE) {
+            value.full += child.nodeValue || '';
+            currentImmediate += child.nodeValue || '';
+          } else {
+            if (currentImmediate)
+              value.immediate.push(currentImmediate);
+            currentImmediate = '';
+            if (child.nodeType === Node.ELEMENT_NODE)
+              value.full += elementText(evaluator, child as Element).full;
+          }
         }
+        if (currentImmediate)
+          value.immediate.push(currentImmediate);
         if ((root as Element).shadowRoot)
-          value += elementText(evaluator, (root as Element).shadowRoot!);
+          value.full += elementText(evaluator, (root as Element).shadowRoot!).full;
       }
     }
     evaluator._cacheText.set(root, value);
@@ -501,7 +522,7 @@ export function elementText(evaluator: SelectorEvaluatorImpl, root: Element | Sh
   return value;
 }
 
-export function elementMatchesText(evaluator: SelectorEvaluatorImpl, element: Element, matcher: (s: string) => boolean): 'none' | 'self' | 'selfAndChildren' {
+export function elementMatchesText(evaluator: SelectorEvaluatorImpl, element: Element, matcher: TextMatcher): 'none' | 'self' | 'selfAndChildren' {
   if (shouldSkipForTextMatching(element))
     return 'none';
   if (!matcher(elementText(evaluator, element)))
@@ -510,37 +531,41 @@ export function elementMatchesText(evaluator: SelectorEvaluatorImpl, element: El
     if (child.nodeType === Node.ELEMENT_NODE && matcher(elementText(evaluator, child as Element)))
       return 'selfAndChildren';
   }
-  if (element.shadowRoot  && matcher(elementText(evaluator, element.shadowRoot)))
+  if (element.shadowRoot && matcher(elementText(evaluator, element.shadowRoot)))
     return 'selfAndChildren';
   return 'self';
 }
 
-function boxRightOf(box1: DOMRect, box2: DOMRect): number | undefined {
-  if (box1.left < box2.right)
+function boxRightOf(box1: DOMRect, box2: DOMRect, maxDistance: number | undefined): number | undefined {
+  const distance = box1.left - box2.right;
+  if (distance < 0 || (maxDistance !== undefined && distance > maxDistance))
     return;
-  return (box1.left - box2.right) + Math.max(box2.bottom - box1.bottom, 0) + Math.max(box1.top - box2.top, 0);
+  return distance + Math.max(box2.bottom - box1.bottom, 0) + Math.max(box1.top - box2.top, 0);
 }
 
-function boxLeftOf(box1: DOMRect, box2: DOMRect): number | undefined {
-  if (box1.right > box2.left)
+function boxLeftOf(box1: DOMRect, box2: DOMRect, maxDistance: number | undefined): number | undefined {
+  const distance = box2.left - box1.right;
+  if (distance < 0 || (maxDistance !== undefined && distance > maxDistance))
     return;
-  return (box2.left - box1.right) + Math.max(box2.bottom - box1.bottom, 0) + Math.max(box1.top - box2.top, 0);
+  return distance + Math.max(box2.bottom - box1.bottom, 0) + Math.max(box1.top - box2.top, 0);
 }
 
-function boxAbove(box1: DOMRect, box2: DOMRect): number | undefined {
-  if (box1.bottom > box2.top)
+function boxAbove(box1: DOMRect, box2: DOMRect, maxDistance: number | undefined): number | undefined {
+  const distance = box2.top - box1.bottom;
+  if (distance < 0 || (maxDistance !== undefined && distance > maxDistance))
     return;
-  return (box2.top - box1.bottom) + Math.max(box1.left - box2.left, 0) + Math.max(box2.right - box1.right, 0);
+  return distance + Math.max(box1.left - box2.left, 0) + Math.max(box2.right - box1.right, 0);
 }
 
-function boxBelow(box1: DOMRect, box2: DOMRect): number | undefined {
-  if (box1.top < box2.bottom)
+function boxBelow(box1: DOMRect, box2: DOMRect, maxDistance: number | undefined): number | undefined {
+  const distance = box1.top - box2.bottom;
+  if (distance < 0 || (maxDistance !== undefined && distance > maxDistance))
     return;
-  return (box1.top - box2.bottom) + Math.max(box1.left - box2.left, 0) + Math.max(box2.right - box1.right, 0);
+  return distance + Math.max(box1.left - box2.left, 0) + Math.max(box2.right - box1.right, 0);
 }
 
-function boxNear(box1: DOMRect, box2: DOMRect): number | undefined {
-  const kThreshold = 50;
+function boxNear(box1: DOMRect, box2: DOMRect, maxDistance: number | undefined): number | undefined {
+  const kThreshold = maxDistance === undefined ? 50 : maxDistance;
   let score = 0;
   if (box1.left - box2.right >= 0)
     score += box1.left - box2.right;
@@ -553,17 +578,19 @@ function boxNear(box1: DOMRect, box2: DOMRect): number | undefined {
   return score > kThreshold ? undefined : score;
 }
 
-function createPositionEngine(name: string, scorer: (box1: DOMRect, box2: DOMRect) => number | undefined): SelectorEngine {
+function createPositionEngine(name: string, scorer: (box1: DOMRect, box2: DOMRect, maxDistance: number | undefined) => number | undefined): SelectorEngine {
   return {
     matches(element: Element, args: (string | number | Selector)[], context: QueryContext, evaluator: SelectorEvaluator): boolean {
-      if (!args.length)
-        throw new Error(`"${name}" engine expects a selector list`);
+      const maxDistance = args.length && typeof args[args.length - 1] === 'number' ? args[args.length - 1] : undefined;
+      const queryArgs = maxDistance === undefined ? args : args.slice(0, args.length - 1);
+      if (args.length < 1 + (maxDistance === undefined ? 0 : 1))
+        throw new Error(`"${name}" engine expects a selector list and optional maximum distance in pixels`);
       const box = element.getBoundingClientRect();
       let bestScore: number | undefined;
-      for (const e of evaluator.query(context, args)) {
+      for (const e of evaluator.query(context, queryArgs)) {
         if (e === element)
           continue;
-        const score = scorer(box, e.getBoundingClientRect());
+        const score = scorer(box, e.getBoundingClientRect(), maxDistance);
         if (score === undefined)
           continue;
         if (bestScore === undefined || score < bestScore)

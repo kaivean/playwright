@@ -28,6 +28,11 @@ const jsHandle = await page.evaluateHandle('window');
 //  Use jsHandle for evaluations.
 ```
 
+```java
+JSHandle jsHandle = page.evaluateHandle("window");
+//  Use jsHandle for evaluations.
+```
+
 ```python async
 js_handle = await page.evaluate_handle('window')
 #  Use jsHandle for evaluations.
@@ -38,8 +43,18 @@ js_handle = page.evaluate_handle('window')
 #  Use jsHandle for evaluations.
 ```
 
+```csharp
+var jsHandle = await page.EvaluateHandleAsync("window");
+//  Use jsHandle for evaluations.
+```
+
 ```js
 const ulElementHandle = await page.waitForSelector('ul');
+//  Use ulElementHandle for actions and evaluation.
+```
+
+```java
+ElementHandle ulElementHandle = page.waitForSelector("ul");
 //  Use ulElementHandle for actions and evaluation.
 ```
 
@@ -51,6 +66,11 @@ ul_element_handle = await page.wait_for_selector('ul')
 ```python sync
 ul_element_handle = page.wait_for_selector('ul')
 #  Use ul_element_handle for actions and evaluation.
+```
+
+```csharp
+var ulElementHandle = await page.WaitForSelectorAsync("ul");
+//  Use ulElementHandle for actions and evaluation.
 ```
 
 ## Element Handles
@@ -74,6 +94,20 @@ expect(boundingBox.width).toBe(100);
 // Assert attribute for the element
 const classNames = await elementHandle.getAttribute('class');
 expect(classNames.includes('highlighted')).toBeTruthy();
+```
+
+```java
+// Get the element handle
+JSHandle jsHandle = page.waitForSelector("#box");
+ElementHandle elementHandle = jsHandle.asElement();
+
+// Assert bounding box for the element
+BoundingBox boundingBox = elementHandle.boundingBox();
+assertEquals(100, boundingBox.width);
+
+// Assert attribute for the element
+String classNames = elementHandle.getAttribute("class");
+assertTrue(classNames.contains("highlighted"));
 ```
 
 ```python async
@@ -102,6 +136,20 @@ class_names = element_handle.get_attribute('class')
 assert 'highlighted' in class_names
 ```
 
+```csharp
+// Get the element handle
+var jsHandle = await page.WaitForSelectorAsync("#box");
+var elementHandle = jsHandle as ElementHandle;
+
+// Assert bounding box for the element
+var boundingBox = await elementHandle.BoundingBoxAsync();
+Assert.Equal(100, boundingBox.Width);
+
+// Assert attribute for the element
+var classNames = await elementHandle.GetAttributeAsync("class");
+Assert.True(classNames.Contains("highlighted"));
+```
+
 ## Handles as parameters
 
 Handles can be passed into the [`method: Page.evaluate`] and similar methods.
@@ -127,6 +175,26 @@ await page.evaluate(arg => arg.myArray.push(arg.newElement), {
 
 // Release the object when it's no longer needed.
 await myArrayHandle.dispose();
+```
+
+```java
+// Create new array in page.
+JSHandle myArrayHandle = page.evaluateHandle("() => {\n" +
+  "  window.myArray = [1];\n" +
+  "  return myArray;\n" +
+  "}");
+
+// Get the length of the array.
+int length = (int) page.evaluate("a => a.length", myArrayHandle);
+
+// Add one more element to the array using the handle
+Map<String, Object> arg = new HashMap<>();
+arg.put("myArray", myArrayHandle);
+arg.put("newElement", 2);
+page.evaluate("arg => arg.myArray.add(arg.newElement)", arg);
+
+// Release the object when it is no longer needed.
+myArrayHandle.dispose();
 ```
 
 ```python async
@@ -168,6 +236,25 @@ page.evaluate("(arg) => arg.myArray.push(arg.newElement)", {
 # Release the object when it's no longer needed.
 my_array_handle.dispose()
 ```
+
+```csharp
+// Create new array in page.
+var myArrayHandle = await page.EvaluateHandleAsync(@"() => {
+    window.myArray = [1];
+    return myArray;
+}");
+
+// Get the length of the array.
+var length = await page.EvaluateAsync<int>("a => a.length", myArrayHandle);
+
+// Add one more element to the array using the handle
+await page.EvaluateAsync("arg => arg.myArray.add(arg.newElement)",
+    new { myArray = myArrayHandle, newElement = 2 });
+
+// Release the object when it is no longer needed.
+await myArrayHandle.DisposeAsync();
+```
+
 
 ## Handle Lifecycle
 

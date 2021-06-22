@@ -14,6 +14,22 @@ const { firefox } = require('playwright');  // Or 'chromium' or 'webkit'.
 })();
 ```
 
+```java
+import com.microsoft.playwright.*;
+
+public class Example {
+  public static void main(String[] args) {
+    try (Playwright playwright = Playwright.create()) {
+      BrowserType firefox = playwright.firefox()
+      Browser browser = firefox.launch();
+      Page page = browser.newPage();
+      page.navigate('https://example.com');
+      browser.close();
+    }
+  }
+}
+```
+
 ```python async
 import asyncio
 from playwright.async_api import async_playwright
@@ -45,8 +61,26 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class Program
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        var firefox = playwright.Firefox;
+        var browser = await firefox.LaunchAsync(new BrowserTypeLaunchOptions { Headless = false });
+        var page = await browser.NewPageAsync();
+        await page.GotoAsync("https://www.bing.com");
+        await browser.CloseAsync();
+    }
+}
+```
+
 ## event: Browser.disconnected
-- type: <[Browser]>
+- argument: <[Browser]>
 
 Emitted when Browser gets disconnected from the browser application. This might happen because of one of the following:
 * Browser application is closed or crashed.
@@ -75,6 +109,13 @@ const context = await browser.newContext();
 console.log(browser.contexts().length); // prints `1`
 ```
 
+```java
+Browser browser = pw.webkit().launch();
+System.out.println(browser.contexts().size()); // prints "0"
+BrowserContext context = browser.newContext();
+System.out.println(browser.contexts().size()); // prints "1"
+```
+
 ```python async
 browser = await pw.webkit.launch()
 print(len(browser.contexts())) # prints `0`
@@ -89,10 +130,28 @@ context = browser.new_context()
 print(len(browser.contexts())) # prints `1`
 ```
 
+```csharp
+using var playwright = await Playwright.CreateAsync();
+var browser = await playwright.Webkit.LaunchAsync();
+System.Console.WriteLine(browser.Contexts.Count); // prints "0"
+var context = await browser.NewContextAsync();
+System.Console.WriteLine(browser.Contexts.Count); // prints "1"
+```
+
 ## method: Browser.isConnected
 - returns: <[boolean]>
 
 Indicates that the browser is connected.
+
+## async method: Browser.newBrowserCDPSession
+* langs: js, python
+- returns: <[CDPSession]>
+
+:::note
+CDP Sessions are only supported on Chromium-based browsers.
+:::
+
+Returns the newly created browser session.
 
 ## async method: Browser.newContext
 - returns: <[BrowserContext]>
@@ -108,6 +167,15 @@ Creates a new browser context. It won't share cookies/cache with other browser c
   const page = await context.newPage();
   await page.goto('https://example.com');
 })();
+```
+
+```java
+Browser browser = playwright.firefox().launch();  // Or 'chromium' or 'webkit'.
+// Create a new incognito browser context.
+BrowserContext context = browser.newContext();
+// Create a new page in a pristine context.
+Page page = context.newPage();
+page.navigate('https://example.com');
 ```
 
 ```python async
@@ -126,6 +194,16 @@ context = browser.new_context()
 # create a new page in a pristine context.
 page = context.new_page()
 page.goto("https://example.com")
+```
+
+```csharp
+using var playwright = await Playwright.CreateAsync();
+var browser = await playwright.Firefox.LaunchAsync();
+// Create a new incognito browser context.
+var context = await browser.NewContextAsync();
+// Create a new page in a pristine context.
+var page = await context.NewPageAsync(); ;
+await page.GotoAsync("https://www.bing.com");
 ```
 
 ### option: Browser.newContext.-inline- = %%-shared-context-params-list-%%
@@ -156,6 +234,71 @@ testing frameworks should explicitly create [`method: Browser.newContext`] follo
 ### option: Browser.newPage.storageState = %%-csharp-java-context-option-storage-state-%%
 
 ### option: Browser.newPage.storageStatePath = %%-csharp-java-context-option-storage-state-path-%%
+
+## async method: Browser.startTracing
+* langs: java, js, python
+
+:::note
+Tracing is only supported on Chromium-based browsers.
+:::
+
+You can use [`method: Browser.startTracing`] and [`method: Browser.stopTracing`] to create a trace file that can
+be opened in Chrome DevTools performance panel.
+
+```js
+await browser.startTracing(page, {path: 'trace.json'});
+await page.goto('https://www.google.com');
+await browser.stopTracing();
+```
+
+```java
+browser.startTracing(page, new Browser.StartTracingOptions()
+  .setPath(Paths.get("trace.json")));
+page.goto('https://www.google.com');
+browser.stopTracing();
+```
+
+```python async
+await browser.start_tracing(page, path="trace.json")
+await page.goto("https://www.google.com")
+await browser.stop_tracing()
+```
+
+```python sync
+browser.start_tracing(page, path="trace.json")
+page.goto("https://www.google.com")
+browser.stop_tracing()
+```
+
+### param: Browser.startTracing.page
+- `page` <[Page]>
+
+Optional, if specified, tracing includes screenshots of the given page.
+
+### option: Browser.startTracing.path
+- `path` <[path]>
+
+A path to write the trace file to.
+
+### option: Browser.startTracing.screenshots
+- `screenshots` <[boolean]>
+
+captures screenshots in the trace.
+
+### option: Browser.startTracing.categories
+- `categories` <[Array]<[string]>>
+
+specify custom categories to use instead of default.
+
+## async method: Browser.stopTracing
+* langs: java, js, python
+- returns: <[Buffer]>
+
+:::note
+Tracing is only supported on Chromium-based browsers.
+:::
+
+Returns the buffer with trace data.
 
 ## method: Browser.version
 - returns: <[string]>

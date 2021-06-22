@@ -35,7 +35,7 @@ const PROJECT_DIR = path.join(__dirname, '..', '..');
   });
   documentation.generateSourceCodeComments();
   const result = serialize(documentation);
-  fs.writeFileSync(path.join(PROJECT_DIR, 'api.json'), JSON.stringify(result));
+  console.log(JSON.stringify(result));
 }
 
 /**
@@ -49,7 +49,7 @@ function serialize(documentation) {
  * @param {Documentation.Class} clazz
  */
 function serializeClass(clazz) {
-  const result = { name: clazz.name };
+  const result = { name: clazz.name, spec: clazz.spec };
   if (clazz.extends)
     result.extends = clazz.extends;
   result.langs = clazz.langs;
@@ -79,7 +79,7 @@ function serializeProperty(arg) {
   const result = { ...arg };
   sanitize(result);
   if (arg.type)
-    result.type = serializeType(arg.type)
+    result.type = serializeType(arg.type, arg.name === 'options')
   return result;
 }
 
@@ -88,23 +88,23 @@ function sanitize(result) {
   delete result.argsArray;
   delete result.clazz;
   delete result.enclosingMethod;
-  delete result.spec;
 }
 
 /**
  * @param {Documentation.Type} type
+ * @param {boolean} sortProperties
  */
-function serializeType(type) {
+function serializeType(type, sortProperties = false) {
   /** @type {any} */
   const result = { ...type };
   if (type.properties)
-    result.properties = type.properties.map(serializeProperty);
+    result.properties = (sortProperties ? type.sortedProperties() : type.properties).map(serializeProperty);
   if (type.union)
-    result.union = type.union.map(serializeType);
+    result.union = type.union.map(type => serializeType(type));
   if (type.templates)
-    result.templates = type.templates.map(serializeType);
+    result.templates = type.templates.map(type => serializeType(type));
   if (type.args)
-    result.args = type.args.map(serializeType);
+    result.args = type.args.map(type => serializeType(type));
   if (type.returnType)
     result.returnType = serializeType(type.returnType);
   return result;

@@ -20,7 +20,7 @@ import { serializeAsCallArgument } from './common/utilityScriptSerializers';
 import type UtilityScript from './injected/utilityScript';
 import { SdkObject } from './instrumentation';
 
-type ObjectId = string;
+export type ObjectId = string;
 export type RemoteObject = {
   objectId?: ObjectId,
   value?: any
@@ -43,11 +43,13 @@ export type FuncOn<On, Arg2, R> = string | ((on: On, arg2: Unboxed<Arg2>) => R |
 export type SmartHandle<T> = T extends Node ? dom.ElementHandle<T> : JSHandle<T>;
 
 export interface ExecutionContextDelegate {
-  rawEvaluate(expression: string): Promise<ObjectId>;
+  rawEvaluateJSON(expression: string): Promise<any>;
+  rawEvaluateHandle(expression: string): Promise<ObjectId>;
+  rawCallFunctionNoReply(func: Function, ...args: any[]): void;
   evaluateWithArguments(expression: string, returnByValue: boolean, utilityScript: JSHandle<any>, values: any[], objectIds: ObjectId[]): Promise<any>;
-  getProperties(handle: JSHandle): Promise<Map<string, JSHandle>>;
+  getProperties(context: ExecutionContext, objectId: ObjectId): Promise<Map<string, JSHandle>>;
   createHandle(context: ExecutionContext, remoteObject: RemoteObject): JSHandle;
-  releaseHandle(handle: JSHandle): Promise<void>;
+  releaseHandle(objectId: ObjectId): Promise<void>;
 }
 
 export class ExecutionContext extends SdkObject {
@@ -55,8 +57,12 @@ export class ExecutionContext extends SdkObject {
   private _utilityScriptPromise: Promise<JSHandle> | undefined;
 
   constructor(parent: SdkObject, delegate: ExecutionContextDelegate) {
-    super(parent);
+    super(parent, 'execution-context');
     this._delegate = delegate;
+  }
+
+  async waitForSignalsCreatedBy<T>(action: () => Promise<T>): Promise<T> {
+    return action();
   }
 
   adoptIfNeeded(handle: JSHandle): Promise<JSHandle> | null {
@@ -70,13 +76,17 @@ export class ExecutionContext extends SdkObject {
         ${utilityScriptSource.source}
         return new pwExport();
       })();`;
-      this._utilityScriptPromise = this._delegate.rawEvaluate(source).then(objectId => new JSHandle(this, 'object', objectId));
+      this._utilityScriptPromise = this._delegate.rawEvaluateHandle(source).then(objectId => new JSHandle(this, 'object', objectId));
     }
     return this._utilityScriptPromise;
   }
 
   createHandle(remoteObject: RemoteObject): JSHandle {
     return this._delegate.createHandle(this, remoteObject);
+  }
+
+  async rawEvaluateJSON(expression: string): Promise<any> {
+    return await this._delegate.rawEvaluateJSON(expression);
   }
 
   async doSlowMo() {
@@ -94,7 +104,7 @@ export class JSHandle<T = any> extends SdkObject {
   private _previewCallback: ((preview: string) => void) | undefined;
 
   constructor(context: ExecutionContext, type: string, objectId?: ObjectId, value?: any) {
-    super(context);
+    super(context, 'handle');
     this._context = context;
     this._objectId = objectId;
     this._value = value;
@@ -104,20 +114,20 @@ export class JSHandle<T = any> extends SdkObject {
     this._preview = 'JSHandle@' + String(this._objectId ? this._objectType : this._value);
   }
 
-  async evaluate<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg: Arg): Promise<R>;
-  async evaluate<R>(pageFunction: FuncOn<T, void, R>, arg?: any): Promise<R>;
-  async evaluate<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg: Arg): Promise<R> {
+  callFunctionNoReply(func: Function, arg: any) {
+    this._context._delegate.rawCallFunctionNoReply(func, this, arg);
+  }
+
+  async evaluate<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg?: Arg): Promise<R> {
     return evaluate(this._context, true /* returnByValue */, pageFunction, this, arg);
   }
 
-  async evaluateHandle<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
-  async evaluateHandle<R>(pageFunction: FuncOn<T, void, R>, arg?: any): Promise<SmartHandle<R>>;
-  async evaluateHandle<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg: Arg): Promise<SmartHandle<R>> {
+  async evaluateHandle<R, Arg>(pageFunction: FuncOn<T, Arg, R>, arg?: Arg): Promise<SmartHandle<R>> {
     return evaluate(this._context, false /* returnByValue */, pageFunction, this, arg);
   }
 
-  async _evaluateExpression(expression: string, isFunction: boolean | undefined, returnByValue: boolean, arg: any) {
-    const value = await evaluateExpression(this._context, returnByValue, expression, isFunction, this, arg);
+  async evaluateExpressionAndWaitForSignals(expression: string, isFunction: boolean | undefined, returnByValue: boolean, arg: any) {
+    const value = await evaluateExpressionAndWaitForSignals(this._context, returnByValue, expression, isFunction, this, arg);
     await this._context.doSlowMo();
     return value;
   }
@@ -134,8 +144,14 @@ export class JSHandle<T = any> extends SdkObject {
     return result;
   }
 
-  getProperties(): Promise<Map<string, JSHandle>> {
-    return this._context._delegate.getProperties(this);
+  async getProperties(): Promise<Map<string, JSHandle>> {
+    if (!this._objectId)
+      return new Map();
+    return this._context._delegate.getProperties(this._context, this._objectId);
+  }
+
+  rawValue() {
+    return this._value;
   }
 
   async jsonValue(): Promise<T> {
@@ -150,11 +166,12 @@ export class JSHandle<T = any> extends SdkObject {
     return null;
   }
 
-  async dispose() {
+  dispose() {
     if (this._disposed)
       return;
     this._disposed = true;
-    await this._context._delegate.releaseHandle(this);
+    if (this._objectId)
+      this._context._delegate.releaseHandle(this._objectId).catch(e => {});
   }
 
   toString(): string {
@@ -219,6 +236,10 @@ export async function evaluateExpression(context: ExecutionContext, returnByValu
   }
 }
 
+export async function evaluateExpressionAndWaitForSignals(context: ExecutionContext, returnByValue: boolean, expression: string, isFunction?: boolean, ...args: any[]): Promise<any> {
+  return await context.waitForSignalsCreatedBy(() => evaluateExpression(context, returnByValue, expression, isFunction, ...args));
+}
+
 export function parseUnserializableValue(unserializableValue: string): any {
   if (unserializableValue === 'NaN')
     return NaN;
@@ -255,4 +276,28 @@ export function normalizeEvaluationExpression(expression: string, isFunction: bo
   if (/^(async)?\s*function(\s|\()/.test(expression))
     expression = '(' + expression + ')';
   return expression;
+}
+
+export const kSwappedOutErrorMessage = 'Target was swapped out.';
+
+export function isContextDestroyedError(e: any) {
+  if (!e || typeof e !== 'object' || typeof e.message !== 'string')
+    return false;
+
+  // Evaluating in a context which was already destroyed.
+  if (e.message.includes('Cannot find context with specified id')
+      || e.message.includes('Failed to find execution context with id')
+      || e.message.includes('Missing injected script for given')
+      || e.message.includes('Cannot find object with id'))
+    return true;
+
+  // Evaluation promise is rejected when context is gone.
+  if (e.message.includes('Execution context was destroyed'))
+    return true;
+
+  // WebKit target swap.
+  if (e.message.includes(kSwappedOutErrorMessage))
+    return true;
+
+  return false;
 }

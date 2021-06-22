@@ -20,10 +20,10 @@ import { Readable } from 'stream';
 import { Serializable, EvaluationArgument, PageFunction, PageFunctionOn, SmartHandle, ElementHandleForTag, BindingSource } from './structs';
 
 type PageWaitForSelectorOptionsNotHidden = PageWaitForSelectorOptions & {
-  state: 'visible'|'attached';
+  state?: 'visible'|'attached';
 };
 type ElementHandleWaitForSelectorOptionsNotHidden = ElementHandleWaitForSelectorOptions & {
-  state: 'visible'|'attached';
+  state?: 'visible'|'attached';
 };
 
 export interface Page {
@@ -140,13 +140,13 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   waitForSelector(selector: string, options: ElementHandleWaitForSelectorOptions): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
 }
 
-export interface BrowserType<Browser> {
-
-}
-
-export interface ChromiumBrowser extends Browser {
-  contexts(): Array<ChromiumBrowserContext>;
-  newContext(options?: BrowserContextOptions): Promise<ChromiumBrowserContext>;
+export interface BrowserType<Unused = {}> {
+  connectOverCDP(options: ConnectOverCDPOptions): Promise<Browser>;
+  /**
+   * Option `wsEndpoint` is deprecated. Instead use `endpointURL`.
+   * @deprecated
+   */
+  connectOverCDP(options: ConnectOptions): Promise<Browser>;
 }
 
 export interface CDPSession {
@@ -222,12 +222,15 @@ type AccessibilityNode = {
 export const selectors: Selectors;
 export const devices: Devices & DeviceDescriptor[];
 
-export interface ElectronApplication {
-  evaluate<R, Arg>(pageFunction: PageFunctionOn<any, Arg, R>, arg: Arg): Promise<R>;
-  evaluate<R>(pageFunction: PageFunctionOn<any, void, R>, arg?: any): Promise<R>;
+//@ts-ignore this will be any if electron is not installed
+type ElectronType = typeof import('electron');
 
-  evaluateHandle<R, Arg>(pageFunction: PageFunctionOn<any, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
-  evaluateHandle<R>(pageFunction: PageFunctionOn<any, void, R>, arg?: any): Promise<SmartHandle<R>>;
+export interface ElectronApplication {
+  evaluate<R, Arg>(pageFunction: PageFunctionOn<ElectronType, Arg, R>, arg: Arg): Promise<R>;
+  evaluate<R>(pageFunction: PageFunctionOn<ElectronType, void, R>, arg?: any): Promise<R>;
+
+  evaluateHandle<R, Arg>(pageFunction: PageFunctionOn<ElectronType, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
+  evaluateHandle<R>(pageFunction: PageFunctionOn<ElectronType, void, R>, arg?: any): Promise<SmartHandle<R>>;
 }
 
 export type AndroidElementInfo = {

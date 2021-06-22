@@ -20,14 +20,14 @@ import type { CallLog } from '../../server/supplements/recorder/recorderTypes';
 import { msToString } from '../uiUtils';
 
 export interface CallLogProps {
-  log: CallLog[]
+  log: CallLog[],
 }
 
 export const CallLogView: React.FC<CallLogProps> = ({
   log,
 }) => {
   const messagesEndRef = React.createRef<HTMLDivElement>();
-  const [expandOverrides, setExpandOverrides] = React.useState<Map<number, boolean>>(new Map());
+  const [expandOverrides, setExpandOverrides] = React.useState<Map<string, boolean>>(new Map());
   React.useLayoutEffect(() => {
     if (log.find(callLog => callLog.reveal))
       messagesEndRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -45,8 +45,8 @@ export const CallLogView: React.FC<CallLogProps> = ({
             setExpandOverrides(newOverrides);
           }}></span>
           { callLog.title }
-          { callLog.params.url ? <span>(<span className='call-log-url'>{callLog.params.url}</span>)</span> : undefined }
-          { callLog.params.selector ? <span>(<span className='call-log-selector'>{callLog.params.selector}</span>)</span> : undefined }
+          { callLog.params.url ? <span className='call-log-details'>(<span className='call-log-url' title={callLog.params.url}>{callLog.params.url}</span>)</span> : undefined }
+          { callLog.params.selector ? <span className='call-log-details'>(<span className='call-log-selector' title={callLog.params.selector}>{callLog.params.selector}</span>)</span> : undefined }
           <span className={'codicon ' + iconClass(callLog)}></span>
           { typeof callLog.duration === 'number' ? <span className='call-log-time'>— {msToString(callLog.duration)}</span> : undefined}
         </div>

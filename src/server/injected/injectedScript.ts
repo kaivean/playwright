@@ -18,7 +18,7 @@ import { SelectorEngine, SelectorRoot } from './selectorEngine';
 import { XPathEngine } from './xpathSelectorEngine';
 import { ParsedSelector, ParsedSelectorPart, parseSelector } from '../common/selectorParser';
 import { FatalDOMError } from '../common/domErrors';
-import { SelectorEvaluatorImpl, isVisible, parentElementOrShadowHost, elementMatchesText } from './selectorEvaluator';
+import { SelectorEvaluatorImpl, isVisible, parentElementOrShadowHost, elementMatchesText, TextMatcher, createRegexTextMatcher, createStrictTextMatcher, createLaxTextMatcher } from './selectorEvaluator';
 import { CSSComplexSelectorList } from '../common/cssParser';
 
 type Predicate<T> = (progress: InjectedScriptProgress, continuePolling: symbol) => T | symbol;
@@ -124,7 +124,7 @@ export class InjectedScript {
         }
         set = newSet;
       }
-      let result = Array.from(set) as Element[];
+      let result = [...set] as Element[];
       if (partsToCheckOne.length) {
         const partial = { parts: partsToCheckOne };
         result = result.filter(e => !!this._querySelectorRecursively(e, partial, 0));
@@ -164,18 +164,18 @@ export class InjectedScript {
 
   private _createTextEngine(shadow: boolean): SelectorEngine {
     const queryList = (root: SelectorRoot, selector: string, single: boolean): Element[] => {
-      const { matcher, strict } = createTextMatcher(selector);
+      const { matcher, kind } = createTextMatcher(selector);
       const result: Element[] = [];
       let lastDidNotMatchSelf: Element | null = null;
 
       const checkElement = (element: Element) => {
         // TODO: replace contains() with something shadow-dom-aware?
-        if (!strict && lastDidNotMatchSelf && lastDidNotMatchSelf.contains(element))
+        if (kind === 'lax' && lastDidNotMatchSelf && lastDidNotMatchSelf.contains(element))
           return false;
         const matches = elementMatchesText(this._evaluator, element, matcher);
         if (matches === 'none')
           lastDidNotMatchSelf = element;
-        if (matches === 'self')
+        if (matches === 'self' || (matches === 'selfAndChildren' && kind === 'strict'))
           result.push(element);
         return single && result.length > 0;
       };
@@ -326,34 +326,35 @@ export class InjectedScript {
     return { left: parseInt(style.borderLeftWidth || '', 10), top: parseInt(style.borderTopWidth || '', 10) };
   }
 
-  private _retarget(node: Node): Element | null {
+  private _retarget(node: Node, behavior: 'follow-label' | 'no-follow-label'): Element | null {
     let element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
     if (!element)
       return null;
-    element = element.closest('button, [role=button], [role=checkbox], [role=radio]') || element;
-    if (!element.matches('input, textarea, button, select, [role=button], [role=checkbox], [role=radio]') &&
-        !(element as any).isContentEditable) {
-      // Go up to the label that might be connected to the input/textarea.
-      element = element.closest('label') || element;
+    if (!element.matches('input, textarea, select'))
+      element = element.closest('button, [role=button], [role=checkbox], [role=radio]') || element;
+    if (behavior === 'follow-label') {
+      if (!element.matches('input, textarea, button, select, [role=button], [role=checkbox], [role=radio]') &&
+          !(element as any).isContentEditable) {
+        // Go up to the label that might be connected to the input/textarea.
+        element = element.closest('label') || element;
+      }
+      if (element.nodeName === 'LABEL')
+        element = (element as HTMLLabelElement).control || element;
     }
-    if (element.nodeName === 'LABEL')
-      element = (element as HTMLLabelElement).control || element;
     return element;
   }
 
   waitForElementStatesAndPerformAction<T>(node: Node, states: ElementState[],
-    callback: (element: Element | null, progress: InjectedScriptProgress, continuePolling: symbol) => T | symbol): InjectedScriptPoll<T | 'error:notconnected' | FatalDOMError> {
+    callback: (node: Node, progress: InjectedScriptProgress, continuePolling: symbol) => T | symbol): InjectedScriptPoll<T | 'error:notconnected' | FatalDOMError> {
     let lastRect: { x: number, y: number, width: number, height: number } | undefined;
     let counter = 0;
     let samePositionCounter = 0;
     let lastTime = 0;
 
     const predicate = (progress: InjectedScriptProgress, continuePolling: symbol) => {
-      const element = this._retarget(node);
-
       for (const state of states) {
         if (state !== 'stable') {
-          const result = this._checkElementState(element, state);
+          const result = this.checkElementState(node, state);
           if (typeof result !== 'boolean')
             return result;
           if (!result) {
@@ -363,6 +364,7 @@ export class InjectedScript {
           continue;
         }
 
+        const element = this._retarget(node, 'no-follow-label');
         if (!element)
           return 'error:notconnected';
 
@@ -394,7 +396,7 @@ export class InjectedScript {
           return continuePolling;
       }
 
-      return callback(element, progress, continuePolling);
+      return callback(node, progress, continuePolling);
     };
 
     if (this._replaceRafWithTimeout)
@@ -403,12 +405,14 @@ export class InjectedScript {
       return this.pollRaf(predicate);
   }
 
-  private _checkElementState(element: Element | null, state: ElementStateWithoutStable): boolean | 'error:notconnected' | FatalDOMError {
+  checkElementState(node: Node, state: ElementStateWithoutStable): boolean | 'error:notconnected' | FatalDOMError {
+    const element = this._retarget(node, ['stable', 'visible', 'hidden'].includes(state) ? 'no-follow-label' : 'follow-label');
     if (!element || !element.isConnected) {
       if (state === 'hidden')
         return true;
       return 'error:notconnected';
     }
+
     if (state === 'visible')
       return this.isVisible(element);
     if (state === 'hidden')
@@ -436,19 +440,15 @@ export class InjectedScript {
     throw new Error(`Unexpected element state "${state}"`);
   }
 
-  checkElementState(node: Node, state: ElementStateWithoutStable): boolean | 'error:notconnected' | FatalDOMError {
-    const element = this._retarget(node);
-    return this._checkElementState(element, state);
-  }
-
   selectOptions(optionsToSelect: (Node | { value?: string, label?: string, index?: number })[],
-    element: Element | null, progress: InjectedScriptProgress, continuePolling: symbol): string[] | 'error:notconnected' | FatalDOMError | symbol {
+    node: Node, progress: InjectedScriptProgress, continuePolling: symbol): string[] | 'error:notconnected' | FatalDOMError | symbol {
+    const element = this._retarget(node, 'follow-label');
     if (!element)
       return 'error:notconnected';
     if (element.nodeName.toLowerCase() !== 'select')
       return 'error:notselect';
     const select = element as HTMLSelectElement;
-    const options = Array.from(select.options);
+    const options = [...select.options];
     const selectedOptions = [];
     let remainingOptionsToSelect = optionsToSelect.slice();
     for (let index = 0; index < options.length; index++) {
@@ -487,7 +487,8 @@ export class InjectedScript {
     return selectedOptions.map(option => option.value);
   }
 
-  fill(value: string, element: Element | null, progress: InjectedScriptProgress): FatalDOMError | 'error:notconnected' | 'needsinput' | 'done' {
+  fill(value: string, node: Node, progress: InjectedScriptProgress): FatalDOMError | 'error:notconnected' | 'needsinput' | 'done' {
+    const element = this._retarget(node, 'follow-label');
     if (!element)
       return 'error:notconnected';
     if (element.nodeName.toLowerCase() === 'input') {
@@ -523,7 +524,8 @@ export class InjectedScript {
     return 'needsinput';  // Still need to input the value.
   }
 
-  selectText(element: Element | null): 'error:notconnected' | 'done' {
+  selectText(node: Node): 'error:notconnected' | 'done' {
+    const element = this._retarget(node, 'follow-label');
     if (!element)
       return 'error:notconnected';
     if (element.nodeName.toLowerCase() === 'input') {
@@ -643,7 +645,10 @@ export class InjectedScript {
     let container: Document | ShadowRoot | null = document;
     let element: Element | undefined;
     while (container) {
-      const innerElement = container.elementFromPoint(x, y) as Element | undefined;
+      // elementFromPoint works incorrectly in Chromium (http://crbug.com/1188919),
+      // so we use elementsFromPoint instead.
+      const elements = container.elementsFromPoint(x, y);
+      const innerElement = elements[0] as Element | undefined;
       if (!innerElement || element === innerElement)
         break;
       element = innerElement;
@@ -758,12 +763,11 @@ function unescape(s: string): string {
   return r.join('');
 }
 
-type Matcher = (text: string) => boolean;
-function createTextMatcher(selector: string): { matcher: Matcher, strict: boolean } {
+function createTextMatcher(selector: string): { matcher: TextMatcher, kind: 'regex' | 'strict' | 'lax' } {
   if (selector[0] === '/' && selector.lastIndexOf('/') > 0) {
     const lastSlash = selector.lastIndexOf('/');
-    const re = new RegExp(selector.substring(1, lastSlash), selector.substring(lastSlash + 1));
-    return { matcher: text => re.test(text), strict: true };
+    const matcher: TextMatcher = createRegexTextMatcher(selector.substring(1, lastSlash), selector.substring(lastSlash + 1));
+    return { matcher, kind: 'regex' };
   }
   let strict = false;
   if (selector.length > 1 && selector[0] === '"' && selector[selector.length - 1] === '"') {
@@ -774,16 +778,8 @@ function createTextMatcher(selector: string): { matcher: Matcher, strict: boolea
     selector = unescape(selector.substring(1, selector.length - 1));
     strict = true;
   }
-  selector = selector.trim().replace(/\s+/g, ' ');
-  if (!strict)
-    selector = selector.toLowerCase();
-  const matcher = (text: string) => {
-    text = text.trim().replace(/\s+/g, ' ');
-    if (!strict)
-      text = text.toLowerCase();
-    return text.includes(selector);
-  };
-  return { matcher, strict };
+  const matcher = strict ? createStrictTextMatcher(selector) : createLaxTextMatcher(selector);
+  return { matcher, kind: strict ? 'strict' : 'lax' };
 }
 
 export default InjectedScript;

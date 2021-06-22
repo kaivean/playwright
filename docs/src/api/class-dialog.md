@@ -13,10 +13,30 @@ const { chromium } = require('playwright');  // Or 'firefox' or 'webkit'.
   page.on('dialog', async dialog => {
     console.log(dialog.message());
     await dialog.dismiss();
-    await browser.close();
   });
-  page.evaluate(() => alert('1'));
+  await page.evaluate(() => alert('1'));
+  await browser.close();
 })();
+```
+
+```java
+import com.microsoft.playwright.*;
+
+public class Example {
+  public static void main(String[] args) {
+    try (Playwright playwright = Playwright.create()) {
+      BrowserType chromium = playwright.chromium();
+      Browser browser = chromium.launch();
+      Page page = browser.newPage();
+      page.onDialog(dialog -> {
+        System.out.println(dialog.message());
+        dialog.dismiss();
+      });
+      page.evaluate("alert('1')");
+      browser.close();
+    }
+  }
+}
 ```
 
 ```python async
@@ -58,6 +78,29 @@ def run(playwright):
 
 with sync_playwright() as playwright:
     run(playwright)
+```
+
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class DialogExample
+{
+    public static async Task Run()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await browser.NewPageAsync();
+
+        page.Dialog += async (_, dialog) =>
+        {
+            System.Console.WriteLine(dialog.Message);
+            await dialog.DismissAsync();
+        };
+
+        await page.EvaluateAsync("alert('1');");
+    }
+}
 ```
 
 :::note

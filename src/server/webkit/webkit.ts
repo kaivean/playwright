@@ -23,10 +23,24 @@ import { BrowserType } from '../browserType';
 import { ConnectionTransport } from '../transport';
 import { BrowserOptions, PlaywrightOptions } from '../browser';
 import * as types from '../types';
+import * as fs from 'fs';
+import { assert } from '../../utils/utils';
 
 export class WebKit extends BrowserType {
   constructor(playwrightOptions: PlaywrightOptions) {
     super('webkit', playwrightOptions);
+  }
+
+  executablePath(channel?: string): string {
+    if (channel) {
+      let executablePath = undefined;
+      if ((channel as any) === 'technology-preview')
+        executablePath = this._registry.executablePath('webkit-technology-preview');
+      assert(executablePath, `unsupported webkit channel "${channel}"`);
+      assert(fs.existsSync(executablePath), `webkit channel "${channel}" is not installed. Try running 'npx playwright install webkit-technology-preview'`);
+      return executablePath;
+    }
+    return super.executablePath(channel);
   }
 
   _connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<WKBrowser> {
@@ -49,9 +63,9 @@ export class WebKit extends BrowserType {
     const { args = [], proxy, devtools, headless } = options;
     if (devtools)
       console.warn('devtools parameter as a launch argument in WebKit is not supported. Also starting Web Inspector manually will terminate the execution in WebKit.');
-    const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir='));
+    const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)
-      throw new Error('Pass userDataDir parameter instead of specifying --user-data-dir argument');
+      throw new Error('Pass userDataDir parameter to `browserType.launchPersistentContext(userDataDir, ...)` instead of specifying --user-data-dir argument');
     if (args.find(arg => !arg.startsWith('-')))
       throw new Error('Arguments can not specify page to be opened');
     const webkitArguments = ['--inspector-pipe'];

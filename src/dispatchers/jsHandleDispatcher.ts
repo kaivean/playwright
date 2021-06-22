@@ -17,12 +17,12 @@
 import * as js from '../server/javascript';
 import * as channels from '../protocol/channels';
 import { Dispatcher, DispatcherScope } from './dispatcher';
-import { createHandle } from './elementHandlerDispatcher';
+import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 import { parseSerializedValue, serializeValue } from '../protocol/serializers';
 
 export class JSHandleDispatcher extends Dispatcher<js.JSHandle, channels.JSHandleInitializer> implements channels.JSHandleChannel {
 
-  constructor(scope: DispatcherScope, jsHandle: js.JSHandle) {
+  protected constructor(scope: DispatcherScope, jsHandle: js.JSHandle) {
     // Do not call this directly, use createHandle() instead.
     super(scope, jsHandle, jsHandle.asElement() ? 'ElementHandle' : 'JSHandle', {
       preview: jsHandle.toString(),
@@ -31,24 +31,24 @@ export class JSHandleDispatcher extends Dispatcher<js.JSHandle, channels.JSHandl
   }
 
   async evaluateExpression(params: channels.JSHandleEvaluateExpressionParams): Promise<channels.JSHandleEvaluateExpressionResult> {
-    return { value: serializeResult(await this._object._evaluateExpression(params.expression, params.isFunction, true /* returnByValue */, parseArgument(params.arg))) };
+    return { value: serializeResult(await this._object.evaluateExpressionAndWaitForSignals(params.expression, params.isFunction, true /* returnByValue */, parseArgument(params.arg))) };
   }
 
   async evaluateExpressionHandle(params: channels.JSHandleEvaluateExpressionHandleParams): Promise<channels.JSHandleEvaluateExpressionHandleResult> {
-    const jsHandle = await this._object._evaluateExpression(params.expression, params.isFunction, false /* returnByValue */, parseArgument(params.arg));
-    return { handle: createHandle(this._scope, jsHandle) };
+    const jsHandle = await this._object.evaluateExpressionAndWaitForSignals(params.expression, params.isFunction, false /* returnByValue */, parseArgument(params.arg));
+    return { handle: ElementHandleDispatcher.fromJSHandle(this._scope, jsHandle) };
   }
 
   async getProperty(params: channels.JSHandleGetPropertyParams): Promise<channels.JSHandleGetPropertyResult> {
     const jsHandle = await this._object.getProperty(params.name);
-    return { handle: createHandle(this._scope, jsHandle) };
+    return { handle: ElementHandleDispatcher.fromJSHandle(this._scope, jsHandle) };
   }
 
   async getPropertyList(): Promise<channels.JSHandleGetPropertyListResult> {
     const map = await this._object.getProperties();
     const properties = [];
     for (const [name, value] of map)
-      properties.push({ name, value: createHandle(this._scope, value) });
+      properties.push({ name, value: ElementHandleDispatcher.fromJSHandle(this._scope, value) });
     return { properties };
   }
 

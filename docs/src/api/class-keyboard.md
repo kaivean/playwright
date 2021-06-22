@@ -21,6 +21,17 @@ await page.keyboard.press('Backspace');
 // Result text will end up saying 'Hello!'
 ```
 
+```java
+page.keyboard().type("Hello World!");
+page.keyboard().press("ArrowLeft");
+page.keyboard().down("Shift");
+for (int i = 0; i < " World".length(); i++)
+  page.keyboard().press("ArrowLeft");
+page.keyboard().up("Shift");
+page.keyboard().press("Backspace");
+// Result text will end up saying "Hello!"
+```
+
 ```python async
 await page.keyboard.type("Hello World!")
 await page.keyboard.press("ArrowLeft")
@@ -43,12 +54,32 @@ page.keyboard.press("Backspace")
 # result text will end up saying "Hello!"
 ```
 
+```csharp
+await page.Keyboard.TypeAsync("Hello World!");
+await page.Keyboard.PressAsync("ArrowLeft");
+
+await page.Keyboard.DownAsync("Shift");
+for (int i = 0; i < " World".Length; i++)
+    await page.Keyboard.PressAsync("ArrowLeft");
+
+await page.Keyboard.UpAsync("Shift");
+
+await page.Keyboard.PressAsync("Backspace");
+// Result text will end up saying "Hello!"
+```
+
 An example of pressing uppercase `A`
 
 ```js
 await page.keyboard.press('Shift+KeyA');
 // or
 await page.keyboard.press('Shift+A');
+```
+
+```java
+page.keyboard().press("Shift+KeyA");
+// or
+page.keyboard().press("Shift+A");
 ```
 
 ```python async
@@ -63,6 +94,12 @@ page.keyboard.press("Shift+KeyA")
 page.keyboard.press("Shift+A")
 ```
 
+```csharp
+await page.Keyboard.PressAsync("Shift+KeyA");
+// or 
+await page.Keyboard.PressAsync("Shift+A");
+```
+
 An example to trigger select-all with the keyboard
 
 ```js
@@ -70,6 +107,13 @@ An example to trigger select-all with the keyboard
 await page.keyboard.press('Control+A');
 // on macOS
 await page.keyboard.press('Meta+A');
+```
+
+```java
+// on Windows and Linux
+page.keyboard().press("Control+A");
+// on macOS
+page.keyboard().press("Meta+A");
 ```
 
 ```python async
@@ -84,6 +128,13 @@ await page.keyboard.press("Meta+A")
 page.keyboard.press("Control+A")
 # on mac_os
 page.keyboard.press("Meta+A")
+```
+
+```csharp
+// on Windows and Linux
+await page.Keyboard.PressAsync("Control+A");
+// on macOS
+await page.Keyboard.PressAsync("Meta+A");
 ```
 
 ## async method: Keyboard.down
@@ -129,12 +180,20 @@ Dispatches only `input` event, does not emit the `keydown`, `keyup` or `keypress
 page.keyboard.insertText('嗨');
 ```
 
+```java
+page.keyboard().insertText("嗨");
+```
+
 ```python async
 await page.keyboard.insert_text("嗨")
 ```
 
 ```python sync
 page.keyboard.insert_text("嗨")
+```
+
+```csharp
+await page.Keyboard.PressAsync("嗨");
 ```
 
 :::note
@@ -163,7 +222,7 @@ Holding down `Shift` will type the text that corresponds to the [`param: key`] i
 If [`param: key`] is a single character, it is case-sensitive, so the values `a` and `A` will generate different
 respective texts.
 
-Shortcuts such as `key: "Control+o"` or `key: "Control+Shift+T"` are supported as well. When speficied with the
+Shortcuts such as `key: "Control+o"` or `key: "Control+Shift+T"` are supported as well. When specified with the
 modifier, modifier is pressed and being held while the subsequent key is being pressed.
 
 ```js
@@ -176,6 +235,18 @@ await page.screenshot({ path: 'ArrowLeft.png' });
 await page.keyboard.press('Shift+O');
 await page.screenshot({ path: 'O.png' });
 await browser.close();
+```
+
+```java
+Page page = browser.newPage();
+page.navigate("https://keycode.info");
+page.keyboard().press("A");
+page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("A.png"));
+page.keyboard().press("ArrowLeft");
+page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("ArrowLeft.png")));
+page.keyboard().press("Shift+O");
+page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("O.png")));
+browser.close();
 ```
 
 ```python async
@@ -202,6 +273,17 @@ page.screenshot(path="o.png")
 browser.close()
 ```
 
+```csharp
+await page.GotoAsync("https://keycode.info");
+await page.Keyboard.PressAsync("A");
+await page.ScreenshotAsync("A.png");
+await page.Keyboard.PressAsync("ArrowLeft");
+await page.ScreenshotAsync("ArrowLeft.png");
+await page.Keyboard.PressAsync("Shift+O");
+await page.ScreenshotAsync("O.png");
+await browser.CloseAsync();
+```
+
 Shortcut for [`method: Keyboard.down`] and [`method: Keyboard.up`].
 
 ### param: Keyboard.press.key
@@ -225,6 +307,13 @@ await page.keyboard.type('Hello'); // Types instantly
 await page.keyboard.type('World', {delay: 100}); // Types slower, like a user
 ```
 
+```java
+// Types instantly
+page.keyboard().type("Hello");
+// Types slower, like a user
+page.keyboard().type("World", new Keyboard.TypeOptions().setDelay(100));
+```
+
 ```python async
 await page.keyboard.type("Hello") # types instantly
 await page.keyboard.type("World", delay=100) # types slower, like a user
@@ -235,8 +324,17 @@ page.keyboard.type("Hello") # types instantly
 page.keyboard.type("World", delay=100) # types slower, like a user
 ```
 
+```csharp
+await page.Keyboard.TypeAsync("Hello"); // types instantly
+await page.Keyboard.TypeAsync("World"); // types slower, like a user
+```
+
 :::note
 Modifier keys DO NOT effect `keyboard.type`. Holding down `Shift` will not type the text in upper case.
+:::
+
+:::note
+For characters that are not on a US keyboard, only an `input` event will be sent.
 :::
 
 ### param: Keyboard.type.text

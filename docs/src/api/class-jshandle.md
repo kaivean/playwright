@@ -8,6 +8,11 @@ const windowHandle = await page.evaluateHandle(() => window);
 // ...
 ```
 
+```java
+JSHandle windowHandle = page.evaluateHandle("() => window");
+// ...
+```
+
 ```python async
 window_handle = await page.evaluate_handle("window")
 # ...
@@ -16,6 +21,10 @@ window_handle = await page.evaluate_handle("window")
 ```python sync
 window_handle = page.evaluate_handle("window")
 # ...
+```
+
+```csharp
+var windowHandle = await page.EvaluateHandleAsync("() => window");
 ```
 
 JSHandle prevents the referenced JavaScript object being garbage collected unless the handle is exposed with
@@ -51,6 +60,11 @@ const tweetHandle = await page.$('.tweet .retweets');
 expect(await tweetHandle.evaluate(node => node.innerText)).toBe('10 retweets');
 ```
 
+```java
+ElementHandle tweetHandle = page.querySelector(".tweet .retweets");
+assertEquals("10 retweets", tweetHandle.evaluate("node => node.innerText"));
+```
+
 ```python async
 tweet_handle = await page.query_selector(".tweet .retweets")
 assert await tweet_handle.evaluate("node => node.innerText") == "10 retweets"
@@ -59,6 +73,11 @@ assert await tweet_handle.evaluate("node => node.innerText") == "10 retweets"
 ```python sync
 tweet_handle = page.query_selector(".tweet .retweets")
 assert tweet_handle.evaluate("node => node.innerText") == "10 retweets"
+```
+
+```csharp
+var tweetHandle = await page.QuerySelectorAsync(".tweet .retweets");
+Assert.Equals("10 retweets", await tweetHandle.EvaluateAsync("node => node.innerText"));
 ```
 
 ### param: JSHandle.evaluate.expression = %%-evaluate-expression-%%
@@ -102,6 +121,14 @@ const documentHandle = properties.get('document');
 await handle.dispose();
 ```
 
+```java
+JSHandle handle = page.evaluateHandle("() => ({window, document}"););
+Map<String, JSHandle> properties = handle.getProperties();
+JSHandle windowHandle = properties.get("window");
+JSHandle documentHandle = properties.get("document");
+handle.dispose();
+```
+
 ```python async
 handle = await page.evaluate_handle("{window, document}")
 properties = await handle.get_properties()
@@ -116,6 +143,14 @@ properties = handle.get_properties()
 window_handle = properties.get("window")
 document_handle = properties.get("document")
 handle.dispose()
+```
+
+```csharp
+var handle = await page.EvaluateHandleAsync("() => ({window, document}");
+var properties = await handle.GetPropertiesAsync();
+var windowHandle = properties["window"];
+var documentHandle = properties["document"];
+await handle.DisposeAsync();
 ```
 
 ## async method: JSHandle.getProperty

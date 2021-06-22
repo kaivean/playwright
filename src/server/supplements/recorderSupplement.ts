@@ -22,26 +22,30 @@ import { describeFrame, toClickOptions, toModifiers } from './recorder/utils';
 import { Page } from '../page';
 import { Frame } from '../frames';
 import { BrowserContext } from '../browserContext';
+import { JavaLanguageGenerator } from './recorder/java';
 import { JavaScriptLanguageGenerator } from './recorder/javascript';
 import { CSharpLanguageGenerator } from './recorder/csharp';
 import { PythonLanguageGenerator } from './recorder/python';
 import * as recorderSource from '../../generated/recorderSource';
 import * as consoleApiSource from '../../generated/consoleApiSource';
 import { RecorderApp } from './recorder/recorderApp';
-import { CallMetadata, internalCallMetadata, SdkObject } from '../instrumentation';
+import { CallMetadata, InstrumentationListener, internalCallMetadata, SdkObject } from '../instrumentation';
 import { Point } from '../../common/types';
-import { CallLog, EventData, Mode, Source, UIState } from './recorder/recorderTypes';
-import { isUnderTest, monotonicTime } from '../../utils/utils';
+import { CallLog, CallLogStatus, EventData, Mode, Source, UIState } from './recorder/recorderTypes';
+import { isUnderTest } from '../../utils/utils';
+import { metadataToCallLog } from './recorder/recorderUtils';
+import { Debugger } from './debugger';
 
 type BindingSource = { frame: Frame, page: Page };
 
 const symbol = Symbol('RecorderSupplement');
 
-export class RecorderSupplement {
+export class RecorderSupplement implements InstrumentationListener {
   private _generator: CodeGenerator;
   private _pageAliases = new Map<Page, string>();
   private _lastPopupOrdinal = 0;
   private _lastDialogOrdinal = 0;
+  private _lastDownloadOrdinal = 0;
   private _timers = new Set<NodeJS.Timeout>();
   private _context: BrowserContext;
   private _mode: Mode;
@@ -49,12 +53,16 @@ export class RecorderSupplement {
   private _recorderApp: RecorderApp | null = null;
   private _params: channels.BrowserContextRecorderSupplementEnableParams;
   private _currentCallsMetadata = new Map<CallMetadata, SdkObject>();
-  private _pausedCallsMetadata = new Map<CallMetadata, () => void>();
-  private _pauseOnNextStatement: boolean;
   private _recorderSources: Source[];
   private _userSources = new Map<string, Source>();
+  private _allMetadatas = new Map<string, CallMetadata>();
+  private _debugger: Debugger;
 
-  static getOrCreate(context: BrowserContext, params: channels.BrowserContextRecorderSupplementEnableParams = {}): Promise<RecorderSupplement> {
+  static showInspector(context: BrowserContext) {
+    RecorderSupplement.show(context, {}).catch(() => {});
+  }
+
+  static show(context: BrowserContext, params: channels.BrowserContextRecorderSupplementEnableParams = {}): Promise<RecorderSupplement> {
     let recorderPromise = (context as any)[symbol] as Promise<RecorderSupplement>;
     if (!recorderPromise) {
       const recorder = new RecorderSupplement(context, params);
@@ -64,26 +72,25 @@ export class RecorderSupplement {
     return recorderPromise;
   }
 
-  static getNoCreate(context: BrowserContext): Promise<RecorderSupplement> | undefined {
-    return (context as any)[symbol] as Promise<RecorderSupplement> | undefined;
-  }
-
   constructor(context: BrowserContext, params: channels.BrowserContextRecorderSupplementEnableParams) {
     this._context = context;
+    this._debugger = Debugger.lookup(context)!;
+    context.instrumentation.addListener(this);
     this._params = params;
     this._mode = params.startRecording ? 'recording' : 'none';
-    this._pauseOnNextStatement = !!params.pauseOnNextStatement;
     const language = params.language || context._options.sdkLanguage;
 
     const languages = new Set([
-      new JavaScriptLanguageGenerator(),
+      new JavaLanguageGenerator(),
+      new JavaScriptLanguageGenerator(false),
+      new JavaScriptLanguageGenerator(true),
       new PythonLanguageGenerator(false),
       new PythonLanguageGenerator(true),
       new CSharpLanguageGenerator(),
     ]);
     const primaryLanguage = [...languages].find(l => l.id === language)!;
     if (!primaryLanguage)
-      throw new Error(`\n===============================\nInvalid target: '${params.language}'\n===============================\n`);
+      throw new Error(`\n===============================\nUnsupported language: '${language}'\n===============================\n`);
 
     languages.delete(primaryLanguage);
     const orderedLanguages = [primaryLanguage, ...languages];
@@ -125,27 +132,30 @@ export class RecorderSupplement {
     const recorderApp = await RecorderApp.open(this._context);
     this._recorderApp = recorderApp;
     recorderApp.once('close', () => {
+      this._debugger.resume(false);
       this._recorderApp = null;
     });
     recorderApp.on('event', (data: EventData) => {
       if (data.event === 'setMode') {
         this._setMode(data.params.mode);
+        this._refreshOverlay();
         return;
       }
       if (data.event === 'selectorUpdated') {
         this._highlightedSelector = data.params.selector;
+        this._refreshOverlay();
         return;
       }
       if (data.event === 'step') {
-        this._resume(true);
+        this._debugger.resume(true);
         return;
       }
       if (data.event === 'resume') {
-        this._resume(false);
+        this._debugger.resume(false);
         return;
       }
       if (data.event === 'pause') {
-        this._pauseOnNextStatement = true;
+        this._debugger.pauseOnNextStatement();
         return;
       }
       if (data.event === 'clear') {
@@ -156,7 +166,7 @@ export class RecorderSupplement {
 
     await Promise.all([
       recorderApp.setMode(this._mode),
-      recorderApp.setPaused(!!this._pausedCallsMetadata.size),
+      recorderApp.setPaused(this._debugger.isPaused()),
       this._pushAllSources()
     ]);
 
@@ -174,77 +184,72 @@ export class RecorderSupplement {
     // Input actions that potentially lead to navigation are intercepted on the page and are
     // performed by the Playwright.
     await this._context.exposeBinding('_playwrightRecorderPerformAction', false,
-        (source: BindingSource, action: actions.Action) => this._performAction(source.frame, action));
+        (source: BindingSource, action: actions.Action) => this._performAction(source.frame, action), 'utility');
 
     // Other non-essential actions are simply being recorded.
     await this._context.exposeBinding('_playwrightRecorderRecordAction', false,
-        (source: BindingSource, action: actions.Action) => this._recordAction(source.frame, action));
-
-    // Commits last action so that no further signals are added to it.
-    await this._context.exposeBinding('_playwrightRecorderCommitAction', false,
-        (source: BindingSource, action: actions.Action) => this._generator.commitLastAction());
+        (source: BindingSource, action: actions.Action) => this._recordAction(source.frame, action), 'utility');
 
     await this._context.exposeBinding('_playwrightRecorderState', false, source => {
-      let actionPoint: Point | undefined = undefined;
-      let actionSelector: string | undefined = undefined;
+      let actionSelector = this._highlightedSelector;
+      let actionPoint: Point | undefined;
       for (const [metadata, sdkObject] of this._currentCallsMetadata) {
         if (source.page === sdkObject.attribution.page) {
           actionPoint = metadata.point || actionPoint;
-          actionSelector = metadata.params.selector || actionSelector;
+          actionSelector = actionSelector || metadata.params.selector;
         }
       }
-      const uiState: UIState = { mode: this._mode, actionPoint, actionSelector: this._highlightedSelector || actionSelector };
+      const uiState: UIState = {
+        mode: this._mode,
+        actionPoint,
+        actionSelector,
+      };
       return uiState;
-    });
+    }, 'utility');
 
     await this._context.exposeBinding('_playwrightRecorderSetSelector', false, async (_, selector: string) => {
       this._setMode('none');
       await this._recorderApp?.setSelector(selector, true);
       await this._recorderApp?.bringToFront();
-    });
+    }, 'utility');
 
     await this._context.exposeBinding('_playwrightResume', false, () => {
-      this._resume(false).catch(() => {});
-    });
+      this._debugger.resume(false);
+    }, 'main');
 
-    await this._context.extendInjectedScript(recorderSource.source, { isUnderTest: isUnderTest() });
-    await this._context.extendInjectedScript(consoleApiSource.source);
+    await this._context.extendInjectedScript('utility', recorderSource.source, { isUnderTest: isUnderTest() });
+    await this._context.extendInjectedScript('main', consoleApiSource.source);
+
+    if (this._debugger.isPaused())
+      this._pausedStateChanged();
+    this._debugger.on(Debugger.Events.PausedStateChanged, () => this._pausedStateChanged());
 
     (this._context as any).recorderAppForTest = recorderApp;
   }
 
-  async pause(metadata: CallMetadata) {
-    const result = new Promise<void>(f => {
-      this._pausedCallsMetadata.set(metadata, f);
-    });
-    this._recorderApp!.setPaused(true);
-    metadata.pauseStartTime = monotonicTime();
+  _pausedStateChanged() {
+    // If we are called upon page.pause, we don't have metadatas, populate them.
+    for (const { metadata, sdkObject } of this._debugger.pausedDetails()) {
+      if (!this._currentCallsMetadata.has(metadata))
+        this.onBeforeCall(sdkObject, metadata);
+    }
+    this._recorderApp?.setPaused(this._debugger.isPaused());
     this._updateUserSources();
-    this.updateCallLog([metadata]);
-    return result;
+    this.updateCallLog([...this._currentCallsMetadata.keys()]);
   }
 
   private _setMode(mode: Mode) {
     this._mode = mode;
     this._recorderApp?.setMode(this._mode);
     this._generator.setEnabled(this._mode === 'recording');
+    Debugger.lookup(this._context)!.setMuted(this._mode === 'recording');
     if (this._mode !== 'none')
       this._context.pages()[0].bringToFront().catch(() => {});
   }
 
-  private async _resume(step: boolean) {
-    this._pauseOnNextStatement = step;
-    this._recorderApp?.setPaused(false);
-
-    const endTime = monotonicTime();
-    for (const [metadata, callback] of this._pausedCallsMetadata) {
-      metadata.pauseEndTime = endTime;
-      callback();
-    }
-    this._pausedCallsMetadata.clear();
-
-    this._updateUserSources();
-    this.updateCallLog([...this._currentCallsMetadata.keys()]);
+  private _refreshOverlay() {
+    for (const page of this._context.pages())
+      page.mainFrame().evaluateExpression('window._playwrightRefreshOverlay()', false, undefined, 'main').catch(() => {});
   }
 
   private async _onPage(page: Page) {
@@ -264,17 +269,14 @@ export class RecorderSupplement {
     });
     frame.on(Frame.Events.Navigation, () => this._onFrameNavigated(frame, page));
     page.on(Page.Events.Download, () => this._onDownload(page));
-    page.on(Page.Events.Popup, popup => this._onPopup(page, popup));
     page.on(Page.Events.Dialog, () => this._onDialog(page));
     const suffix = this._pageAliases.size ? String(++this._lastPopupOrdinal) : '';
     const pageAlias = 'page' + suffix;
     this._pageAliases.set(page, pageAlias);
 
-    const isPopup = !!await page.opener();
-    // Could happen due to the await above.
-    if (page.isClosed())
-      return;
-    if (!isPopup) {
+    if (page.opener()) {
+      this._onPopup(page.opener()!, page);
+    } else {
       this._generator.addAction({
         pageAlias,
         ...describeFrame(page.mainFrame()),
@@ -297,6 +299,9 @@ export class RecorderSupplement {
   }
 
   private async _performAction(frame: Frame, action: actions.Action) {
+    // Commit last action so that no further signals are added to it.
+    this._generator.commitLastAction();
+
     const page = frame._page;
     const actionInContext: ActionInContext = {
       pageAlias: this._pageAliases.get(page)!,
@@ -327,6 +332,7 @@ export class RecorderSupplement {
       return;
     }
     const timer = setTimeout(() => {
+      // Commit the action after 5 seconds so that no further signals are added to it.
       actionInContext.committed = true;
       this._timers.delete(timer);
     }, 5000);
@@ -335,6 +341,9 @@ export class RecorderSupplement {
   }
 
   private async _recordAction(frame: Frame, action: actions.Action) {
+    // Commit last action so that no further signals are added to it.
+    this._generator.commitLastAction();
+
     this._generator.addAction({
       pageAlias: this._pageAliases.get(frame._page)!,
       ...describeFrame(frame),
@@ -354,7 +363,7 @@ export class RecorderSupplement {
   }
   private _onDownload(page: Page) {
     const pageAlias = this._pageAliases.get(page)!;
-    this._generator.signal(pageAlias, page.mainFrame(), { name: 'download' });
+    this._generator.signal(pageAlias, page.mainFrame(), { name: 'download', downloadAlias: String(++this._lastDownloadOrdinal) });
   }
 
   private _onDialog(page: Page) {
@@ -362,26 +371,24 @@ export class RecorderSupplement {
     this._generator.signal(pageAlias, page.mainFrame(), { name: 'dialog', dialogAlias: String(++this._lastDialogOrdinal) });
   }
 
-  async onBeforeCall(sdkObject: SdkObject, metadata: CallMetadata): Promise<void> {
+  async onBeforeCall(sdkObject: SdkObject, metadata: CallMetadata) {
     if (this._mode === 'recording')
       return;
     this._currentCallsMetadata.set(metadata, sdkObject);
+    this._allMetadatas.set(metadata.id, metadata);
     this._updateUserSources();
     this.updateCallLog([metadata]);
-    if (shouldPauseOnCall(sdkObject, metadata) || (this._pauseOnNextStatement && shouldPauseOnStep(sdkObject, metadata)))
-      await this.pause(metadata);
     if (metadata.params && metadata.params.selector) {
       this._highlightedSelector = metadata.params.selector;
-      await this._recorderApp?.setSelector(this._highlightedSelector);
+      this._recorderApp?.setSelector(this._highlightedSelector).catch(() => {});
     }
   }
 
-  async onAfterCall(metadata: CallMetadata): Promise<void> {
+  async onAfterCall(sdkObject: SdkObject, metadata: CallMetadata) {
     if (this._mode === 'recording')
       return;
     if (!metadata.error)
       this._currentCallsMetadata.delete(metadata);
-    this._pausedCallsMetadata.delete(metadata);
     this._updateUserSources();
     this.updateCallLog([metadata]);
   }
@@ -405,7 +412,7 @@ export class RecorderSupplement {
         this._userSources.set(file, source);
       }
       if (line) {
-        const paused = this._pausedCallsMetadata.has(metadata);
+        const paused = this._debugger.isPaused(metadata);
         source.highlight.push({ line, type: metadata.error ? 'error' : (paused ? 'paused' : 'running') });
         source.revealLine = line;
         fileToSelect = source.file;
@@ -420,46 +427,26 @@ export class RecorderSupplement {
     this._recorderApp?.setSources([...this._recorderSources, ...this._userSources.values()]);
   }
 
-  async onBeforeInputAction(metadata: CallMetadata): Promise<void> {
-    if (this._mode === 'recording')
-      return;
-    if (this._pauseOnNextStatement)
-      await this.pause(metadata);
+  async onBeforeInputAction(sdkObject: SdkObject, metadata: CallMetadata) {
   }
 
-  async updateCallLog(metadatas: CallMetadata[]): Promise<void> {
+  async onCallLog(logName: string, message: string, sdkObject: SdkObject, metadata: CallMetadata): Promise<void> {
+    this.updateCallLog([metadata]);
+  }
+
+  updateCallLog(metadatas: CallMetadata[]) {
     if (this._mode === 'recording')
       return;
     const logs: CallLog[] = [];
     for (const metadata of metadatas) {
       if (!metadata.method)
         continue;
-      const title = metadata.apiName || metadata.method;
-      let status: 'done' | 'in-progress' | 'paused' | 'error' = 'done';
+      let status: CallLogStatus = 'done';
       if (this._currentCallsMetadata.has(metadata))
         status = 'in-progress';
-      if (this._pausedCallsMetadata.has(metadata))
+      if (this._debugger.isPaused(metadata))
         status = 'paused';
-      if (metadata.error)
-        status = 'error';
-      const params = {
-        url: metadata.params?.url,
-        selector: metadata.params?.selector,
-      };
-      let duration = metadata.endTime ? metadata.endTime - metadata.startTime : undefined;
-      if (typeof duration === 'number' && metadata.pauseStartTime && metadata.pauseEndTime) {
-        duration -= (metadata.pauseEndTime - metadata.pauseStartTime);
-        duration = Math.max(duration, 0);
-      }
-      logs.push({
-        id: metadata.id,
-        messages: metadata.log,
-        title,
-        status,
-        error: metadata.error,
-        params,
-        duration
-      });
+      logs.push(metadataToCallLog(metadata, status));
     }
     this._recorderApp?.updateCallLogs(logs);
   }
@@ -481,14 +468,4 @@ function languageForFile(file: string) {
   if (file.endsWith('.cs'))
     return 'csharp';
   return 'javascript';
-}
-
-function shouldPauseOnCall(sdkObject: SdkObject, metadata: CallMetadata): boolean {
-  if (!sdkObject.attribution.browser?.options.headful && !isUnderTest())
-    return false;
-  return metadata.method === 'pause';
-}
-
-function shouldPauseOnStep(sdkObject: SdkObject, metadata: CallMetadata): boolean {
-  return metadata.method === 'goto' || metadata.method === 'close';
 }

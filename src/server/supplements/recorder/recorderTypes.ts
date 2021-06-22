@@ -29,11 +29,13 @@ export type UIState = {
   actionSelector?: string;
 };
 
+export type CallLogStatus = 'in-progress' | 'done' | 'error' | 'paused';
+
 export type CallLog = {
-  id: number;
+  id: string;
   title: string;
   messages: string[];
-  status: 'in-progress' | 'done' | 'error' | 'paused';
+  status: CallLogStatus;
   error?: string;
   reveal?: boolean;
   duration?: number;

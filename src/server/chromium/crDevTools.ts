@@ -15,7 +15,6 @@
  */
 
 import fs from 'fs';
-import * as util from 'util';
 import { CRSession } from './crConnection';
 
 const kBindingName = '__pw_devtools__';
@@ -33,7 +32,7 @@ export class CRDevTools {
     this._savePromise = Promise.resolve();
   }
 
-  async install(session: CRSession) {
+  install(session: CRSession) {
     session.on('Runtime.bindingCalled', async event => {
       if (event.name !== kBindingName)
         return;
@@ -44,7 +43,7 @@ export class CRDevTools {
       if (parsed.method === 'getPreferences') {
         if (this._prefs === undefined) {
           try {
-            const json = await util.promisify(fs.readFile)(this._preferencesPath, 'utf8');
+            const json = await fs.promises.readFile(this._preferencesPath, 'utf8');
             this._prefs = JSON.parse(json);
           } catch (e) {
             this._prefs = {};
@@ -66,7 +65,7 @@ export class CRDevTools {
         contextId: event.executionContextId
       }).catch(e => null);
     });
-    await Promise.all([
+    Promise.all([
       session.send('Runtime.enable'),
       session.send('Runtime.addBinding', { name: kBindingName }),
       session.send('Page.enable'),
@@ -100,7 +99,7 @@ export class CRDevTools {
   _save() {
     // Serialize saves to avoid corruption.
     this._savePromise = this._savePromise.then(async () => {
-      await util.promisify(fs.writeFile)(this._preferencesPath, JSON.stringify(this._prefs)).catch(e => null);
+      await fs.promises.writeFile(this._preferencesPath, JSON.stringify(this._prefs)).catch(e => null);
     });
   }
 }
