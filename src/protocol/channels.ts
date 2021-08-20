@@ -824,6 +824,7 @@ export interface PageChannel extends Channel {
   mouseUp(params: PageMouseUpParams, metadata?: Metadata): Promise<PageMouseUpResult>;
   mouseClick(params: PageMouseClickParams, metadata?: Metadata): Promise<PageMouseClickResult>;
   touchscreenTap(params: PageTouchscreenTapParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
+  touchscreenMove(params: PageTouchscreenMoveParams, metadata?: Metadata): Promise<void>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, metadata?: Metadata): Promise<PageAccessibilitySnapshotResult>;
   pdf(params: PagePdfParams, metadata?: Metadata): Promise<PagePdfResult>;
   crStartJSCoverage(params: PageCrStartJSCoverageParams, metadata?: Metadata): Promise<PageCrStartJSCoverageResult>;
@@ -1105,6 +1106,12 @@ export type PageMouseClickResult = void;
 export type PageTouchscreenTapParams = {
   x: number,
   y: number,
+};
+export type PageTouchscreenMoveParams = {
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
 };
 export type PageTouchscreenTapOptions = {
 

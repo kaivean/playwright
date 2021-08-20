@@ -193,6 +193,10 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageInitializer> i
     await this._page.touchscreen.tap(params.x, params.y);
   }
 
+  async touchscreenMove(params: channels.PageTouchscreenMoveParams, metadata?: CallMetadata): Promise<void> {
+    await this._page.touchscreen.move(params.startX, params.startY, params.endX, params.endY);
+  }
+
   async accessibilitySnapshot(params: channels.PageAccessibilitySnapshotParams, metadata: CallMetadata): Promise<channels.PageAccessibilitySnapshotResult> {
     const rootAXNode = await this._page.accessibility.snapshot({
       interestingOnly: params.interestingOnly,
