@@ -296,7 +296,7 @@ function buildLayoutClosure(layout: keyboardLayout.KeyboardLayout): Map<string, 
 
 export interface RawTouchscreen {
   tap(x: number, y: number, modifiers: Set<types.KeyboardModifier>): Promise<void>;
-  move(x: number, y: number, endX: number, endY: number, modifiers: Set<types.KeyboardModifier>): Promise<void>;
+  move?(x: number, y: number, endX: number, endY: number, modifiers: Set<types.KeyboardModifier>): Promise<void>;
 }
 
 export class Touchscreen {
