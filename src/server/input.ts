@@ -297,6 +297,8 @@ function buildLayoutClosure(layout: keyboardLayout.KeyboardLayout): Map<string, 
 export interface RawTouchscreen {
   tap(x: number, y: number, modifiers: Set<types.KeyboardModifier>): Promise<void>;
   move?(x: number, y: number, endX: number, endY: number, modifiers: Set<types.KeyboardModifier>): Promise<void>;
+  down?(x: number, y: number,  modifiers: Set<types.KeyboardModifier>): Promise<void>;
+  up?(modifiers: Set<types.KeyboardModifier>): Promise<void>;
 }
 
 export class Touchscreen {
@@ -320,6 +322,25 @@ export class Touchscreen {
     if (!this._raw.move)
       throw new Error('move not support');
     await this._raw.move(startX, startY, endX, endY, this._page.keyboard._modifiers());
+    await this._page._doSlowMo();
+  }
+  async down(startX: number, startY: number) {
+    if (!this._page._browserContext._options.hasTouch)
+      throw new Error('hasTouch must be enabled on the browser context before using the touchscreen.');
+    if (!this._raw.down) {
+      throw new Error('down not support');
+    }
+    await this._raw.down(startX, startY, this._page.keyboard._modifiers());
+    await this._page._doSlowMo();
+  }
+
+  async up() {
+    if (!this._page._browserContext._options.hasTouch)
+      throw new Error('hasTouch must be enabled on the browser context before using the touchscreen.');
+    if (!this._raw.up) {
+      throw new Error('up not support');
+    }
+    await this._raw.up(this._page.keyboard._modifiers());
     await this._page._doSlowMo();
   }
 }

@@ -891,6 +891,13 @@ Page:
         endX: number
         endY: number
 
+    touchscreenDown:
+      parameters:
+        startX: number
+        startY: number
+
+    touchscreenUp:
+
     accessibilitySnapshot:
       parameters:
         interestingOnly: boolean?

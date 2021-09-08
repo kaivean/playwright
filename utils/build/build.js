@@ -50,6 +50,7 @@ function runWatch() {
 }
 
 function runBuild() {
+  // console.log('~~~~~~~~~~~~~', onChanges);
   function runStep(command, args, shell) {
     const out = child_process.spawnSync(command, args, { stdio: 'inherit', shell });
     if (out.status)
@@ -59,8 +60,10 @@ function runBuild() {
   for (const step of steps)
     runStep(step.command, step.args, step.shell);
   for (const onChange of onChanges) {
-    if (!onChange.committed)
+    if (!onChange.committed) {
+      // console.log('node', [filePath(onChange.script)]);
       runStep('node', [filePath(onChange.script)], false);
+    }
   }
 }
 

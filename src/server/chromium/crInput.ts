@@ -179,4 +179,23 @@ export class RawTouchscreenImpl implements input.RawTouchscreen {
       }),
     ]);
   }
+
+  async down(startX: number, startY: number, modifiers: Set<types.KeyboardModifier>) {
+    await this._client.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      modifiers: toModifiersMask(modifiers),
+      touchPoints: [{
+        x: startX,
+        y: startY
+      }]
+    });
+  }
+
+  async up(modifiers: Set<types.KeyboardModifier>) {
+    await this._client.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      modifiers: toModifiersMask(modifiers),
+      touchPoints: []
+    });
+  }
 }

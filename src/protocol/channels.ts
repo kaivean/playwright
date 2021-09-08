@@ -824,7 +824,9 @@ export interface PageChannel extends Channel {
   mouseUp(params: PageMouseUpParams, metadata?: Metadata): Promise<PageMouseUpResult>;
   mouseClick(params: PageMouseClickParams, metadata?: Metadata): Promise<PageMouseClickResult>;
   touchscreenTap(params: PageTouchscreenTapParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
-  touchscreenMove(params: PageTouchscreenMoveParams, metadata?: Metadata): Promise<void>;
+  touchscreenMove(params: PageTouchscreenMoveParams, metadata?: Metadata): Promise<PageTouchscreenMoveResult>;
+  touchscreenDown(params: PageTouchscreenDownParams, metadata?: Metadata): Promise<PageTouchscreenDownResult>;
+  touchscreenUp(params?: PageTouchscreenUpParams, metadata?: Metadata): Promise<PageTouchscreenUpResult>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, metadata?: Metadata): Promise<PageAccessibilitySnapshotResult>;
   pdf(params: PagePdfParams, metadata?: Metadata): Promise<PagePdfResult>;
   crStartJSCoverage(params: PageCrStartJSCoverageParams, metadata?: Metadata): Promise<PageCrStartJSCoverageResult>;
@@ -1107,16 +1109,31 @@ export type PageTouchscreenTapParams = {
   x: number,
   y: number,
 };
+export type PageTouchscreenTapOptions = {
+
+};
+export type PageTouchscreenTapResult = void;
 export type PageTouchscreenMoveParams = {
   startX: number,
   startY: number,
   endX: number,
   endY: number,
 };
-export type PageTouchscreenTapOptions = {
+export type PageTouchscreenMoveOptions = {
 
 };
-export type PageTouchscreenTapResult = void;
+export type PageTouchscreenMoveResult = void;
+export type PageTouchscreenDownParams = {
+  startX: number,
+  startY: number,
+};
+export type PageTouchscreenDownOptions = {
+
+};
+export type PageTouchscreenDownResult = void;
+export type PageTouchscreenUpParams = {};
+export type PageTouchscreenUpOptions = {};
+export type PageTouchscreenUpResult = void;
 export type PageAccessibilitySnapshotParams = {
   interestingOnly?: boolean,
   root?: ElementHandleChannel,
