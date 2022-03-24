@@ -13,22 +13,22 @@ This image is published on [Docker Hub].
 
 ### Pull the image
 
-```bash js python csharp
-docker pull mcr.microsoft.com/playwright:focal
+Replace 1.20.0 with your Playwright version:
+
+```bash js
+docker pull mcr.microsoft.com/playwright:v1.21.0-focal
+```
+
+```bash python
+docker pull mcr.microsoft.com/playwright/python:v1.21.0-focal
+```
+
+```bash csharp
+docker pull mcr.microsoft.com/playwright:v1.21.0-focal
 ```
 
 ```bash java
-docker pull mcr.microsoft.com/playwright/java:focal
-```
-
-or pinned to a specific Playwright version (recommended). Replace 1.10.0 with your Playwright version:
-
-```bash js python csharp
-docker pull mcr.microsoft.com/playwright:v1.10.0-focal
-```
-
-```bash java
-docker pull mcr.microsoft.com/playwright/java:v1.10.0-focal
+docker pull mcr.microsoft.com/playwright/java:v1.21.0-focal
 ```
 
 ### Run the image
@@ -39,27 +39,43 @@ By default, the Docker image will use the `root` user to run the browsers. This 
 
 On trusted websites, you can avoid creating a separate user and use root for it since you trust the code which will run on the browsers.
 
-```bash js python csharp
-docker run -it --rm --ipc=host mcr.microsoft.com/playwright:focal /bin/bash
+```bash js
+docker run -it --rm --ipc=host mcr.microsoft.com/playwright:v1.21.0-focal /bin/bash
+```
+
+```bash python
+docker run -it --rm --ipc=host mcr.microsoft.com/playwright/python:v1.21.0-focal /bin/bash
+```
+
+```bash csharp
+docker run -it --rm --ipc=host mcr.microsoft.com/playwright/dotnet:v1.21.0-focal /bin/bash
 ```
 
 ```bash java
-docker run -it --rm --ipc=host mcr.microsoft.com/playwright/java:focal /bin/bash
+docker run -it --rm --ipc=host mcr.microsoft.com/playwright/java:v1.21.0-focal /bin/bash
 ```
 
 #### Crawling and scraping
 
 On untrusted websites, it's recommended to use a separate user for launching the browsers in combination with the seccomp profile. Inside the container or if you are using the Docker image as a base image you have to use `adduser` for it.
 
-```bash js python csharp
-docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright:focal /bin/bash
+```bash js
+docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright:v1.21.0-focal /bin/bash
+```
+
+```bash python
+docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright/python:v1.21.0-focal /bin/bash
+```
+
+```bash csharp
+docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright/dotnet:v1.21.0-focal /bin/bash
 ```
 
 ```bash java
-docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright/java:focal /bin/bash
+docker run -it --rm --ipc=host --user pwuser --security-opt seccomp=seccomp_profile.json mcr.microsoft.com/playwright/java:v1.21.0-focal /bin/bash
 ```
 
-[`seccomp_profile.json`](https://github.com/microsoft/playwright/blob/master/utils/docker/seccomp_profile.json) is needed to run Chromium with sandbox. This is a [default Docker seccomp profile](https://github.com/docker/engine/blob/d0d99b04cf6e00ed3fc27e81fc3d94e7eda70af3/profiles/seccomp/default.json) with extra user namespace cloning permissions:
+[`seccomp_profile.json`](https://github.com/microsoft/playwright/blob/main/utils/docker/seccomp_profile.json) is needed to run Chromium with sandbox. This is a [default Docker seccomp profile](https://github.com/docker/engine/blob/d0d99b04cf6e00ed3fc27e81fc3d94e7eda70af3/profiles/seccomp/default.json) with extra user namespace cloning permissions:
 
 ```json
 [
@@ -92,15 +108,11 @@ See our [Continuous Integration guides](./ci.md) for sample configs.
 See [all available image tags].
 
 Docker images are published automatically by GitHub Actions. We currently publish images with the
-following tags (`v1.10.0` in this case is an example:):
-- `:next` - tip-of-tree image version based on Ubuntu 20.04 LTS.
-- `:next-focal` - tip-of-tree image version based on Ubuntu 20.04 LTS.
-- `:next-bionic` - tip-of-tree image version based on Ubuntu 18.04 LTS.
-- `:bionic` - last Playwright release docker image based on Ubuntu 18.04 LTS.
-- `:focal` - last Playwright release docker image based on Ubuntu 20.04 LTS (Focal Fossa).
-- `:v1.10.0` - Playwright v1.10.0 release docker image based on Ubuntu 20.04 LTS (Focal Fossa).
-- `:v1.10.0-focal` - Playwright v1.10.0 release docker image based on Ubuntu 20.04 LTS (Focal Fossa).
-- `:v1.10.0-bionic` - Playwright v1.10.0 release docker image based on Ubuntu 18.04 LTS (Bionic Beaver).
+following tags (`v1.20.0` in this case is an example:):
+- `:next` - tip-of-tree image version based on Ubuntu 20.04 LTS (Focal Fossa).
+- `:next-focal` - tip-of-tree image version based on Ubuntu 20.04 LTS (Focal Fossa).
+- `:v1.20.0` - Playwright v1.20.0 release docker image based on Ubuntu 20.04 LTS (Focal Fossa).
+- `:v1.20.0-focal` - Playwright v1.20.0 release docker image based on Ubuntu 20.04 LTS (Focal Fossa).
 - `:sha-XXXXXXX` - docker image for every commit that changed
   docker files or browsers, marked with a [short sha](https://git-scm.com/book/en/v2/Git-Tools-Revision-Selection#Short-SHA-1) (first 7 digits of the SHA commit).
 
@@ -110,7 +122,7 @@ Status of push to MCR can be [verified here](https://mcrflow-status-ui.azurewebs
 
 We currently publish images based on the following [Ubuntu](https://hub.docker.com/_/ubuntu) versions:
 - **Ubuntu 20.04 LTS** (Focal Fossa), image tags include `focal`
-- **Ubuntu 18.04 LTS** (Bionic Beaver), image tags include `bionic`
+- **Ubuntu 18.04 LTS** (Bionic Beaver), image tags include `bionic` (not published for Java and .NET)
 
 #### Alpine
 
@@ -121,7 +133,7 @@ Browser builds for Firefox and WebKit are built for the [glibc](https://en.wikip
 
 ### Build the image
 
-Use [`//utils/docker/build.sh`](https://github.com/microsoft/playwright/blob/master/utils/docker/build.sh) to build the image.
+Use [`//utils/docker/build.sh`](https://github.com/microsoft/playwright/blob/main/utils/docker/build.sh) to build the image.
 
 ```
 ./utils/docker/build.sh focal playwright:localbuild-focal

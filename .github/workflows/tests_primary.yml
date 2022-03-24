@@ -3,15 +3,21 @@ name: "tests 1"
 on:
   push:
     branches:
-      - master
+      - main
       - release-*
   pull_request:
     paths-ignore:
       - 'browser_patches/**'
       - 'docs/**'
     branches:
-      - master
+      - main
       - release-*
+
+concurrency:
+  # For pull requests, cancel all currently-running jobs for this workflow
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#concurrency
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   # Force terminal colors. @see https://www.npmjs.com/package/colors
@@ -32,11 +38,13 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: 12
+    - run: npm i -g npm@8.3
     - run: npm ci
       env:
         DEBUG: pw:install
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     - run: npm run build
-    - run: node lib/cli/cli install-deps ${{ matrix.browser }} chromium
+    - run: npx playwright install --with-deps ${{ matrix.browser }} chromium
     - run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" -- npm run test -- --project=${{ matrix.browser }}
     - run: node tests/config/checkCoverage.js ${{ matrix.browser }}
     - run: ./utils/upload_flakiness_dashboard.sh ./test-results/report.json
@@ -53,16 +61,61 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [12]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-node@v2
       with:
-        node-version: 12
+        node-version: ${{matrix.node-version}}
+    - run: npm i -g npm@8.3
     - run: npm ci
       env:
         DEBUG: pw:install
     - run: npm run build
-    - run: node lib/cli/cli install-deps
-    - run: node lib/cli/cli install
+    - run: npx playwright install --with-deps
     - run: npm run ttest
+      if: matrix.os != 'ubuntu-latest'
+    - run: xvfb-run npm run ttest
+      if: matrix.os == 'ubuntu-latest'
+    - run: ./utils/upload_flakiness_dashboard.sh ./test-results/report.json
+      if: always()
+
+  test_test_runner_esm:
+    name: Test Runner ESM
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v2
+      with:
+        node-version: 16
+    - run: npm i -g npm@8.3
+    - run: npm ci
+      env:
+        DEBUG: pw:install
+    - run: npm run build
+    - run: npx playwright install --with-deps
+    - run: npm run ttest -- --grep=@esm
+
+  test_html_report:
+    name: HTML Report
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v2
+      with:
+        node-version: 12
+    - run: npm i -g npm@8.3
+    - run: npm ci
+      env:
+        DEBUG: pw:install
+    - run: npm run build
+    - run: npx playwright install --with-deps
+    - run: npm run htest
+      if: matrix.os != 'ubuntu-latest'
+    - run: xvfb-run npm run htest
+      if: matrix.os == 'ubuntu-latest'

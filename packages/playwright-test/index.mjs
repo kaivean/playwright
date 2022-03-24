@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import playwright from './index.js';
 
 export const chromium = playwright.chromium;
@@ -25,4 +24,5 @@ export const errors = playwright.errors;
 export const _electron = playwright._electron;
 export const _android = playwright._android;
 export const test = playwright.test;
-export default playwright;
+export const expect = playwright.expect;
+export default playwright.test;

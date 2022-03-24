@@ -15,35 +15,54 @@
  * limitations under the License.
  */
 
-import { test as it, expect } from './pageTest';
 import fs from 'fs';
+import url from 'url';
+import { expect, test as it } from './pageTest';
 
-it('should work', async ({page, server}) => {
+it('should work @smoke', async ({ page, server }) => {
   server.setRoute('/empty.html', (req, res) => {
     res.setHeader('foo', 'bar');
     res.setHeader('BaZ', 'bAz');
     res.end();
   });
   const response = await page.goto(server.EMPTY_PAGE);
-  expect(response.headers()['foo']).toBe('bar');
-  expect(response.headers()['baz']).toBe('bAz');
-  expect(response.headers()['BaZ']).toBe(undefined);
+  expect((await response.allHeaders())['foo']).toBe('bar');
+  expect((await response.allHeaders())['baz']).toBe('bAz');
+  expect((await response.allHeaders())['BaZ']).toBe(undefined);
 });
 
+it('should return multiple header value', async ({ page, server, browserName, platform }) => {
+  it.fixme(browserName === 'webkit' && platform === 'win32', 'libcurl does not support non-set-cookie multivalue headers');
+  server.setRoute('/headers', (req, res) => {
+    // Headers array is only supported since Node v14.14.0 so we write directly to the socket.
+    // res.writeHead(200, ['name-a', 'v1','name-b', 'v4','Name-a', 'v2', 'name-A', 'v3']);
+    const conn = res.connection;
+    conn.write('HTTP/1.1 200 OK\r\n');
+    conn.write('Name-A: v1\r\n');
+    conn.write('Name-a: v2\r\n');
+    conn.write('name-A: v3\r\n');
+    conn.write('\r\n');
+    conn.uncork();
+    conn.end();
+  });
+  const response = await page.goto(`${server.PREFIX}/headers`);
+  expect(response.status()).toBe(200);
+  expect(response.headers()['name-a']).toBe('v1, v2, v3');
+});
 
-it('should return text', async ({page, server}) => {
+it('should return text', async ({ page, server }) => {
   const response = await page.goto(server.PREFIX + '/simple.json');
   expect(await response.text()).toBe('{"foo": "bar"}\n');
 });
 
-it('should return uncompressed text', async ({page, server}) => {
+it('should return uncompressed text', async ({ page, server }) => {
   server.enableGzip('/simple.json');
   const response = await page.goto(server.PREFIX + '/simple.json');
   expect(response.headers()['content-encoding']).toBe('gzip');
   expect(await response.text()).toBe('{"foo": "bar"}\n');
 });
 
-it('should throw when requesting body of redirected response', async ({page, server}) => {
+it('should throw when requesting body of redirected response', async ({ page, server }) => {
   server.setRedirect('/foo.html', '/empty.html');
   const response = await page.goto(server.PREFIX + '/foo.html');
   const redirectedFrom = response.request().redirectedFrom();
@@ -55,7 +74,7 @@ it('should throw when requesting body of redirected response', async ({page, ser
   expect(error.message).toContain('Response body is unavailable for redirect responses');
 });
 
-it('should wait until response completes', async ({page, server}) => {
+it('should wait until response completes', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   // Setup server to trap request.
   let serverResponse = null;
@@ -72,7 +91,7 @@ it('should wait until response completes', async ({page, server}) => {
   // send request and wait for server response
   const [pageResponse] = await Promise.all([
     page.waitForEvent('response'),
-    page.evaluate(() => fetch('./get', { method: 'GET'})),
+    page.evaluate(() => fetch('./get', { method: 'GET' })),
     server.waitForRequest('/get'),
   ]);
 
@@ -89,19 +108,61 @@ it('should wait until response completes', async ({page, server}) => {
   expect(await responseText).toBe('hello world!');
 });
 
-it('should return json', async ({page, server}) => {
-  const response = await page.goto(server.PREFIX + '/simple.json');
-  expect(await response.json()).toEqual({foo: 'bar'});
+it('should reject response.finished if page closes', async ({ page, server }) => {
+  it.fixme();
+  await page.goto(server.EMPTY_PAGE);
+  server.setRoute('/get', (req, res) => {
+    // In Firefox, |fetch| will be hanging until it receives |Content-Type| header
+    // from server.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.write('hello ');
+  });
+  // send request and wait for server response
+  const [pageResponse] = await Promise.all([
+    page.waitForEvent('response'),
+    page.evaluate(() => fetch('./get', { method: 'GET' })),
+  ]);
+
+  const finishPromise = pageResponse.finished().catch(e => e);
+  await page.close();
+  const error = await finishPromise;
+  expect(error.message).toContain('closed');
 });
 
-it('should return body', async ({page, server, asset}) => {
+it('should reject response.finished if context closes', async ({ page, server }) => {
+  it.fixme();
+  await page.goto(server.EMPTY_PAGE);
+  server.setRoute('/get', (req, res) => {
+    // In Firefox, |fetch| will be hanging until it receives |Content-Type| header
+    // from server.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.write('hello ');
+  });
+  // send request and wait for server response
+  const [pageResponse] = await Promise.all([
+    page.waitForEvent('response'),
+    page.evaluate(() => fetch('./get', { method: 'GET' })),
+  ]);
+
+  const finishPromise = pageResponse.finished().catch(e => e);
+  await page.context().close();
+  const error = await finishPromise;
+  expect(error.message).toContain('closed');
+});
+
+it('should return json', async ({ page, server }) => {
+  const response = await page.goto(server.PREFIX + '/simple.json');
+  expect(await response.json()).toEqual({ foo: 'bar' });
+});
+
+it('should return body', async ({ page, server, asset }) => {
   const response = await page.goto(server.PREFIX + '/pptr.png');
   const imageBuffer = fs.readFileSync(asset('pptr.png'));
   const responseBuffer = await response.body();
   expect(responseBuffer.equals(imageBuffer)).toBe(true);
 });
 
-it('should return body with compression', async ({page, server, asset}) => {
+it('should return body with compression', async ({ page, server, asset }) => {
   server.enableGzip('/pptr.png');
   const response = await page.goto(server.PREFIX + '/pptr.png');
   const imageBuffer = fs.readFileSync(asset('pptr.png'));
@@ -109,11 +170,151 @@ it('should return body with compression', async ({page, server, asset}) => {
   expect(responseBuffer.equals(imageBuffer)).toBe(true);
 });
 
-it('should return status text', async ({page, server}) => {
+it('should return status text', async ({ page, server }) => {
   server.setRoute('/cool', (req, res) => {
     res.writeHead(200, 'cool!');
     res.end();
   });
   const response = await page.goto(server.PREFIX + '/cool');
   expect(response.statusText()).toBe('cool!');
+});
+
+it('should report all headers', async ({ page, server, browserName, platform }) => {
+  it.fixme(browserName === 'webkit' && platform === 'win32', 'libcurl does not support non-set-cookie multivalue headers');
+  const expectedHeaders = {
+    'header-a': ['value-a', 'value-a-1', 'value-a-2'],
+    'header-b': ['value-b'],
+  };
+  server.setRoute('/headers', (req, res) => {
+    res.writeHead(200, expectedHeaders);
+    res.end();
+  });
+
+  await page.goto(server.EMPTY_PAGE);
+  const [response] = await Promise.all([
+    page.waitForResponse('**/*'),
+    page.evaluate(() => fetch('/headers'))
+  ]);
+  const headers = await response.headersArray();
+  const actualHeaders = {};
+  for (const { name, value } of headers) {
+    if (!actualHeaders[name])
+      actualHeaders[name] = [];
+    actualHeaders[name].push(value);
+  }
+  delete actualHeaders['Keep-Alive'];
+  delete actualHeaders['keep-alive'];
+  delete actualHeaders['Connection'];
+  delete actualHeaders['connection'];
+  delete actualHeaders['Date'];
+  delete actualHeaders['date'];
+  delete actualHeaders['Transfer-Encoding'];
+  delete actualHeaders['transfer-encoding'];
+  expect(actualHeaders).toEqual(expectedHeaders);
+});
+
+it('should report multiple set-cookie headers', async ({ page, server }) => {
+  server.setRoute('/headers', (req, res) => {
+    res.writeHead(200, {
+      'Set-Cookie': ['a=b', 'c=d']
+    });
+    res.write('\r\n');
+    res.end();
+  });
+
+  await page.goto(server.EMPTY_PAGE);
+  const [response] = await Promise.all([
+    page.waitForResponse('**/*'),
+    page.evaluate(() => fetch('/headers'))
+  ]);
+  const headers = await response.headersArray();
+  const cookies = headers.filter(({ name }) => name.toLowerCase() === 'set-cookie').map(({ value }) => value);
+  expect(cookies).toEqual(['a=b', 'c=d']);
+  expect(await response.headerValue('not-there')).toEqual(null);
+  expect(await response.headerValue('set-cookie')).toEqual('a=b\nc=d');
+  expect(await response.headerValues('set-cookie')).toEqual(['a=b', 'c=d']);
+});
+
+it('should behave the same way for headers and allHeaders', async ({ page, server, browserName, channel, platform, isAndroid }) => {
+  it.fixme(browserName === 'webkit' && platform === 'win32', 'libcurl does not support non-set-cookie multivalue headers');
+  it.fixme(isAndroid, 'Android uses \n as a header separator in non-raw headers');
+  server.setRoute('/headers', (req, res) => {
+    const headers = {
+      'Set-Cookie': ['a=b', 'c=d'],
+      'header-a': ['a=b', 'c=d'],
+      'Name-A': 'v1',
+      'name-b': 'v4',
+      'Name-a': 'v2',
+      'name-A': 'v3',
+    };
+    // Chromium does not report set-cookie headers immediately, so they are missing from .headers()
+    if (browserName === 'chromium')
+      delete headers['Set-Cookie'];
+
+    res.writeHead(200, headers);
+    res.write('\r\n');
+    res.end();
+  });
+
+  await page.goto(server.EMPTY_PAGE);
+  const [response] = await Promise.all([
+    page.waitForResponse('**/*'),
+    page.evaluate(() => fetch('/headers'))
+  ]);
+  const allHeaders = await response.allHeaders();
+  expect(response.headers()).toEqual(allHeaders);
+  expect(allHeaders['header-a']).toEqual('a=b, c=d');
+  expect(allHeaders['name-a']).toEqual('v1, v2, v3');
+  expect(allHeaders['name-b']).toEqual('v4');
+});
+
+it('should provide a Response with a file URL', async ({ page, asset, isAndroid, isElectron, isWindows, browserName, browserMajorVersion }) => {
+  it.skip(isAndroid, 'No files on Android');
+  it.fixme(browserName === 'firefox', 'Firefox does return null for file:// URLs');
+
+  const fileurl = url.pathToFileURL(asset('frames/two-frames.html')).href;
+  const response = await page.goto(fileurl);
+  if (isElectron || (browserName === 'chromium' && browserMajorVersion >= 99) || (browserName === 'webkit' && isWindows))
+    expect(response.status()).toBe(200);
+  else
+    expect(response.status()).toBe(0);
+  expect(response.ok()).toBe(true);
+});
+
+it('should return set-cookie header after route.fulfill', async ({ page, server, browserName }) => {
+  it.fail(browserName === 'webkit' || browserName === 'chromium', 'https://github.com/microsoft/playwright/issues/11035');
+  await page.route('**/*', async route => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'set-cookie': 'a=b'
+      },
+      contentType: 'text/plain',
+      body: ''
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  const headers = await response.allHeaders();
+  expect(headers['set-cookie']).toBe('a=b');
+});
+
+it('should return headers after route.fulfill', async ({ page, server }) => {
+  await page.route('**/*', async route => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'foo': 'bar',
+        'content-language': 'en'
+      },
+      contentType: 'text/plain',
+      body: 'done'
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(await response.allHeaders()).toEqual({
+    'foo': 'bar',
+    'content-type': 'text/plain',
+    'content-length': '4',
+    'content-language': 'en'
+  });
 });

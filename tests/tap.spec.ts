@@ -15,12 +15,12 @@
  */
 
 import { contextTest as it, expect } from './config/browserTest';
-import { ElementHandle } from '../index';
+import { ElementHandle } from 'playwright-core';
 import type { ServerResponse } from 'http';
 
 it.use({ hasTouch: true });
 
-it('should send all of the correct events', async ({ page }) => {
+it('should send all of the correct events @smoke', async ({ page }) => {
   await page.setContent(`
   <div id="a" style="background: lightblue; width: 50px; height: 50px">a</div>
   <div id="b" style="background: pink; width: 50px; height: 50px">b</div>
@@ -48,14 +48,15 @@ it('trial run should not tap', async ({ page }) => {
   await page.tap('#a');
   const eventsHandle = await trackEvents(await page.$('#b'));
   await page.tap('#b', { trial: true });
-  expect(await eventsHandle.jsonValue()).toEqual([]);
+  const expected = ['pointerover', 'pointerenter', 'pointerout', 'pointerleave'];
+  expect(await eventsHandle.jsonValue()).toEqual(expected);
 });
 
 it('should not send mouse events touchstart is canceled', async ({ page }) => {
   await page.setContent(`<div style="width: 50px; height: 50px; background: red">`);
   await page.evaluate(() => {
     // touchstart is not cancelable unless passive is false
-    document.addEventListener('touchstart', t => t.preventDefault(), {passive: false});
+    document.addEventListener('touchstart', t => t.preventDefault(), { passive: false });
   });
   const eventsHandle = await trackEvents(await page.$('div'));
   await page.tap('div');
@@ -82,7 +83,7 @@ it('should not send mouse events when touchend is canceled', async ({ page }) =>
   ]);
 });
 
-it('should wait for a navigation caused by a tap', async ({page, server}) => {
+it('should wait for a navigation caused by a tap', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
   <a href="/intercept-this.html">link</a>;
@@ -110,7 +111,7 @@ it('should work with modifiers', async ({ page  }) => {
   const altKeyPromise = page.evaluate(() => new Promise(resolve => {
     document.addEventListener('touchstart', event => {
       resolve(event.altKey);
-    }, {passive: false});
+    }, { passive: false });
   }));
   // make sure the evals hit the page
   await page.evaluate(() => void 0);
@@ -200,3 +201,14 @@ async function trackEvents(target: ElementHandle) {
   });
   return eventsHandle;
 }
+
+it.describe('locators', () => {
+  it('should send all of the correct events', async ({ page }) => {
+    await page.setContent(`
+      <div id="a" style="background: lightblue; width: 50px; height: 50px">a</div>
+      <div id="b" style="background: pink; width: 50px; height: 50px">b</div>
+    `);
+    await page.locator('#a').tap();
+    await page.locator('#b').tap();
+  });
+});

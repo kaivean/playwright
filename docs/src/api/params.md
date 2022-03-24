@@ -1,10 +1,11 @@
 ## navigation-wait-until
-- `waitUntil` <[WaitUntilState]<"load"|"domcontentloaded"|"networkidle">>
+- `waitUntil` <[WaitUntilState]<"load"|"domcontentloaded"|"networkidle"|"commit">>
 
 When to consider operation succeeded, defaults to `load`. Events can be either:
 * `'domcontentloaded'` - consider operation to be finished when the `DOMContentLoaded` event is fired.
 * `'load'` - consider operation to be finished when the `load` event is fired.
 * `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
+* `'commit'` - consider operation to be finished when network response is received and the document started loading.
 
 ## navigation-timeout
 - `timeout` <[float]>
@@ -21,6 +22,12 @@ The default value can be changed by using the
 
 maximum time to wait for in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default
 value can be changed by using the [`method: BrowserContext.setDefaultTimeout`].
+
+## input-strict
+- `strict` <[boolean]>
+
+When true, the call requires selector to resolve to a single element. If given selector resolves to more
+then one element, the call throws an exception.
 
 ## input-timeout
 - `timeout` <[float]>
@@ -44,7 +51,17 @@ Whether to bypass the [actionability](./actionability.md) checks. Defaults to `f
 ## input-selector
 - `selector` <[string]>
 
-A selector to search for element. If there are multiple elements satisfying the selector, the first will be used. See
+A selector to search for an element. If there are multiple elements satisfying the selector, the first will be used. See
+[working with selectors](./selectors.md) for more details.
+
+## input-source
+- `source` <[string]>
+A selector to search for an element to drag. If there are multiple elements satisfying the selector, the first will be used. See
+[working with selectors](./selectors.md) for more details.
+
+## input-target
+- `target` <[string]>
+A selector to search for an element to drop onto. If there are multiple elements satisfying the selector, the first will be used. See
 [working with selectors](./selectors.md) for more details.
 
 ## input-position
@@ -87,10 +104,36 @@ defaults to 1. See [UIEvent.detail].
 
 When set, this method only performs the [actionability](./actionability.md) checks and skips the action. Defaults to `false`. Useful to wait until the element is ready for the action without performing it.
 
+## input-source-position
+- `sourcePosition` <[Object]>
+  - `x` <[float]>
+  - `y` <[float]>
+
+Clicks on the source element at this point relative to the top-left corner of the element's padding box. If not specified, some visible point of the element is used.
+
+## input-target-position
+- `targetPosition` <[Object]>
+  - `x` <[float]>
+  - `y` <[float]>
+
+Drops on the target element at this point relative to the top-left corner of the element's padding box. If not specified, some visible point of the element is used.
+
+## input-checked
+* langs:
+  - alias-csharp: checkedState
+- `checked` <[boolean]>
+
+Whether to check or uncheck the checkbox.
+
 ## query-selector
 - `selector` <[string]>
 
 A selector to query for. See [working with selectors](./selectors.md) for more details.
+
+## find-selector
+- `selector` <[string]>
+
+A selector to use when resolving DOM element. See [working with selectors](./selectors.md) for more details.
 
 ## wait-for-selector-state
 - `state` <[WaitForSelectorState]<"attached"|"detached"|"visible"|"hidden">>
@@ -143,7 +186,7 @@ Dangerous option; use with care. Defaults to `false`.
   - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
     `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP
     proxy.
-  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org,
+  - `bypass` <[string]> Optional comma-separated domains to bypass proxy, for example `".com, chromium.org,
     .domain.com"`.
   - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
   - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
@@ -165,17 +208,16 @@ Specify environment variables that will be visible to the browser. Defaults to `
 ## js-python-context-option-storage-state
 * langs: js, python
 - `storageState` <[path]|[Object]>
-  - `cookies` <[Array]<[Object]>> Optional cookies to set for context
+  - `cookies` <[Array]<[Object]>> cookies to set for context
     - `name` <[string]>
     - `value` <[string]>
-    - `url` <[string]> Optional either url or domain / path are required
-    - `domain` <[string]> Optional either url or domain / path are required
-    - `path` <[string]> Optional either url or domain / path are required
-    - `expires` <[float]> Optional Unix time in seconds.
-    - `httpOnly` <[boolean]> Optional httpOnly flag
-    - `secure` <[boolean]> Optional secure flag
-    - `sameSite` <[SameSiteAttribute]<"Strict"|"Lax"|"None">> Optional sameSite flag
-  - `origins` <[Array]<[Object]>> Optional localStorage to set for context
+    - `domain` <[string]> domain and path are required
+    - `path` <[string]> domain and path are required
+    - `expires` <[float]> Unix time in seconds.
+    - `httpOnly` <[boolean]>
+    - `secure` <[boolean]>
+    - `sameSite` <[SameSiteAttribute]<"Strict"|"Lax"|"None">> sameSite flag
+  - `origins` <[Array]<[Object]>> localStorage to set for context
     - `origin` <[string]>
     - `localStorage` <[Array]<[Object]>>
       - `name` <[string]>
@@ -198,20 +240,35 @@ obtained via [`method: BrowserContext.storageState`].
 Populates context with given storage state. This option can be used to initialize context with logged-in information
 obtained via [`method: BrowserContext.storageState`]. Path to the file with saved storage state.
 
+## storagestate-option-path
+- `path` <[path]>
+
+The file path to save the storage state to. If [`option: path`] is a relative path, then it is resolved relative to
+current working directory. If no path is provided, storage
+state is still returned, but won't be saved to the disk.
+
 ## context-option-acceptdownloads
 - `acceptDownloads` <[boolean]>
 
-Whether to automatically download all the attachments. Defaults to `false` where all the downloads are canceled.
+Whether to automatically download all the attachments. Defaults to `true` where all the downloads are accepted.
 
 ## context-option-ignorehttpserrors
 - `ignoreHTTPSErrors` <[boolean]>
 
-Whether to ignore HTTPS errors during navigation. Defaults to `false`.
+Whether to ignore HTTPS errors when sending network requests. Defaults to `false`.
 
 ## context-option-bypasscsp
 - `bypassCSP` <[boolean]>
 
 Toggles bypassing page's Content-Security-Policy.
+
+## context-option-baseURL
+- `baseURL` <[string]>
+
+When using [`method: Page.goto`], [`method: Page.route`], [`method: Page.waitForURL`], [`method: Page.waitForRequest`], or [`method: Page.waitForResponse`] it takes the base URL in consideration by using the [`URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor for building the corresponding URL. Examples:
+* baseURL: `http://localhost:3000` and navigating to `/bar.html` results in `http://localhost:3000/bar.html`
+* baseURL: `http://localhost:3000/foo/` and navigating to `./bar.html` results in `http://localhost:3000/foo/bar.html`
+* baseURL: `http://localhost:3000/foo` (without trailing slash) and navigating to `./bar.html` results in `http://localhost:3000/bar.html`
 
 ## context-option-viewport
 * langs: js, java
@@ -241,6 +298,76 @@ Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. Us
 
 Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the
 [`option: viewport`] is set.
+
+## fetch-param-url
+- `url` <[string]>
+
+Target URL.
+
+## js-python-fetch-option-params
+* langs: js, python
+- `params` <[Object]<[string], [string]|[float]|[boolean]>>
+
+Query parameters to be sent with the URL.
+
+## java-fetch-params
+* langs: java
+- `options` <[RequestOptions]>
+
+Optional request parameters.
+
+## js-python-fetch-option-headers
+* langs: js, python
+- `headers` <[Object]<[string], [string]>>
+
+Allows to set HTTP headers.
+
+## js-python-fetch-option-timeout
+* langs: js, python
+- `timeout` <[float]>
+
+Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
+
+## js-python-fetch-option-failonstatuscode
+* langs: js, python
+- `failOnStatusCode` <[boolean]>
+
+Whether to throw on response codes other than 2xx and 3xx. By default response object is returned
+for all status codes.
+
+## js-python-fetch-option-form
+* langs: js, python
+- `form` <[Object]<[string], [string]|[float]|[boolean]>>
+
+Provides an object that will be serialized as html form using `application/x-www-form-urlencoded` encoding and sent as
+this request body. If this parameter is specified `content-type` header will be set to `application/x-www-form-urlencoded`
+unless explicitly provided.
+
+## js-pyhton-fetch-option-multipart
+* langs: js, python
+- `multipart` <[Object]<[string], [string]|[float]|[boolean]|[ReadStream]|[Object]>>
+  - `name` <[string]> File name
+  - `mimeType` <[string]> File type
+  - `buffer` <[Buffer]> File content
+
+Provides an object that will be serialized as html form using `multipart/form-data` encoding and sent as
+this request body. If this parameter is specified `content-type` header will be set to `multipart/form-data`
+unless explicitly provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
+or as file-like object containing file name, mime-type and its content.
+
+## js-python-fetch-option-data
+* langs: js, python
+- `data` <[string]|[Buffer]|[Serializable]>
+
+Allows to set post data of the request. If the data parameter is an object, it will be serialized to json string
+and `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will be
+set to `application/octet-stream` if not explicitly set.
+
+## js-python-fetch-option-ignorehttpserrors
+* langs: js, python
+- `ignoreHTTPSErrors` <[boolean]>
+
+Whether to ignore HTTPS errors when sending network requests. Defaults to `false`.
 
 ## evaluate-expression
 - `expression` <[string]>
@@ -346,7 +473,7 @@ A list of permissions to grant to all pages in this context. See
 ## context-option-extrahttpheaders
 - `extraHTTPHeaders` <[Object]<[string], [string]>>
 
-An object containing additional HTTP headers to be sent with every request. All header values must be strings.
+An object containing additional HTTP headers to be sent with every request.
 
 ## context-option-offline
 - `offline` <[boolean]>
@@ -371,6 +498,16 @@ Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`
 
 Emulates `'prefers-reduced-motion'` media feature, supported values are `'reduce'`, `'no-preference'`. See [`method: Page.emulateMedia`] for more details. Defaults
 to `'no-preference'`.
+
+## context-option-forcedColors
+- `forcedColors` <[ForcedColors]<"active"|"none">>
+
+Emulates `'forced-colors'` media feature, supported values are `'active'`, `'none'`. See [`method: Page.emulateMedia`] for more details. Defaults
+to `'none'`.
+
+:::note
+It's not supported in WebKit, see [here](https://bugs.webkit.org/show_bug.cgi?id=225281) in their issue tracker.
+:::
 
 ## context-option-logger
 * langs: js
@@ -457,7 +594,7 @@ Actual picture of each page will be scaled down if necessary to fit the specifie
 - `proxy` <[Object]>
   - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
     `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP proxy.
-  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org, .domain.com"`.
+  - `bypass` <[string]> Optional comma-separated domains to bypass proxy, for example `".com, chromium.org, .domain.com"`.
   - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
   - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
 
@@ -468,6 +605,13 @@ For Chromium on Windows the browser needs to be launched with the global proxy f
 contexts override the proxy, global proxy will be never used and can be any string, for example
 `launch({ proxy: { server: 'http://per-context' } })`.
 :::
+
+## context-option-strict
+- `strictSelectors` <[boolean]>
+
+It specified, enables strict selectors mode for this context. In the strict selectors mode all operations
+on selectors that imply single target DOM element will throw when more than one element matches the selector.
+See [Locator] to learn more about the strict mode.
 
 ## select-options-values
 * langs: java, js, csharp
@@ -483,7 +627,9 @@ is considered matching if all specified properties match.
 ## wait-for-navigation-url
 - `url` <[string]|[RegExp]|[function]\([URL]\):[boolean]>
 
-A glob pattern, regex pattern or predicate receiving [URL] to match while waiting for the navigation.
+A glob pattern, regex pattern or predicate receiving [URL] to match while waiting for the navigation. Note that if
+the parameter is a string without wilcard characters, the method will wait for navigation to URL that is exactly
+equal to the string.
 
 ## wait-for-event-event
 * langs: js, python, java
@@ -499,11 +645,6 @@ method resolves immediately. Can be one of:
   * `'load'` - wait for the `load` event to be fired.
   * `'domcontentloaded'` - wait for the `DOMContentLoaded` event to be fired.
   * `'networkidle'` - wait until there are no network connections for at least `500` ms.
-
-## screenshot-type
-- `type` <[ScreenshotType]<"png"|"jpeg">>
-
-Specify screenshot type, defaults to `png`.
 
 ## java-wait-for-event-callback
 * langs: java
@@ -562,10 +703,41 @@ The default value can be changed by using the [`method: BrowserContext.setDefaul
 Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
 using the [`method: AndroidDevice.setDefaultTimeout`] method.
 
+## js-assertions-timeout
+* langs: js
+- `timeout` <[float]>
+
+Time to retry the assertion for. Defaults to `timeout` in `TestConfig.expect`.
+
+## csharp-java-python-assertions-timeout
+* langs: java, python, csharp
+- `timeout` <[float]>
+
+Time to retry the assertion for.
+
+## assertions-max-diff-pixels
+* langs: js
+- `maxDiffPixels` <[int]>
+
+An acceptable amount of pixels that could be different, default is configurable with `TestConfig.expect`. Default is configurable with `TestConfig.expect`. Unset by default.
+
+## assertions-max-diff-pixel-ratio
+* langs: js
+- `maxDiffPixelRatio` <[float]>
+
+An acceptable ratio of pixels that are different to the total amount of pixels, between `0` and `1`. Default is configurable with `TestConfig.expect`. Unset by default.
+
+## assertions-threshold
+* langs: js
+- `threshold` <[float]>
+
+An acceptable perceived color difference in the [YIQ color space](https://en.wikipedia.org/wiki/YIQ) between the same pixel in compared images, between zero (strict) and one (lax), default is configurable with `TestConfig.expect`. Defaults to `0.2`.
+
 ## shared-context-params-list
 - %%-context-option-acceptdownloads-%%
 - %%-context-option-ignorehttpserrors-%%
 - %%-context-option-bypasscsp-%%
+- %%-context-option-baseURL-%%
 - %%-context-option-viewport-%%
 - %%-csharp-context-option-viewport-%%
 - %%-python-context-option-viewport-%%
@@ -585,6 +757,7 @@ using the [`method: AndroidDevice.setDefaultTimeout`] method.
 - %%-context-option-httpcredentials-%%
 - %%-context-option-colorscheme-%%
 - %%-context-option-reducedMotion-%%
+- %%-context-option-forcedColors-%%
 - %%-context-option-logger-%%
 - %%-context-option-videospath-%%
 - %%-context-option-videosize-%%
@@ -594,6 +767,7 @@ using the [`method: AndroidDevice.setDefaultTimeout`] method.
 - %%-context-option-recordvideo-%%
 - %%-context-option-recordvideo-dir-%%
 - %%-context-option-recordvideo-size-%%
+- %%-context-option-strict-%%
 
 ## browser-option-args
 - `args` <[Array]<[string]>>
@@ -616,7 +790,8 @@ Enable Chromium sandboxing. Defaults to `false`.
 - `downloadsPath` <[path]>
 
 If specified, accepted downloads are downloaded into this directory. Otherwise, temporary directory is created and is
-deleted when browser is closed.
+deleted when browser is closed. In either case, the downloads are deleted when the browser context they were created in
+is closed.
 
 ## browser-option-executablepath
 - `executablePath` <[path]>
@@ -707,3 +882,96 @@ Slows down Playwright operations by the specified amount of milliseconds. Useful
 - %%-browser-option-proxy-%%
 - %%-browser-option-timeout-%%
 - %%-browser-option-tracesdir-%%
+
+## locator-option-has-text
+- `hasText` <[string]|[RegExp]>
+
+Matches elements containing specified text somewhere inside, possibly in a child or a descendant element.
+For example, `"Playwright"` matches `<article><div>Playwright</div></article>`.
+
+## locator-option-has
+- `has` <[Locator]>
+
+Matches elements containing an element that matches an inner locator. Inner locator is queried against the outer one.
+For example, `article` that has `text=Playwright` matches `<article><div>Playwright</div></article>`.
+
+Note that outer and inner locators must belong to the same frame. Inner locator must not contain [FrameLocator]s.
+
+## locator-options-list
+- %%-locator-option-has-text-%%
+- %%-locator-option-has-%%
+
+## screenshot-option-animations
+- `animations` <[ScreenshotAnimations]<"disabled"|"allow">>
+
+When set to `"disabled"`, stops CSS animations, CSS transitions and Web Animations. Animations get different treatment depending on their duration:
+* finite animations are fast-forwarded to completion, so they'll fire `transitionend` event.
+* infinite animations are canceled to initial state, and then played over after the screenshot.
+
+Defaults to `"allow"` that leaves animations untouched.
+
+## screenshot-option-omit-background
+- `omitBackground` <[boolean]>
+
+Hides default white background and allows capturing screenshots with transparency. Not applicable to `jpeg` images.
+Defaults to `false`.
+
+## screenshot-option-quality
+- `quality` <[int]>
+
+The quality of the image, between 0-100. Not applicable to `png` images.
+
+## screenshot-option-path
+- `path` <[path]>
+
+The file path to save the image to. The screenshot type will be inferred from file extension. If [`option: path`] is a
+relative path, then it is resolved relative to the current working directory. If no path is provided, the image won't be
+saved to the disk.
+
+## screenshot-option-type
+- `type` <[ScreenshotType]<"png"|"jpeg">>
+
+Specify screenshot type, defaults to `png`.
+
+## screenshot-option-mask
+- `mask` <[Array]<[Locator]>>
+
+Specify locators that should be masked when the screenshot is taken. Masked elements will be overlayed with
+a pink box `#FF00FF` that completely covers its bounding box.
+
+## screenshot-option-full-page
+- `fullPage` <[boolean]>
+
+When true, takes a screenshot of the full scrollable page, instead of the currently visible viewport. Defaults to
+`false`.
+
+## screenshot-option-clip
+- `clip` <[Object]>
+  - `x` <[float]> x-coordinate of top-left corner of clip area
+  - `y` <[float]> y-coordinate of top-left corner of clip area
+  - `width` <[float]> width of clipping area
+  - `height` <[float]> height of clipping area
+
+An object which specifies clipping of the resulting image. Should have the following fields:
+
+## screenshot-option-size
+- `size` <[ScreenshotSize]<"css"|"device">>
+
+When set to `"css"`, screenshot will have a single pixel per each css pixel on the page. For high-dpi devices, this will keep screenshots small. Using `"device"` option will produce a single pixel per each device pixel, so screenhots of high-dpi devices will be twice as large or even larger. Defaults to `"device"`.
+
+## screenshot-option-fonts
+- `fonts` <[ScreenshotFonts]<"ready"|"nowait">>
+
+When set to `"ready"`, screenshot will wait for [`document.fonts.ready`](https://developer.mozilla.org/en-US/docs/Web/API/FontFaceSet/ready) promise to resolve in all frames. Defaults to `"nowait"`.
+
+## screenshot-options-common-list
+- %%-screenshot-option-animations-%%
+- %%-screenshot-option-omit-background-%%
+- %%-screenshot-option-quality-%%
+- %%-screenshot-option-path-%%
+- %%-screenshot-option-size-%%
+- %%-screenshot-option-fonts-%%
+- %%-screenshot-option-type-%%
+- %%-screenshot-option-mask-%%
+- %%-input-timeout-%%
+

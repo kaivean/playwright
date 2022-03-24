@@ -45,12 +45,15 @@ if (browserName !== 'chromium') {
   api.delete('coverage.startCSSCoverage');
   api.delete('coverage.stopCSSCoverage');
   api.delete('page.pdf');
-  api.delete('download._cancel');
 }
 
 // Some permissions tests are disabled in webkit. See permissions.jest.js
 if (browserName === 'webkit')
   api.delete('browserContext.clearPermissions');
+
+// Response interception is not implemented in Firefox yet.
+if (browserName === 'firefox')
+  api.delete('route.intercept');
 
 const coverageDir = path.join(__dirname, '..', 'coverage-report');
 

@@ -27,6 +27,7 @@ test('should print the correct imports and context options', async ({ runCLI, ch
   const cli = runCLI(['--target=java', emptyHTML]);
   const expectedResult = `import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.*;
+import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 import java.util.*;
 
 public class Example {
@@ -65,15 +66,15 @@ test('should print the correct context options when using a device and additiona
   test.skip(browserName !== 'webkit');
 
   const cli = runCLI(['--color-scheme=light', '--device=iPhone 11', '--target=java', emptyHTML]);
+  await cli.waitFor(`.setViewportSize(414, 715));`);
   const expectedResult = `BrowserContext context = browser.newContext(new Browser.NewContextOptions()
         .setColorScheme(ColorScheme.LIGHT)
         .setDeviceScaleFactor(2)
         .setHasTouch(true)
         .setIsMobile(true)
-        .setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1")
+        .setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/XXXX Mobile/15E148 Safari/604.1")
         .setViewportSize(414, 715));`;
-  await cli.waitFor(expectedResult);
-  expect(cli.text()).toContain(expectedResult);
+  expect(cli.text().replace(/(.*Version\/)(.*?)( .*)/m, '$1XXXX$3')).toContain(expectedResult);
 });
 
 test('should print load/save storage_state', async ({ runCLI, browserName }, testInfo) => {
@@ -82,10 +83,10 @@ test('should print load/save storage_state', async ({ runCLI, browserName }, tes
   await fs.promises.writeFile(loadFileName, JSON.stringify({ cookies: [], origins: [] }), 'utf8');
   const cli = runCLI([`--load-storage=${loadFileName}`, `--save-storage=${saveFileName}`, '--target=java', emptyHTML]);
   const expectedResult1 = `BrowserContext context = browser.newContext(new Browser.NewContextOptions()
-        .setStorageStatePath(Paths.get("${loadFileName}")));`;
+        .setStorageStatePath(Paths.get("${loadFileName.replace(/\\/g, '\\\\')}")));`;
   await cli.waitFor(expectedResult1);
 
   const expectedResult2 = `
-      context.storageState(new BrowserContext.StorageStateOptions().setPath("${saveFileName}"))`;
+      context.storageState(new BrowserContext.StorageStateOptions().setPath("${saveFileName.replace(/\\/g, '\\\\')}"))`;
   await cli.waitFor(expectedResult2);
 });

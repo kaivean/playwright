@@ -17,10 +17,9 @@
 
 import { test as it, expect } from './pageTest';
 
-it('should work', async ({page, server}) => {
+it('should work @smoke', async ({ page, server }) => {
   await page.setExtraHTTPHeaders({
     foo: 'bar',
-    baz: undefined,
   });
   const [request] = await Promise.all([
     server.waitForRequest('/empty.html'),
@@ -30,7 +29,7 @@ it('should work', async ({page, server}) => {
   expect(request.headers['baz']).toBe(undefined);
 });
 
-it('should work with redirects', async ({page, server}) => {
+it('should work with redirects', async ({ page, server }) => {
   server.setRedirect('/foo.html', '/empty.html');
   await page.setExtraHTTPHeaders({
     foo: 'bar'
@@ -42,7 +41,7 @@ it('should work with redirects', async ({page, server}) => {
   expect(request.headers['foo']).toBe('bar');
 });
 
-it('should work with extra headers from browser context', async ({page, server}) => {
+it('should work with extra headers from browser context', async ({ page, server }) => {
   await page.context().setExtraHTTPHeaders({
     'foo': 'bar',
   });
@@ -53,11 +52,19 @@ it('should work with extra headers from browser context', async ({page, server})
   expect(request.headers['foo']).toBe('bar');
 });
 
-it('should throw for non-string header values', async ({page}) => {
+it('should throw for non-string header values', async ({ page }) => {
   // @ts-expect-error headers must be strings
   const error1 = await page.setExtraHTTPHeaders({ 'foo': 1 }).catch(e => e);
   expect(error1.message).toContain('Expected value of header "foo" to be String, but "number" is found.');
   // @ts-expect-error headers must be strings
   const error2 = await page.context().setExtraHTTPHeaders({ 'foo': true }).catch(e => e);
   expect(error2.message).toContain('Expected value of header "foo" to be String, but "boolean" is found.');
+});
+
+it('should not duplicate referer header', async ({ page, server, browserName }) => {
+  it.fail(browserName === 'chromium', 'Request has referer and Referer');
+  await page.setExtraHTTPHeaders({ 'referer': server.EMPTY_PAGE });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(response.ok()).toBe(true);
+  expect(response.request().headers()['referer']).toBe(server.EMPTY_PAGE);
 });

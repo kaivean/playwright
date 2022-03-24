@@ -1,6 +1,6 @@
 ---
 id: intro
-title: "Getting Started"
+title: "Getting started"
 ---
 
 <!-- TOC -->
@@ -59,7 +59,7 @@ public class Example {
     <dependency>
       <groupId>com.microsoft.playwright</groupId>
       <artifactId>playwright</artifactId>
-      <version>1.9.0-alpha-0</version>
+      <version>1.17.1</version>
     </dependency>
   </dependencies>
   <build>
@@ -87,7 +87,7 @@ With the Example.java and pom.xml above, compile and execute your new program as
 mvn compile exec:java -Dexec.mainClass="org.example.Example"
 ```
 
-Running it downloads the Playwright package and installs browser binaries for Chromium, Firefox and WebKit. To modify this behavior see [installation parameters](./installation.md).
+Running it downloads the Playwright package and installs browser binaries for Chromium, Firefox and WebKit. To modify this behavior see [installation parameters](./browsers.md#installing-browsers).
 
 ## First script
 
@@ -117,7 +117,7 @@ playwright.firefox().launch(new BrowserType.LaunchOptions().setHeadless(false).s
 
 ## Record scripts
 
-Command Line Interface [CLI](./cli.md) can be used to record user interactions and generate Java code.
+[Command line tools](./cli.md) can be used to record user interactions and generate Java code.
 
 ```bash
 mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="codegen wikipedia.org"
@@ -145,6 +145,6 @@ dependencies to run the browsers.
 Only Ubuntu 18.04 and Ubuntu 20.04 are officially supported.
 :::
 
-See also in the [Command Line Interface](./cli.md#install-system-dependencies)
+See also in the [Command line tools](./cli.md#install-system-dependencies)
 which has a command to install all necessary dependencies automatically for Ubuntu
 LTS releases.

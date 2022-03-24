@@ -18,7 +18,6 @@
 // @ts-check
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const yaml = require('yaml');
 
@@ -41,8 +40,13 @@ function mapType(type) {
     return 'bool';
   if (type === 'number')
     return 'int';
+  // TODO: keep the same names in .NET as upstream
   if (type === 'ResourceTiming')
     return 'RequestTimingResult';
+  if (type === 'LifecycleEvent')
+    return 'WaitUntilState';
+  if (type === 'NameValue')
+    return 'HeaderEntry';
   return type;
 }
 
@@ -58,14 +62,14 @@ function inlineType(type, indent = '', wrapEnums = false) {
     if (optional)
       type = type.substring(0, type.length - 1);
     if (type === 'binary')
-      return { ts: 'string', scheme: 'tString', optional };
+      return { ts: 'byte[]', scheme: 'tArray(tByte)', optional };
     if (type === 'json')
       return { ts: 'any', scheme: 'tAny', optional };
     if (['string', 'boolean', 'number', 'undefined'].includes(type)) {
       return { ts: mapType(type), scheme: `t${titleCase(type)}`, optional };
     }
     if (channels.has(type))
-      return { ts: `${type}`, scheme: `tChannel('${type}')` , optional };
+      return { ts: `Core.${type}`, scheme: `tChannel('${type}')` , optional };
     if (type === 'Channel')
       return { ts: `Channel`, scheme: `tChannel('*')`, optional };
     return { ts: mapType(type), scheme: `tType('${type}')`, optional };
@@ -126,7 +130,7 @@ function objectType(props, indent, onlyOptional = false) {
   return { ts: `${indent}{${inner.ts}\n${indent}}`, scheme: `tObject({\n${inner.scheme}\n${indent}})` };
 }
 
-const yml = fs.readFileSync(path.join(__dirname, '..', 'src', 'protocol', 'protocol.yml'), 'utf-8');
+const yml = fs.readFileSync(path.join(__dirname, '..', 'packages', 'playwright-core', 'src', 'protocol', 'protocol.yml'), 'utf-8');
 const protocol = yaml.parse(yml);
 
 for (const [name, value] of Object.entries(protocol)) {
@@ -139,6 +143,11 @@ for (const [name, value] of Object.entries(protocol)) {
     mixins.set(name, value);
 }
 
+if (!process.argv[2]) {
+  console.error('.NET repository needs to be specified as an argument.\n'+ `Usage: node ${path.relative(process.cwd(), __filename)} ../playwright-dotnet/src/Playwright/`);
+  process.exit(1);
+}
+
 const dir = path.join(process.argv[2], 'Transport', 'Protocol', 'Generated')
 fs.mkdirSync(dir, { recursive: true });
 
@@ -149,6 +158,30 @@ for (const [name, item] of Object.entries(protocol)) {
     const init = objectType(item.initializer || {}, '    ');
     const initializerName = channelName + 'Initializer';
     const superName = inherits.get(name);
+    channels_ts.push(`/*
+ * MIT License
+ *
+ * Copyright (c) Microsoft Corporation.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and / or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+`)
     channels_ts.push('using System.Collections.Generic;');
     channels_ts.push(``);
     channels_ts.push(`namespace Microsoft.Playwright.Transport.Protocol`);

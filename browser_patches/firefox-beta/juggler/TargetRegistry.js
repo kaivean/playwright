@@ -12,6 +12,8 @@ const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
 const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
+const Cr = Components.results;
+
 const helper = new Helper();
 
 const IDENTITY_NAME = 'JUGGLER ';
@@ -26,6 +28,7 @@ class DownloadInterceptor {
   constructor(registry) {
     this._registry = registry
     this._handlerToUuid = new Map();
+    this._uuidToHandler = new Map();
   }
 
   //
@@ -35,7 +38,7 @@ class DownloadInterceptor {
     if (!(request instanceof Ci.nsIChannel))
       return false;
     const channel = request.QueryInterface(Ci.nsIChannel);
-    let pageTarget = this._registry._browserBrowsingContextToTarget.get(channel.loadInfo.browsingContext);
+    let pageTarget = this._registry._browserBrowsingContextToTarget.get(channel.loadInfo.browsingContext.top);
     if (!pageTarget)
       return false;
 
@@ -60,6 +63,7 @@ class DownloadInterceptor {
     }
     outFile.value = file;
     this._handlerToUuid.set(externalAppHandler, uuid);
+    this._uuidToHandler.set(uuid, externalAppHandler);
     const downloadInfo = {
       uuid,
       browserContextId: browserContext.browserContextId,
@@ -76,15 +80,23 @@ class DownloadInterceptor {
     if (!uuid)
       return;
     this._handlerToUuid.delete(externalAppHandler);
+    this._uuidToHandler.delete(uuid);
     const downloadInfo = {
       uuid,
+      error: errorName,
     };
-    if (errorName === 'NS_BINDING_ABORTED') {
+    if (canceled === 'NS_BINDING_ABORTED') {
       downloadInfo.canceled = true;
-    } else {
-      downloadInfo.error = errorName;
     }
     this._registry.emit(TargetRegistry.Events.DownloadFinished, downloadInfo);
+  }
+
+  async cancelDownload(uuid) {
+    const externalAppHandler = this._uuidToHandler.get(uuid);
+    if (!externalAppHandler) {
+      return;
+    }
+    await externalAppHandler.cancel(Cr.NS_BINDING_ABORTED);
   }
 }
 
@@ -132,7 +144,7 @@ class TargetRegistry {
           return;
 
         return {
-          scriptsToEvaluateOnNewDocument: target.browserContext().scriptsToEvaluateOnNewDocument,
+          initScripts: target.browserContext().initScripts,
           bindings: target.browserContext().bindings,
           settings: target.browserContext().settings,
         };
@@ -147,8 +159,9 @@ class TargetRegistry {
       const openerContext = tab.linkedBrowser.browsingContext.opener;
       let openerTarget;
       if (openerContext) {
-        // Popups usually have opener context.
-        openerTarget = this._browserBrowsingContextToTarget.get(openerContext);
+        // Popups usually have opener context. Get top context for the case when opener is
+        // an iframe.
+        openerTarget = this._browserBrowsingContextToTarget.get(openerContext.top);
       } else if (tab.openerTab) {
         // Noopener popups from the same window have opener tab instead.
         openerTarget = this._browserToTarget.get(tab.openerTab.linkedBrowser);
@@ -157,6 +170,8 @@ class TargetRegistry {
         throw new Error(`Internal error: cannot find context for userContextId=${userContextId}`);
       const target = new PageTarget(this, window, tab, browserContext, openerTarget);
       target.updateUserAgent();
+      target.updatePlatform();
+      target.updateJavaScriptDisabled();
       target.updateTouchOverride();
       target.updateColorSchemeOverride();
       target.updateReducedMotionOverride();
@@ -227,11 +242,16 @@ class TargetRegistry {
     };
 
     const extHelperAppSvc = Cc["@mozilla.org/uriloader/external-helper-app-service;1"].getService(Ci.nsIExternalHelperAppService);
-    extHelperAppSvc.setDownloadInterceptor(new DownloadInterceptor(this));
+    this._downloadInterceptor = new DownloadInterceptor(this);
+    extHelperAppSvc.setDownloadInterceptor(this._downloadInterceptor);
 
     Services.wm.addListener({ onOpenWindow, onCloseWindow });
     for (const win of Services.wm.getEnumerator(null))
       onOpenWindow(win);
+  }
+
+  async cancelDownload(options) {
+    this._downloadInterceptor.cancelDownload(options.uuid);
   }
 
   setBrowserProxy(proxy) {
@@ -341,6 +361,7 @@ class PageTarget {
     this._screencastRecordingInfo = undefined;
     this._dialogs = new Map();
     this.forcedColors = 'no-override';
+    this._pageInitScripts = [];
 
     const navigationListener = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
@@ -386,6 +407,14 @@ class PageTarget {
 
   updateUserAgent() {
     this._linkedBrowser.browsingContext.customUserAgent = this._browserContext.defaultUserAgent;
+  }
+
+  updatePlatform() {
+    this._linkedBrowser.browsingContext.customPlatform = this._browserContext.defaultPlatform;
+  }
+
+  updateJavaScriptDisabled() {
+    this._linkedBrowser.browsingContext.allowJavascript = !this._browserContext.javaScriptDisabled;
   }
 
   _updateModalDialogs() {
@@ -495,8 +524,13 @@ class PageTarget {
     await this._channel.connect('').send('ensurePermissions', {}).catch(e => void e);
   }
 
-  async addScriptToEvaluateOnNewDocument(script) {
-    await this._channel.connect('').send('addScriptToEvaluateOnNewDocument', script).catch(e => void e);
+  async setInitScripts(scripts) {
+    this._pageInitScripts = scripts;
+    await this.pushInitScripts();
+  }
+
+  async pushInitScripts() {
+    await this._channel.connect('').send('setInitScripts', [...this._browserContext.initScripts, ...this._pageInitScripts]).catch(e => void e);
   }
 
   async addBinding(worldName, name, script) {
@@ -673,12 +707,14 @@ class BrowserContext {
     this.defaultViewportSize = undefined;
     this.deviceScaleFactor = undefined;
     this.defaultUserAgent = null;
+    this.defaultPlatform = null;
+    this.javaScriptDisabled = false;
     this.touchOverride = false;
     this.colorScheme = 'none';
     this.forcedColors = 'no-override';
     this.reducedMotion = 'none';
     this.videoRecordingOptions = undefined;
-    this.scriptsToEvaluateOnNewDocument = [];
+    this.initScripts = [];
     this.bindings = [];
     this.settings = {};
     this.pages = new Set();
@@ -744,10 +780,22 @@ class BrowserContext {
     }
   }
 
-  async setDefaultUserAgent(userAgent) {
+  setDefaultUserAgent(userAgent) {
     this.defaultUserAgent = userAgent;
     for (const page of this.pages)
       page.updateUserAgent();
+  }
+
+  setDefaultPlatform(platform) {
+    this.defaultPlatform = platform;
+    for (const page of this.pages)
+      page.updatePlatform();
+  }
+
+  setJavaScriptDisabled(javaScriptDisabled) {
+    this.javaScriptDisabled = javaScriptDisabled;
+    for (const page of this.pages)
+      page.updateJavaScriptDisabled();
   }
 
   setTouchOverride(touchOverride) {
@@ -762,9 +810,9 @@ class BrowserContext {
     await Promise.all(Array.from(this.pages).map(page => page.updateViewportSize()));
   }
 
-  async addScriptToEvaluateOnNewDocument(script) {
-    this.scriptsToEvaluateOnNewDocument.push(script);
-    await Promise.all(Array.from(this.pages).map(page => page.addScriptToEvaluateOnNewDocument(script)));
+  async setInitScripts(scripts) {
+    this.initScripts = scripts;
+    await Promise.all(Array.from(this.pages).map(page => page.pushInitScripts()));
   }
 
   async addBinding(worldName, name, script) {
@@ -888,11 +936,13 @@ class BrowserContext {
 
   async setVideoRecordingOptions(options) {
     this.videoRecordingOptions = options;
-    if (!options)
-      return;
     const promises = [];
-    for (const page of this.pages)
-      promises.push(page._startVideoRecording(options));
+    for (const page of this.pages) {
+      if (options)
+        promises.push(page._startVideoRecording(options));
+      else if (page._videoRecordingInfo)
+        promises.push(page._stopVideoRecording());
+    }
     await Promise.all(promises);
   }
 }

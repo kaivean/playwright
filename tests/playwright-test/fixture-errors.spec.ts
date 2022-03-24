@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { test, expect } from './playwright-test-fixtures';
+import { test, expect, countTimes, stripAnsi } from './playwright-test-fixtures';
 
 test('should handle fixture timeout', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -93,6 +93,26 @@ test('should handle worker tear down fixture error', async ({ runInlineTest }) =
   });
   expect(result.report.errors[0].message).toContain('Worker failed');
   expect(result.exitCode).toBe(1);
+});
+
+test('should handle worker tear down fixture error after failed test', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        failure: [async ({}, runTest) => {
+          await runTest();
+          throw new Error('Worker failed');
+        }, { scope: 'worker' }]
+      });
+
+      test('timeout', async ({failure}) => {
+        await new Promise(f => setTimeout(f, 2000));
+      });
+    `
+  }, { timeout: 1000 });
+  expect(result.exitCode).toBe(1);
+  expect(result.output).toContain('Timeout of 1000ms exceeded.');
+  expect(result.output).toContain('Worker failed');
 });
 
 test('should throw when using non-defined super worker fixture', async ({ runInlineTest }) => {
@@ -176,44 +196,6 @@ test('should throw when worker fixture depends on a test fixture', async ({ runI
   });
   expect(result.output).toContain('Worker fixture "bar" cannot depend on a test fixture "foo".');
   expect(result.output).toContain(`f.spec.ts:5`);
-  expect(result.exitCode).toBe(1);
-});
-
-test('should throw when beforeAll hook depends on a test fixture', async ({ runInlineTest }) => {
-  const result = await runInlineTest({
-    'f.spec.ts': `
-      const test = pwt.test.extend({
-        foo: [async ({}, runTest) => {
-          await runTest();
-        }, { scope: 'test' }],
-      });
-
-      test.beforeAll(async ({ foo }) => {});
-      test('works', async ({ foo }) => {});
-    `,
-  });
-  expect(result.output).toContain('beforeAll hook cannot depend on a test fixture "foo".');
-  expect(result.output).toContain(`f.spec.ts:11:12`);
-  expect(result.output).toContain(`f.spec.ts:5:29`);
-  expect(result.exitCode).toBe(1);
-});
-
-test('should throw when afterAll hook depends on a test fixture', async ({ runInlineTest }) => {
-  const result = await runInlineTest({
-    'f.spec.ts': `
-      const test = pwt.test.extend({
-        foo: [async ({}, runTest) => {
-          await runTest();
-        }, { scope: 'test' }],
-      });
-
-      test.afterAll(async ({ foo }) => {});
-      test('works', async ({ foo }) => {});
-    `,
-  });
-  expect(result.output).toContain('afterAll hook cannot depend on a test fixture "foo".');
-  expect(result.output).toContain(`f.spec.ts:11:12`);
-  expect(result.output).toContain(`f.spec.ts:5:29`);
   expect(result.exitCode).toBe(1);
 });
 
@@ -367,7 +349,7 @@ test('should print nice error message for problematic fixtures', async ({ runInl
   });
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain('oh my!');
-  expect(result.output).toContain('x.spec.ts:5:29');
+  expect(result.output).toContain('x.spec.ts:6:49');
 });
 
 test('should exit with timeout when fixture causes an exception in the test', async ({ runInlineTest }) => {
@@ -389,4 +371,132 @@ test('should exit with timeout when fixture causes an exception in the test', as
   expect(result.exitCode).toBe(1);
   expect(result.failed).toBe(1);
   expect(result.output).toContain('Timeout of 500ms exceeded');
+});
+
+test('should error for unsupported scope', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        failure: [async ({}, use) => {
+          await use();
+        }, { scope: 'foo' }]
+      });
+      test('skipped', async ({failure}) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.output).toContain(`Error: Fixture "failure" has unknown { scope: 'foo' }`);
+});
+
+test('should give enough time for fixture teardown', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({ }, use) => {
+          await use();
+          console.log('\\n%%teardown start');
+          await new Promise(f => setTimeout(f, 800));
+          console.log('\\n%%teardown finished');
+        },
+      });
+      test('fast enough but close', async ({ fixture }) => {
+        test.setTimeout(1000);
+        await new Promise(f => setTimeout(f, 800));
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Timeout of 1000ms exceeded');
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%teardown start',
+    '%%teardown finished',
+  ]);
+});
+
+test('should not teardown when setup times out', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({ }, use) => {
+          await new Promise(f => setTimeout(f, 1500));
+          await use();
+          console.log('\\n%%teardown');
+        },
+      });
+      test('fast enough but close', async ({ fixture }) => {
+      });
+    `,
+  }, { timeout: 1000 });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Timeout of 1000ms exceeded');
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+  ]);
+});
+
+test('should not report fixture teardown error twice', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({ }, use) => {
+          await use();
+          throw new Error('Oh my error');
+        },
+      });
+      test('good', async ({ fixture }) => {
+      });
+    `,
+  }, { reporter: 'list' });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Error: Oh my error');
+  expect(stripAnsi(result.output)).toContain(`throw new Error('Oh my error')`);
+  expect(countTimes(stripAnsi(result.output), 'Oh my error')).toBe(2);
+});
+
+test('should not report fixture teardown timeout twice', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({ }, use) => {
+          await use();
+          await new Promise(() => {});
+        },
+      });
+      test('good', async ({ fixture }) => {
+      });
+    `,
+  }, { reporter: 'list', timeout: 1000 });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('in fixtures teardown');
+  expect(stripAnsi(result.output)).not.toContain('pwt.test.extend'); // Should not point to the location.
+  // TODO: this should be "1" actually.
+  expect(countTimes(result.output, 'in fixtures teardown')).not.toBe(1);
+});
+
+test('should handle fixture teardown error after test timeout and continue', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({ }, use) => {
+          await use();
+          throw new Error('Oh my error');
+        },
+      });
+      test('bad', async ({ fixture }) => {
+        test.setTimeout(100);
+        await new Promise(f => setTimeout(f, 500));
+      });
+      test('good', async ({}) => {
+      });
+    `,
+  }, { reporter: 'list', workers: '1' });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.passed).toBe(1);
+  expect(result.output).toContain('Timeout of 100ms exceeded');
+  expect(result.output).toContain('Error: Oh my error');
 });

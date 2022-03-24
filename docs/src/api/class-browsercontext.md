@@ -6,7 +6,7 @@ BrowserContexts provide a way to operate multiple independent browser sessions.
 If a page opens another page, e.g. with a `window.open` call, the popup will belong to the parent page's browser
 context.
 
-Playwright allows creation of "incognito" browser contexts with `browser.newContext()` method. "Incognito" browser
+Playwright allows creating "incognito" browser contexts with [`method: Browser.newContext`] method. "Incognito" browser
 contexts don't write any browsing data to disk.
 
 ```js
@@ -349,7 +349,7 @@ context.clear_permissions()
 ```csharp
 var context = await browser.NewContextAsync();
 await context.GrantPermissionsAsync(new[] { "clipboard-read" });
-// Alternatively, you can use the helper class ContextPermissions 
+// Alternatively, you can use the helper class ContextPermissions
 //  to specify the permissions...
 // do stuff ...
 await context.ClearPermissionsAsync();
@@ -589,9 +589,9 @@ await page.SetContentAsync("<script>\n" +
   "<div>Or click me</div>\n");
 
 await page.ClickAsync("div");
-// Note: it makes sense to await the result here, because otherwise, the context 
+// Note: it makes sense to await the result here, because otherwise, the context
 //  gets closed and the binding function will throw an exception.
-Assert.Equal("Click me", await result.Task);
+Assert.AreEqual("Click me", await result.Task);
 ```
 
 ### param: BrowserContext.exposeBinding.name
@@ -805,7 +805,6 @@ A permission or an array of permissions to grant. Permissions can be one of the 
 * `'midi'`
 * `'midi-sysex'` (system-exclusive midi)
 * `'notifications'`
-* `'push'`
 * `'camera'`
 * `'microphone'`
 * `'background-sync'`
@@ -834,9 +833,10 @@ CDP sessions are only supported on Chromium-based browsers.
 Returns the newly created session.
 
 ### param: BrowserContext.newCDPSession.page
-- `page` <[Page]>
+- `page` <[Page]|[Frame]>
 
-Page to create new session for.
+Target to create new session for. For backwards-compatibility, this parameter is
+named `page`, but it can be a `Page` or `Frame` type.
 
 ## async method: BrowserContext.newPage
 - returns: <[Page]>
@@ -848,10 +848,20 @@ Creates a new page in the browser context.
 
 Returns all open pages in the context.
 
+## property: BrowserContext.request
+* langs: js, java, python
+- type: <[APIRequestContext]>
+
+API testing helper associated with this context. Requests made with this API will use context cookies.
+
 ## async method: BrowserContext.route
 
 Routing provides the capability to modify network requests that are made by any page in the browser context. Once route
 is enabled, every request matching the url pattern will stall unless it's continued, fulfilled or aborted.
+
+:::note
+[`method: Page.route`] will not intercept requests intercepted by Service Worker. See [this](https://github.com/microsoft/playwright/issues/1090) issue. We recommend disabling Service Workers when using request interception. Via `await context.addInitScript(() => delete window.navigator.serviceWorker);`
+:::
 
 An example of a naive handler that aborts all image requests:
 
@@ -1001,6 +1011,8 @@ Enabling routing disables http cache.
 - `url` <[string]|[RegExp]|[function]\([URL]\):[boolean]>
 
 A glob pattern, regex pattern or predicate receiving [URL] to match while routing.
+When a [`option: baseURL`] via the context options was provided and the passed URL is a path,
+it gets merged via the [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
 
 ### param: BrowserContext.route.handler
 * langs: js, python
@@ -1013,6 +1025,11 @@ handler function to route the request.
 - `handler` <[function]\([Route]\)>
 
 handler function to route the request.
+
+### option: BrowserContext.route.times
+- `times` <[int]>
+
+How often a route should be used. By default it will be used every time.
 
 ## method: BrowserContext.serviceWorkers
 * langs: js, python
@@ -1152,12 +1169,7 @@ Returns storage state for this browser context, contains current cookies and loc
 * langs: csharp, java
 - returns: <[string]>
 
-### option: BrowserContext.storageState.path
-- `path` <[path]>
-
-The file path to save the storage state to. If [`option: path`] is a relative path, then it is resolved relative to
-current working directory. If no path is provided, storage
-state is still returned, but won't be saved to the disk.
+### option: BrowserContext.storageState.path = %%-storagestate-option-path-%%
 
 ## property: BrowserContext.tracing
 - type: <[Tracing]>

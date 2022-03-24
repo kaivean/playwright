@@ -17,7 +17,7 @@
 
 import { browserTest as it, expect } from './config/browserTest';
 
-it('should have url', async ({browser, server}) => {
+it('should have url', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const [otherPage] = await Promise.all([
@@ -28,7 +28,7 @@ it('should have url', async ({browser, server}) => {
   await context.close();
 });
 
-it('should have url after domcontentloaded', async ({browser, server}) => {
+it('should have url after domcontentloaded', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const [otherPage] = await Promise.all([
@@ -40,7 +40,7 @@ it('should have url after domcontentloaded', async ({browser, server}) => {
   await context.close();
 });
 
-it('should have about:blank url with domcontentloaded', async ({browser, server}) => {
+it('should have about:blank url with domcontentloaded', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const [otherPage] = await Promise.all([
@@ -52,7 +52,7 @@ it('should have about:blank url with domcontentloaded', async ({browser, server}
   await context.close();
 });
 
-it('should have about:blank for empty url with domcontentloaded', async ({browser, server}) => {
+it('should have about:blank for empty url with domcontentloaded', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const [otherPage] = await Promise.all([
@@ -64,7 +64,7 @@ it('should have about:blank for empty url with domcontentloaded', async ({browse
   await context.close();
 });
 
-it('should report when a new page is created and closed', async ({browser, server}) => {
+it('should report when a new page is created and closed', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const [otherPage] = await Promise.all([
@@ -91,7 +91,7 @@ it('should report when a new page is created and closed', async ({browser, serve
   await context.close();
 });
 
-it('should report initialized pages', async ({browser, server}) => {
+it('should report initialized pages', async ({ browser, server }) => {
   const context = await browser.newContext();
   const pagePromise = context.waitForEvent('page');
   context.newPage();
@@ -106,7 +106,7 @@ it('should report initialized pages', async ({browser, server}) => {
   await context.close();
 });
 
-it('should not crash while redirecting of original request was missed', async ({browser, server}) => {
+it('should not crash while redirecting of original request was missed', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   let serverResponse = null;
@@ -126,7 +126,7 @@ it('should not crash while redirecting of original request was missed', async ({
   await context.close();
 });
 
-it('should have an opener', async ({browser, server}) => {
+it('should have an opener', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(server.EMPTY_PAGE);
@@ -140,7 +140,7 @@ it('should have an opener', async ({browser, server}) => {
   await context.close();
 });
 
-it('should fire page lifecycle events', async function({browser, server}) {
+it('should fire page lifecycle events', async function({ browser, server }) {
   const context = await browser.newContext();
   const events = [];
   context.on('page', async page => {
@@ -157,9 +157,7 @@ it('should fire page lifecycle events', async function({browser, server}) {
   await context.close();
 });
 
-it('should work with Shift-clicking', async ({browser, server, browserName}) => {
-  it.fixme(browserName === 'webkit', 'WebKit: Shift+Click does not open a new window.');
-
+it('should work with Shift-clicking', async ({ browser, server, browserName }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(server.EMPTY_PAGE);
@@ -172,8 +170,7 @@ it('should work with Shift-clicking', async ({browser, server, browserName}) => 
   await context.close();
 });
 
-it('should work with Ctrl-clicking', async ({browser, server, isMac, browserName}) => {
-  it.fixme(browserName === 'webkit', 'Ctrl+Click does not open a new tab.');
+it('should work with Ctrl-clicking', async ({ browser, server, isMac, browserName }) => {
   it.fixme(browserName === 'firefox', 'Reports an opener in this case.');
 
   const context = await browser.newContext();
@@ -186,4 +183,19 @@ it('should work with Ctrl-clicking', async ({browser, server, isMac, browserName
   ]);
   expect(await popup.opener()).toBe(null);
   await context.close();
+});
+
+it('should not hang on ctrl-click during provisional load', async ({ context, page, server, isMac, isWindows, browserName }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/11595' });
+  it.skip(browserName === 'chromium', 'Chromium does not dispatch renderer messages while navigation is provisional.');
+  it.fixme(browserName === 'webkit' && isWindows, 'Timesout while trying to click');
+  await page.goto(server.EMPTY_PAGE);
+  await page.setContent('<a href="/one-style.html">yo</a>');
+  server.setRoute('/slow.html', () => {});
+  const [popup] = await Promise.all([
+    context.waitForEvent('page'),
+    server.waitForRequest('/slow.html').then(() => page.click('a', { modifiers: [ isMac ? 'Meta' : 'Control'] })),
+    page.evaluate(url => setTimeout(() => location.href = url, 0), server.CROSS_PROCESS_PREFIX + '/slow.html'),
+  ]);
+  expect(popup).toBeTruthy();
 });

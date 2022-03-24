@@ -16,37 +16,59 @@
 
 import { browserTest as it, expect } from './config/browserTest';
 
-it.use({ proxy: { server: 'per-context' } });
-
-it('should throw for missing global proxy on Chromium Windows', async ({ browserName, platform, browserType, browserOptions, server }) => {
-  it.skip(browserName !== 'chromium' || platform !== 'win32');
-
-  delete browserOptions.proxy;
-  const browser = await browserType.launch(browserOptions);
-  const error = await browser.newContext({ proxy: { server: `localhost:${server.PORT}` } }).catch(e => e);
-  expect(error.toString()).toContain('Browser needs to be launched with the global proxy');
-  await browser.close();
+it.use({
+  launchOptions: async ({ launchOptions }, use) => {
+    await use({
+      ...launchOptions,
+      proxy: { server: 'per-context' }
+    });
+  }
 });
 
-it('should work when passing the proxy only on the context level', async ({browserName, platform, browserType, browserOptions, contextOptions, server}) => {
+
+it.beforeEach(({ server }) => {
+  server.setRoute('/target.html', async (req, res) => {
+    res.end('<html><title>Served by the proxy</title></html>');
+  });
+});
+
+it('should throw for missing global proxy on Chromium Windows', async ({ browserName, platform, browserType, server }) => {
+  it.skip(browserName !== 'chromium' || platform !== 'win32');
+
+  let browser;
+  try {
+    browser = await browserType.launch({
+      proxy: undefined,
+    });
+    const error = await browser.newContext({ proxy: { server: `localhost:${server.PORT}` } }).catch(e => e);
+    expect(error.toString()).toContain('Browser needs to be launched with the global proxy');
+  } finally {
+    await browser.close();
+  }
+});
+
+it('should work when passing the proxy only on the context level', async ({ browserName, platform, browserType, server, proxyServer }) => {
   // Currently an upstream bug in the network stack of Chromium which leads that
   // the wrong proxy gets used in the BrowserContext.
   it.fixme(browserName === 'chromium' && platform === 'win32');
 
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
-  });
-  delete browserOptions.proxy;
-  const browser = await browserType.launch(browserOptions);
-  const context = await browser.newContext({
-    ...contextOptions,
-    proxy: { server: `localhost:${server.PORT}` }
-  });
+  proxyServer.forwardTo(server.PORT);
+  let browser;
+  try {
+    browser = await browserType.launch({
+      proxy: undefined,
+    });
+    const context = await browser.newContext({
+      proxy: { server: `localhost:${proxyServer.PORT}` }
+    });
 
-  const page = await context.newPage();
-  await page.goto('http://non-existent.com/target.html');
-  expect(await page.title()).toBe('Served by the proxy');
-  await browser.close();
+    const page = await context.newPage();
+    await page.goto('http://non-existent.com/target.html');
+    expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
+    expect(await page.title()).toBe('Served by the proxy');
+  } finally {
+    await browser.close();
+  }
 });
 
 it('should throw for bad server value', async ({ contextFactory }) => {
@@ -57,190 +79,264 @@ it('should throw for bad server value', async ({ contextFactory }) => {
   expect(error.message).toContain('proxy.server: expected string, got number');
 });
 
-it('should use proxy', async ({ contextFactory, server }) => {
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
-  });
+it('should use proxy', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}` }
+    proxy: { server: `localhost:${proxyServer.PORT}` }
   });
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
   expect(await page.title()).toBe('Served by the proxy');
   await context.close();
 });
 
-it('should use proxy twice', async ({ contextFactory, server }) => {
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
-  });
+it.describe('should proxy local network requests', () => {
+  for (const additionalBypass of [false, true]) {
+    it.describe(additionalBypass ? 'with other bypasses' : 'by default', () => {
+      for (const params of [
+        {
+          target: 'localhost',
+          description: 'localhost',
+        },
+        {
+          target: '127.0.0.1',
+          description: 'loopback address',
+        },
+        {
+          target: '169.254.3.4',
+          description: 'link-local'
+        }
+      ]) {
+        it(`${params.description}`, async ({ platform, browserName, contextFactory, server, proxyServer }) => {
+          it.fail(browserName === 'webkit' && platform === 'darwin' && additionalBypass && ['localhost', '127.0.0.1'].includes(params.target), 'WK fails to proxy 127.0.0.1 and localhost if additional bypasses are present');
+
+          const path = `/target-${additionalBypass}-${params.target}.html`;
+          server.setRoute(path, async (req, res) => {
+            res.end('<html><title>Served by the proxy</title></html>');
+          });
+
+          const url = `http://${params.target}:${server.PORT}${path}`;
+          proxyServer.forwardTo(server.PORT);
+          const context = await contextFactory({
+            proxy: { server: `localhost:${proxyServer.PORT}`, bypass: additionalBypass ? '1.non.existent.domain.for.the.test' : undefined }
+          });
+
+          const page = await context.newPage();
+          await page.goto(url);
+          expect(proxyServer.requestUrls).toContain(url);
+          expect(await page.title()).toBe('Served by the proxy');
+
+          await page.goto('http://1.non.existent.domain.for.the.test/foo.html').catch(() => {});
+          if (additionalBypass)
+            expect(proxyServer.requestUrls).not.toContain('http://1.non.existent.domain.for.the.test/foo.html');
+          else
+            expect(proxyServer.requestUrls).toContain('http://1.non.existent.domain.for.the.test/foo.html');
+
+          await context.close();
+        });
+      }
+    });
+  }
+});
+
+
+it('should use ipv6 proxy', async ({ contextFactory, server, proxyServer, browserName }) => {
+  it.fail(browserName === 'firefox', 'page.goto: NS_ERROR_UNKNOWN_HOST');
+  it.fail(!!process.env.INSIDE_DOCKER, 'docker does not support IPv6 by default');
+  proxyServer.forwardTo(server.PORT);
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}` }
+    proxy: { server: `[0:0:0:0:0:0:0:1]:${proxyServer.PORT}` }
   });
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
+  expect(await page.title()).toBe('Served by the proxy');
+  await context.close();
+});
+
+it('should use proxy twice', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
+  const context = await contextFactory({
+    proxy: { server: `localhost:${proxyServer.PORT}` }
+  });
+  const page = await context.newPage();
+  await page.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
   await page.goto('http://non-existent-2.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent-2.com/target.html');
   expect(await page.title()).toBe('Served by the proxy');
   await context.close();
 });
 
-it('should use proxy for second page', async ({contextFactory, server}) => {
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
-  });
+it('should use proxy for second page', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}` }
+    proxy: { server: `localhost:${proxyServer.PORT}` }
   });
 
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
   expect(await page.title()).toBe('Served by the proxy');
 
   const page2 = await context.newPage();
+  proxyServer.requestUrls = [];
   await page2.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
   expect(await page2.title()).toBe('Served by the proxy');
 
   await context.close();
 });
 
-it('should work with IP:PORT notion', async ({contextFactory, server}) => {
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
+it('should use proxy for https urls', async ({ contextFactory, server, httpsServer, proxyServer }) => {
+  httpsServer.setRoute('/target.html', async (req, res) => {
+    res.end('<html><title>Served by https server via proxy</title></html>');
   });
+  proxyServer.forwardTo(httpsServer.PORT);
   const context = await contextFactory({
-    proxy: { server: `127.0.0.1:${server.PORT}` }
+    ignoreHTTPSErrors: true,
+    proxy: { server: `localhost:${proxyServer.PORT}` }
+  });
+  const page = await context.newPage();
+  await page.goto('https://non-existent.com/target.html');
+  expect(proxyServer.connectHosts).toContain('non-existent.com:443');
+  expect(await page.title()).toBe('Served by https server via proxy');
+  await context.close();
+});
+
+it('should work with IP:PORT notion', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
+  const context = await contextFactory({
+    proxy: { server: `127.0.0.1:${proxyServer.PORT}` }
   });
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
   expect(await page.title()).toBe('Served by the proxy');
   await context.close();
 });
 
-it('should throw for socks5 authentication', async ({contextFactory}) => {
+it('should throw for socks5 authentication', async ({ contextFactory }) => {
   const error = await contextFactory({
     proxy: { server: `socks5://localhost:1234`, username: 'user', password: 'secret' }
   }).catch(e => e);
   expect(error.message).toContain('Browser does not support socks5 proxy authentication');
 });
 
-it('should throw for socks4 authentication', async ({contextFactory}) => {
+it('should throw for socks4 authentication', async ({ contextFactory }) => {
   const error = await contextFactory({
     proxy: { server: `socks4://localhost:1234`, username: 'user', password: 'secret' }
   }).catch(e => e);
   expect(error.message).toContain('Socks4 proxy protocol does not support authentication');
 });
 
-it('should authenticate', async ({contextFactory, server}) => {
-  server.setRoute('/target.html', async (req, res) => {
-    const auth = req.headers['proxy-authorization'];
-    if (!auth) {
-      res.writeHead(407, 'Proxy Authentication Required', {
-        'Proxy-Authenticate': 'Basic realm="Access to internal site"'
-      });
-      res.end();
-    } else {
-      res.end(`<html><title>${auth}</title></html>`);
-    }
+it('should authenticate', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
+  let auth;
+  proxyServer.setAuthHandler(req => {
+    auth = req.headers['proxy-authorization'];
+    return !!auth;
   });
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}`, username: 'user', password: 'secret' }
+    proxy: { server: `localhost:${proxyServer.PORT}`, username: 'user', password: 'secret' }
   });
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
-  expect(await page.title()).toBe('Basic ' + Buffer.from('user:secret').toString('base64'));
+  expect(proxyServer.requestUrls).toContain('http://non-existent.com/target.html');
+  expect(auth).toBe('Basic ' + Buffer.from('user:secret').toString('base64'));
+  expect(await page.title()).toBe('Served by the proxy');
   await context.close();
 });
 
-it('should authenticate with empty password', async ({contextFactory, server}) => {
-  server.setRoute('/target.html', async (req, res) => {
-    const auth = req.headers['proxy-authorization'];
-    if (!auth) {
-      res.writeHead(407, 'Proxy Authentication Required', {
-        'Proxy-Authenticate': 'Basic realm="Access to internal site"'
-      });
-      res.end();
-    } else {
-      res.end(`<html><title>${auth}</title></html>`);
-    }
+it('should authenticate with empty password', async ({ contextFactory, server, proxyServer }) => {
+  proxyServer.forwardTo(server.PORT);
+  let auth;
+  proxyServer.setAuthHandler(req => {
+    auth = req.headers['proxy-authorization'];
+    return !!auth;
   });
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}`, username: 'user', password: '' }
+    proxy: { server: `localhost:${proxyServer.PORT}`, username: 'user', password: '' }
   });
   const page = await context.newPage();
   await page.goto('http://non-existent.com/target.html');
-  expect(await page.title()).toBe('Basic ' + Buffer.from('user:').toString('base64'));
+  expect(auth).toBe('Basic ' + Buffer.from('user:').toString('base64'));
+  expect(await page.title()).toBe('Served by the proxy');
   await context.close();
 });
 
-it('should isolate proxy credentials between contexts', async ({contextFactory, server, browserName}) => {
+it('should isolate proxy credentials between contexts', async ({ contextFactory, server, browserName, proxyServer }) => {
   it.fixme(browserName === 'firefox', 'Credentials from the first context stick around');
 
-  server.setRoute('/target.html', async (req, res) => {
-    const auth = req.headers['proxy-authorization'];
-    if (!auth) {
-      res.writeHead(407, 'Proxy Authentication Required', {
-        'Proxy-Authenticate': 'Basic realm="Access to internal site"'
-      });
-      res.end();
-    } else {
-      res.end(`<html><title>${auth}</title></html>`);
-    }
+  proxyServer.forwardTo(server.PORT);
+  let auth;
+  proxyServer.setAuthHandler(req => {
+    auth = req.headers['proxy-authorization'];
+    return !!auth;
   });
   {
     const context = await contextFactory({
-      proxy: { server: `localhost:${server.PORT}`, username: 'user1', password: 'secret1' }
+      proxy: { server: `localhost:${proxyServer.PORT}`, username: 'user1', password: 'secret1' }
     });
     const page = await context.newPage();
     await page.goto('http://non-existent.com/target.html');
-    expect(await page.title()).toBe('Basic ' + Buffer.from('user1:secret1').toString('base64'));
+    expect(auth).toBe('Basic ' + Buffer.from('user1:secret1').toString('base64'));
+    expect(await page.title()).toBe('Served by the proxy');
     await context.close();
   }
+  auth = undefined;
   {
     const context = await contextFactory({
-      proxy: { server: `localhost:${server.PORT}`, username: 'user2', password: 'secret2' }
+      proxy: { server: `localhost:${proxyServer.PORT}`, username: 'user2', password: 'secret2' }
     });
     const page = await context.newPage();
     await page.goto('http://non-existent.com/target.html');
-    expect(await page.title()).toBe('Basic ' + Buffer.from('user2:secret2').toString('base64'));
+    expect(await page.title()).toBe('Served by the proxy');
+    expect(auth).toBe('Basic ' + Buffer.from('user2:secret2').toString('base64'));
     await context.close();
   }
 });
 
-it('should exclude patterns', async ({contextFactory, server, browserName, headless}) => {
+it('should exclude patterns', async ({ contextFactory, server, browserName, headless, proxyServer }) => {
   it.fixme(browserName === 'chromium' && !headless, 'Chromium headed crashes with CHECK(!in_frame_tree_) in RenderFrameImpl::OnDeleteFrame.');
 
-  server.setRoute('/target.html', async (req, res) => {
-    res.end('<html><title>Served by the proxy</title></html>');
-  });
+  proxyServer.forwardTo(server.PORT);
   // FYI: using long and weird domain names to avoid ATT DNS hijacking
   // that resolves everything to some weird search results page.
   //
   // @see https://gist.github.com/CollinChaffin/24f6c9652efb3d6d5ef2f5502720ef00
   const context = await contextFactory({
-    proxy: { server: `localhost:${server.PORT}`, bypass: '1.non.existent.domain.for.the.test, 2.non.existent.domain.for.the.test, .another.test' }
+    proxy: { server: `localhost:${proxyServer.PORT}`, bypass: '1.non.existent.domain.for.the.test, 2.non.existent.domain.for.the.test, .another.test' }
   });
 
   const page = await context.newPage();
   await page.goto('http://0.non.existent.domain.for.the.test/target.html');
+  expect(proxyServer.requestUrls).toContain('http://0.non.existent.domain.for.the.test/target.html');
   expect(await page.title()).toBe('Served by the proxy');
+  proxyServer.requestUrls = [];
 
   {
     const error = await page.goto('http://1.non.existent.domain.for.the.test/target.html').catch(e => e);
+    expect(proxyServer.requestUrls).toEqual([]);
     expect(error.message).toBeTruthy();
   }
 
   {
     const error = await page.goto('http://2.non.existent.domain.for.the.test/target.html').catch(e => e);
+    expect(proxyServer.requestUrls).toEqual([]);
     expect(error.message).toBeTruthy();
   }
 
   {
     const error = await page.goto('http://foo.is.the.another.test/target.html').catch(e => e);
+    expect(proxyServer.requestUrls).toEqual([]);
     expect(error.message).toBeTruthy();
   }
 
   {
     await page.goto('http://3.non.existent.domain.for.the.test/target.html');
+    expect(proxyServer.requestUrls).toContain('http://3.non.existent.domain.for.the.test/target.html');
     expect(await page.title()).toBe('Served by the proxy');
   }
 

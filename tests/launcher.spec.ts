@@ -17,29 +17,40 @@
 
 import { playwrightTest as it, expect } from './config/browserTest';
 
-it('should require top-level Errors', async ({}) => {
-  const Errors = require('../lib/utils/errors.js');
-  expect(String(Errors.TimeoutError)).toContain('TimeoutError');
+it('should have an errors object', async ({ playwright }) => {
+  expect(String(playwright.errors.TimeoutError)).toContain('TimeoutError');
 });
 
-it('should require top-level DeviceDescriptors', async ({playwright}) => {
-  const Devices = require('../lib/server/deviceDescriptors.js');
-  expect(Devices['iPhone 6']).toBeTruthy();
-  expect(Devices['iPhone 6']).toEqual(playwright.devices['iPhone 6']);
+it('should have a devices object', async ({ playwright }) => {
+  expect(playwright.devices['iPhone 6']).toBeTruthy();
   expect(playwright.devices['iPhone 6'].defaultBrowserType).toBe('webkit');
 });
 
-it('should kill browser process on timeout after close', async ({browserType, browserOptions, mode}) => {
+it('should kill browser process on timeout after close', async ({ browserType, mode }) => {
   it.skip(mode !== 'default', 'Test passes server hooks via options');
 
-  const launchOptions = { ...browserOptions };
+  const launchOptions: any = {};
   let stalled = false;
-  (launchOptions as any).__testHookGracefullyClose = () => {
+  launchOptions.__testHookGracefullyClose = () => {
     stalled = true;
     return new Promise(() => {});
   };
-  (launchOptions as any).__testHookBrowserCloseTimeout = 1_000;
+  launchOptions.__testHookBrowserCloseTimeout = 1_000;
   const browser = await browserType.launch(launchOptions);
   await browser.close();
   expect(stalled).toBeTruthy();
+});
+
+it('should throw a friendly error if its headed and there is no xserver on linux running', async ({ browserType, platform }) => {
+  it.skip(platform !== 'linux');
+  const error: Error = await browserType.launch({
+    headless: false,
+    env: {
+      ...process.env,
+      DISPLAY: undefined,
+    },
+  }).catch(e => e);
+  expect(error).toBeInstanceOf(Error);
+  expect(error.message).toMatch(/Looks like you launched a headed browser without having a XServer running./);
+  expect(error.message).toMatch(/xvfb-run/);
 });

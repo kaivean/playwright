@@ -14,22 +14,26 @@
  * limitations under the License.
  */
 
-import type { Config } from '../config/test-runner';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: path.join(__dirname, '..', '..', '.env') });
+
+import type { Config, PlaywrightTestOptions, PlaywrightWorkerOptions } from '@playwright/test';
 import * as path from 'path';
-import { test as pageTest } from '../page/pageTest';
-import { androidFixtures } from '../android/androidTest';
-import { PlaywrightOptions } from './browserTest';
-import { CommonOptions } from './baseTest';
+import { ServerWorkerOptions } from './serverFixtures';
+
+process.env.PWPAGE_IMPL = 'android';
 
 const outputDir = path.join(__dirname, '..', '..', 'test-results');
 const testDir = path.join(__dirname, '..');
-const config: Config<CommonOptions & PlaywrightOptions> = {
+const config: Config<ServerWorkerOptions & PlaywrightWorkerOptions & PlaywrightTestOptions> = {
+  globalSetup: path.join(__dirname, './globalSetup'),
   testDir,
   outputDir,
   timeout: 120000,
   globalTimeout: 7200000,
   workers: 1,
   forbidOnly: !!process.env.CI,
+  preserveOutput: process.env.CI ? 'failures-only' : 'always',
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [
     [ 'dot' ],
@@ -51,7 +55,6 @@ config.projects.push({
   name: 'android',
   use: {
     loopback: '10.0.2.2',
-    mode: 'default',
     browserName: 'chromium',
   },
   testDir: path.join(testDir, 'android'),
@@ -62,11 +65,9 @@ config.projects.push({
   name: 'android',
   use: {
     loopback: '10.0.2.2',
-    mode: 'default',
     browserName: 'chromium',
   },
   testDir: path.join(testDir, 'page'),
-  define: { test: pageTest, fixtures: androidFixtures },
   metadata,
 });
 

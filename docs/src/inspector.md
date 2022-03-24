@@ -15,45 +15,63 @@ There are several ways of opening Playwright Inspector:
 
 - Set the `PWDEBUG` environment variable to run your scripts in debug mode. This
 configures Playwright for debugging and opens the inspector.
-  ```bash js
-  # Linux/macOS
-  PWDEBUG=1 npm run test
 
-  # Windows with cmd.exe
+  ```bash bash-flavor=bash lang=js
+  PWDEBUG=1 npm run test
+  ```
+
+  ```bash bash-flavor=batch lang=js
   set PWDEBUG=1
   npm run test
+  ```
 
-  # Windows with PowerShell
+  ```bash bash-flavor=powershell lang=js
   $env:PWDEBUG=1
   npm run test
   ```
 
-  ```bash java
-  # Linux/macOS
+  ```bash bash-flavor=bash lang=java
   PWDEBUG=1 PLAYWRIGHT_JAVA_SRC=<java src root> mvn test
+  ```
 
-  # Windows with cmd.exe
+  ```bash bash-flavor=batch lang=java
   set PLAYWRIGHT_JAVA_SRC=<java src root>
   set PWDEBUG=1
   mvn test
+  ```
 
-  # Windows with PowerShell
+  ```bash bash-flavor=powershell lang=java
   $env:PLAYWRIGHT_JAVA_SRC="<java src root>"
   $env:PWDEBUG=1
   mvn test
   ```
 
-  ```bash python
-  # Linux/macOS
+  ```bash bash-flavor=bash lang=python
   PWDEBUG=1 pytest -s
+  ```
 
-  # Windows with cmd.exe
+  ```bash bash-flavor=batch lang=python
   set PWDEBUG=1
   pytest -s
+  ```
 
-  # Windows with PowerShell
+  ```bash bash-flavor=powershell lang=python
   $env:PWDEBUG=1
   pytest -s
+  ```
+
+  ```bash bash-flavor=bash lang=csharp
+  PWDEBUG=1 dotnet test
+  ```
+
+  ```bash bash-flavor=batch lang=csharp
+  set PWDEBUG=1
+  dotnet test
+  ```
+
+  ```bash bash-flavor=powershell lang=csharp
+  $env:PWDEBUG=1
+  dotnet test
   ```
 
   Additional useful defaults are configured when `PWDEBUG=1` is set:
@@ -101,6 +119,10 @@ configures Playwright for debugging and opens the inspector.
   playwright codegen wikipedia.org
   ```
 
+  ```bash csharp
+  pwsh bin\Debug\netX\playwright.ps1 codegen wikipedia.org
+  ```
+
 ## Stepping through the Playwright script
 
 When `PWDEBUG=1` is set, Playwright Inspector window will be opened and the script will be
@@ -131,7 +153,7 @@ You can use browser developer tools in Chromium, Firefox and WebKit while runnin
 a Playwright script, with or without Playwright inspector. Developer tools help to:
 
 * Inspect the DOM tree
-* **See console logs** during execution (or learn how to [read logs via API](./verification.md#console-logs))
+* **See console logs** during execution (or learn how to [read logs via API](./api/class-page.md#page-event-console))
 * Check **network activity** and other developer tools features
 
 :::note
@@ -147,9 +169,63 @@ automatically generate selectors for those elements.
 
 <img width="602" alt="Selectors toolbar" src="https://user-images.githubusercontent.com/883973/108614696-ad5eaa00-73b1-11eb-81f5-9eebe62543a2.png"></img>
 
+You can also use the following API inside the Developer Tools Console of any browser.
+
+<img src="https://user-images.githubusercontent.com/284612/92536317-37dd9380-f1ee-11ea-875d-daf1b206dd56.png"></img>
+
+#### playwright.$(selector)
+
+Query Playwright selector, using the actual Playwright query engine, for example:
+
+```js
+> playwright.$('.auth-form >> text=Log in');
+
+<button>Log in</button>
+```
+
+#### playwright.$$(selector)
+
+Same as `playwright.$`, but returns all matching elements.
+
+```js
+> playwright.$$('li >> text=John')
+
+> [<li>, <li>, <li>, <li>]
+```
+
+#### playwright.inspect(selector)
+
+Reveal element in the Elements panel (if DevTools of the respective browser supports it).
+
+```js
+> playwright.inspect('text=Log in')
+```
+
+#### playwright.locator(selector)
+
+Query Playwright element using the actual Playwright query engine, for example:
+
+```js
+> playwright.locator('.auth-form', { hasText: 'Log in' });
+
+> Locator ()
+>   - element: button
+>   - elements: [button]
+```
+
+#### playwright.selector(element)
+
+Generates selector for the given element.
+
+```js
+> playwright.selector($0)
+
+"div[id="glow-ingress-block"] >> text=/.*Hello.*/"
+```
+
 ## Recording scripts
 
-At any moment, clicking Record action enables recorder (codegen) mode.
+At any moment, clicking Record action enables [codegen mode](./codegen.md).
 Every action on the target page is turned into the generated script:
 
 <img width="712" alt="Recorded script" src="https://user-images.githubusercontent.com/883973/108614897-85704600-73b3-11eb-8bcd-f2e129786c49.png"></img>

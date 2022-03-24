@@ -6,7 +6,7 @@ title: "Authentication"
 Playwright can be used to automate scenarios that require authentication.
 
 Tests written with Playwright execute in isolated clean-slate environments called
-[browser contexts](./core-concepts.md#browser-contexts). This isolation model
+[browser contexts](./browser-contexts.md). This isolation model
 improves reproducibility and prevents cascading test failures. New browser
 contexts can load existing authentication state. This eliminates the need to
 login in every context and speeds up test execution.
@@ -110,7 +110,7 @@ const context = await browser.newContext({ storageState: 'state.json' });
 
 ```java
 // Save storage state into the file.
-context.storageState(new BrowserContext.StorageStateOptions().setPath("state.json"));
+context.storageState(new BrowserContext.StorageStateOptions().setPath(Paths.get("state.json")));
 
 // Create a new context with the saved storage state.
 BrowserContext context = browser.newContext(
@@ -159,75 +159,6 @@ implement **login once and run multiple scenarios**. The lifecycle looks like:
 
 This approach will also **work in CI environments**, since it does not rely on any external state.
 
-### Reuse authentication in Playwright Test
-* langs: js
-
-When using [Playwright Test](./test-intro.md), you can log in once in the global setup
-and then reuse authentication state in tests. That way all your tests are completely
-isolated, yet you only waste time logging in once for the entire test suite run.
-
-First, introduce the global setup that would log in once.
-
-```js js-flavor=js
-// global-setup.js
-const { chromium } = require('@playwright/test');
-
-module.exports = async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.goto('http://localhost:5000/');
-  await page.click('text=login');
-  await page.fill('input[name="user"]', 'user');
-  await page.fill('input[name="password"]', 'password');
-  await page.click('input:has-text("login")');
-  await page.context().storageState({ path: 'state.json' });
-  await browser.close();
-};
-```
-
-```js js-flavor=ts
-// global-setup.ts
-import { chromium } from '@playwright/test';
-
-async function globalSetup() {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.goto('http://localhost:5000/');
-  await page.click('text=login');
-  await page.fill('input[name="user"]', 'user');
-  await page.fill('input[name="password"]', 'password');
-  await page.click('input:has-text("login")');
-  await page.context().storageState({ path: 'state.json' });
-  await browser.close();
-}
-
-export default globalSetup;
-```
-
-Then reuse saved authentication state in your tests.
-
-```js js-flavor=ts
-import { test } from '@playwright/test';
-
-test.use({ storageState: 'state.json' });
-
-test('test', async ({ page }) => {
-  await page.goto('http://localhost:5000/');
-  // You are logged in!
-});
-```
-
-```js js-flavor=js
-const { test } = require('@playwright/test');
-
-test.use({ storageState: 'state.json' });
-
-test('test', async ({ page }) => {
-  await page.goto('http://localhost:5000/');
-  // You are logged in!
-});
-```
-
 ### API reference
 - [`method: BrowserContext.storageState`]
 - [`method: Browser.newContext`]
@@ -249,16 +180,16 @@ const sessionStorage = process.env.SESSION_STORAGE;
 await context.addInitScript(storage => {
   if (window.location.hostname === 'example.com') {
     const entries = JSON.parse(storage);
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key]);
-    });
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, value);
+    }
   }
 }, sessionStorage);
 ```
 
 ```java
 // Get session storage and store as env variable
-String sessionStorage = (String) page.evaluate("() => JSON.stringify(sessionStorage");
+String sessionStorage = (String) page.evaluate("JSON.stringify(sessionStorage)");
 System.getenv().put("SESSION_STORAGE", sessionStorage);
 
 // Set session storage in a new context
@@ -266,11 +197,11 @@ String sessionStorage = System.getenv("SESSION_STORAGE");
 context.addInitScript("(storage => {\n" +
   "  if (window.location.hostname === 'example.com') {\n" +
   "    const entries = JSON.parse(storage);\n" +
-  "    Object.keys(entries).forEach(key => {\n" +
-  "      window.sessionStorage.setItem(key, entries[key]);\n" +
-  "    });\n" +
+  "     for (const [key, value] of Object.entries(entries)) {\n" +
+  "      window.sessionStorage.setItem(key, value);\n" +
+  "    };\n" +
   "  }\n" +
-  "})(" + sessionStorage + ")");
+  "})('" + sessionStorage + "')");
 ```
 
 ```python async
@@ -281,14 +212,14 @@ os.environ["SESSION_STORAGE"] = session_storage
 
 # Set session storage in a new context
 session_storage = os.environ["SESSION_STORAGE"]
-await context.add_init_script("""storage => {
-  if (window.location.hostname == 'example.com') {
-    entries = JSON.parse(storage)
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key])
-    })
+await context.add_init_script("""(storage => {
+  if (window.location.hostname === 'example.com') {
+    const entries = JSON.parse(storage)
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, key)
+    }
   }
-}""", session_storage)
+})('""" + session_storage + "')")
 ```
 
 ```python sync
@@ -299,19 +230,19 @@ os.environ["SESSION_STORAGE"] = session_storage
 
 # Set session storage in a new context
 session_storage = os.environ["SESSION_STORAGE"]
-context.add_init_script("""storage => {
-  if (window.location.hostname == 'example.com') {
-    entries = JSON.parse(storage)
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key])
-    })
+context.add_init_script("""(storage => {
+  if (window.location.hostname === 'example.com') {
+    const entries = JSON.parse(storage)
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, key)
+    }
   }
-}""", session_storage)
+})('""" + session_storage + "')")
 ```
 
 ```csharp
 // Get session storage and store as env variable
-var sessionStorage = await page.EvaluateAsync<string>("() => JSON.stringify(sessionStorage");
+var sessionStorage = await page.EvaluateAsync<string>("() => JSON.stringify(sessionStorage)");
 Environment.SetEnvironmentVariable("SESSION_STORAGE", sessionStorage);
 
 // Set session storage in a new context
@@ -319,11 +250,11 @@ var loadedSessionStorage = Environment.GetEnvironmentVariable("SESSION_STORAGE")
 await context.AddInitScriptAsync(@"(storage => {
     if (window.location.hostname === 'example.com') {
       const entries = JSON.parse(storage);
-      Object.keys(entries).forEach(key => {
-        window.sessionStorage.setItem(key, entries[key]);
-      });
+      for (const [key, value] of Object.entries(entries)) {
+        window.sessionStorage.setItem(key, value);
+      }
     }
-  })(" + loadedSessionStorage + ")");
+  })('" + loadedSessionStorage + "')");
 ```
 
 ### API reference
@@ -411,9 +342,9 @@ class Program
 
 ### Lifecycle
 
-1. Create a user data directory on disk
-2. Launch a persistent context with the user data directory and login the MFA account.
-3. Reuse user data directory to run automation scenarios.
+1. Create a user data directory on disk.
+1. Launch a persistent context with the user data directory and login the MFA account.
+1. Reuse user data directory to run automation scenarios.
 
 ### API reference
 - [BrowserContext]

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import { expect } from './test-runner';
-import type { Frame, Page } from '../../index';
+import { expect } from '@playwright/test';
+import type { Frame, Page } from 'playwright-core';
+import { ZipFileSystem } from '../../packages/playwright-core/lib/utils/vfs';
 
 export async function attachFrame(page: Page, frameId: string, url: string): Promise<Frame> {
   const handle = await page.evaluateHandle(async ({ frameId, url }) => {
@@ -69,4 +70,44 @@ export function chromiumVersionLessThan(a: string, b: string) {
       return true;
   }
   return false;
+}
+
+let didSuppressUnverifiedCertificateWarning = false;
+let originalEmitWarning: (warning: string | Error, ...args: any[]) => void;
+export function suppressCertificateWarning() {
+  if (didSuppressUnverifiedCertificateWarning)
+    return;
+  didSuppressUnverifiedCertificateWarning = true;
+  // Supress one-time warning:
+  // https://github.com/nodejs/node/blob/1bbe66f432591aea83555d27dd76c55fea040a0d/lib/internal/options.js#L37-L49
+  originalEmitWarning = process.emitWarning;
+  process.emitWarning = (warning, ...args) => {
+    if (typeof warning === 'string' && warning.includes('NODE_TLS_REJECT_UNAUTHORIZED')) {
+      process.emitWarning = originalEmitWarning;
+      return;
+    }
+    return originalEmitWarning.call(process, warning, ...args);
+  };
+}
+
+export async function parseTrace(file: string): Promise<{ events: any[], resources: Map<string, Buffer> }> {
+  const zipFS = new ZipFileSystem(file);
+  const resources = new Map<string, Buffer>();
+  for (const entry of await zipFS.entries())
+    resources.set(entry, await zipFS.read(entry));
+  zipFS.close();
+
+  const events = [];
+  for (const line of resources.get('trace.trace').toString().split('\n')) {
+    if (line)
+      events.push(JSON.parse(line));
+  }
+  for (const line of resources.get('trace.network').toString().split('\n')) {
+    if (line)
+      events.push(JSON.parse(line));
+  }
+  return {
+    events,
+    resources,
+  };
 }

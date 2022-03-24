@@ -48,9 +48,10 @@ it('should capture local storage', async ({ contextFactory }) => {
   }]);
 });
 
-it('should set local storage', async ({ browser }) => {
-  const context = await browser.newContext({
+it('should set local storage', async ({ contextFactory }) => {
+  const context = await contextFactory({
     storageState: {
+      cookies: [],
       origins: [
         {
           origin: 'https://www.example.com',
@@ -101,4 +102,95 @@ it('should round-trip through the file', async ({ contextFactory }, testInfo) =>
   const cookie = await page2.evaluate('document.cookie');
   expect(cookie).toEqual('username=John Doe');
   await context2.close();
+});
+
+it('should capture cookies', async ({ server, context, page, contextFactory }) => {
+  server.setRoute('/setcookie.html', (req, res) => {
+    res.setHeader('Set-Cookie', ['a=b', 'empty=']);
+    res.end();
+  });
+
+  await page.goto(server.PREFIX + '/setcookie.html');
+  expect(await page.evaluate(() => {
+    const cookies = document.cookie.split(';');
+    return cookies.map(cookie => cookie.trim()).sort();
+  })).toEqual([
+    'a=b',
+    'empty=',
+  ]);
+
+  const storageState = await context.storageState();
+  expect(new Set(storageState.cookies)).toEqual(new Set([
+    expect.objectContaining({
+      name: 'a',
+      value: 'b'
+    }),
+    expect.objectContaining({
+      name: 'empty',
+      value: ''
+    })
+  ]));
+  const context2 = await contextFactory({ storageState });
+  const page2 = await context2.newPage();
+  await page2.goto(server.EMPTY_PAGE);
+  expect(await page2.evaluate(() => {
+    const cookies = document.cookie.split(';');
+    return cookies.map(cookie => cookie.trim()).sort();
+  })).toEqual([
+    'a=b',
+    'empty=',
+  ]);
+});
+
+it('should not emit events about internal page', async ({ contextFactory }) => {
+  const context = await contextFactory();
+  const page = await context.newPage();
+  await page.route('**/*', route => {
+    route.fulfill({ body: '<html></html>' });
+  });
+  await page.goto('https://www.example.com');
+  await page.evaluate(() => localStorage['name1'] = 'value1');
+  await page.goto('https://www.domain.com');
+  await page.evaluate(() => localStorage['name2'] = 'value2');
+
+  const events = [];
+  context.on('page', e => events.push(e));
+  context.on('request', e => events.push(e));
+  context.on('requestfailed', e => events.push(e));
+  context.on('requestfinished', e => events.push(e));
+  context.on('response', e => events.push(e));
+  await context.storageState();
+  expect(events).toHaveLength(0);
+});
+
+it('should not restore localStorage twice', async ({ contextFactory }) => {
+  const context = await contextFactory({
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'https://www.example.com',
+          localStorage: [{
+            name: 'name1',
+            value: 'value1'
+          }]
+        },
+      ]
+    }
+  });
+  const page = await context.newPage();
+  await page.route('**/*', route => {
+    route.fulfill({ body: '<html></html>' }).catch(() => {});
+  });
+  await page.goto('https://www.example.com');
+  const localStorage1 = await page.evaluate('window.localStorage');
+  expect(localStorage1).toEqual({ name1: 'value1' });
+
+  await page.evaluate(() => window.localStorage['name1'] = 'value2');
+
+  await page.goto('https://www.example.com');
+  const localStorage2 = await page.evaluate('window.localStorage');
+  expect(localStorage2).toEqual({ name1: 'value2' });
+
+  await context.close();
 });

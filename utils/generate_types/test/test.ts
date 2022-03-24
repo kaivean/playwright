@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import * as playwright from '../../../index';
+import * as playwright from 'playwright';
 
 type AssertType<T, S> = S extends T ? AssertNotAny<S> : false;
 type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
@@ -387,6 +387,36 @@ playwright.chromium.launch().then(async browser => {
   await browser.close();
 })();
 
+// test locator.evaluate
+(async () => {
+  const browser = await playwright.firefox.launch();
+  const page = await browser.newPage();
+  const locator = page.locator('.foo');
+  {
+    const result = await locator.evaluate((sel: HTMLSelectElement) => sel.options[sel.selectedIndex].textContent)
+    const assertion: AssertType<string, typeof result> = true;
+  }
+  {
+    const result = await locator.evaluate((media: HTMLMediaElement, dummy) => media.duration, 10);
+    const assertion: AssertType<number, typeof result> = true;
+  }
+  {
+    await locator.evaluate((input: HTMLInputElement) => {})
+  }
+  {
+    const list = await locator.evaluateAll((i: HTMLInputElement[]) => i.length);
+    const assertion: AssertType<number, typeof list> = true;
+  }
+  {
+    const list = await locator.evaluateAll((i: HTMLInputElement[], dummy) => i.length, 10);
+    const assertion: AssertType<number, typeof list> = true;
+  }
+  {
+    await locator.evaluateAll((sel: HTMLSelectElement[]) => {})
+  }
+  await browser.close();
+})();
+
 // waitForEvent
 (async () => {
   const browser = await playwright.webkit.launch();
@@ -569,15 +599,6 @@ playwright.chromium.launch().then(async browser => {
   await session.detach();
 
 
-  await browser.close();
-})();
-
-(async () => {
-  const browser = await playwright.firefox.launch();
-  const page = await browser.newPage();
-  const context = page.context();
-  const oneTwoThree = ('pageTarget' in context) ? context['pageTarget'] : 123;
-  const assertion: AssertType<123, typeof oneTwoThree> = true;
   await browser.close();
 })();
 
@@ -802,10 +823,11 @@ playwright.chromium.launch().then(async browser => {
 (async () => {
   const browser = await playwright.chromium.launch();
   const page = await browser.newPage();
-  await Promise.all([
+  const [response] = await Promise.all([
     page.waitForResponse(response => response.url().includes('example.com')),
     page.goto('https://example.com')
   ]);
+  console.log((await response!.json()).foobar); // JSON return value should be any
 
   await browser.close();
 })();
@@ -827,4 +849,4 @@ import {
   ViewportSize,
   Geolocation,
   HTTPCredentials,
-} from '../../../';
+} from 'playwright';

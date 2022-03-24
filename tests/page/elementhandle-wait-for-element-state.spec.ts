@@ -83,7 +83,7 @@ it('should wait for hidden when detached', async ({ page }) => {
   await promise;
 });
 
-it('should wait for enabled button', async ({page, server}) => {
+it('should wait for enabled button', async ({ page, server }) => {
   await page.setContent('<button disabled><span>Target</span></button>');
   const span = await page.$('text=Target');
   let done = false;
@@ -103,7 +103,40 @@ it('should throw waiting for enabled when detached', async ({ page }) => {
   expect(error.message).toContain('Element is not attached to the DOM');
 });
 
-it('should wait for disabled button', async ({page}) => {
+it('should wait for button with a disabled fieldset', async ({ page }) => {
+  await page.setContent('<fieldset disabled=true><button><span>Target</span></button></div>');
+  const span = await page.$('text=Target');
+  let done = false;
+  const promise = span.waitForElementState('enabled').then(() => done = true);
+  await giveItAChanceToResolve(page);
+  expect(done).toBe(false);
+  await span.evaluate(span => (span.parentElement.parentElement as HTMLFieldSetElement).disabled = false);
+  await promise;
+});
+
+it('should wait for aria enabled button', async ({ page }) => {
+  await page.setContent('<button aria-disabled=true><span>Target</span></button>');
+  const span = await page.$('text=Target');
+  let done = false;
+  const promise = span.waitForElementState('enabled').then(() => done = true);
+  await giveItAChanceToResolve(page);
+  expect(done).toBe(false);
+  await span.evaluate(span => span.parentElement.setAttribute('aria-disabled', 'false'));
+  await promise;
+});
+
+it('should wait for button with an aria-disabled parent', async ({ page }) => {
+  await page.setContent('<div aria-disabled=true><button><span>Target</span></button></div>');
+  const span = await page.$('text=Target');
+  let done = false;
+  const promise = span.waitForElementState('enabled').then(() => done = true);
+  await giveItAChanceToResolve(page);
+  expect(done).toBe(false);
+  await span.evaluate(span => span.parentElement.parentElement.setAttribute('aria-disabled', 'false'));
+  await promise;
+});
+
+it('should wait for disabled button', async ({ page }) => {
   await page.setContent('<button><span>Target</span></button>');
   const span = await page.$('text=Target');
   let done = false;
@@ -114,7 +147,7 @@ it('should wait for disabled button', async ({page}) => {
   await promise;
 });
 
-it('should wait for stable position', async ({page, server, browserName, platform}) => {
+it('should wait for stable position', async ({ page, server, browserName, platform }) => {
   it.fixme(browserName === 'firefox' && platform === 'linux');
 
   await page.goto(server.PREFIX + '/input/button.html');
@@ -131,7 +164,7 @@ it('should wait for stable position', async ({page, server, browserName, platfor
   await promise;
 });
 
-it('should wait for editable input', async ({page, server}) => {
+it('should wait for editable input', async ({ page, server }) => {
   await page.setContent('<input readonly>');
   const input = await page.$('input');
   let done = false;

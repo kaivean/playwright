@@ -3,94 +3,107 @@
 
 ElementHandle represents an in-page DOM element. ElementHandles can be created with the [`method: Page.querySelector`] method.
 
-```js
-const { chromium } = require('playwright');  // Or 'firefox' or 'webkit'.
+:::caution Discouraged
+The use of ElementHandle is discouraged, use [Locator] objects and web-first assertions instead.
+:::
 
-(async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.goto('https://example.com');
-  const hrefElement = await page.$('a');
-  await hrefElement.click();
-  // ...
-})();
+```js
+const hrefElement = await page.$('a');
+await hrefElement.click();
 ```
 
 ```java
-import com.microsoft.playwright.*;
-
-public class Example {
-  public static void main(String[] args) {
-    try (Playwright playwright = Playwright.create()) {
-      BrowserType chromium = playwright.chromium();
-      Browser browser = chromium.launch();
-      Page page = browser.newPage();
-      page.navigate("https://example.com");
-      ElementHandle hrefElement = page.querySelector("a");
-      hrefElement.click();
-      // ...
-    }
-  }
-}
+ElementHandle hrefElement = page.querySelector("a");
+hrefElement.click();
 ```
 
 ```python async
-import asyncio
-from playwright.async_api import async_playwright
-
-async def run(playwright):
-    chromium = playwright.chromium
-    browser = await chromium.launch()
-    page = await browser.new_page()
-    await page.goto("https://example.com")
-    href_element = await page.query_selector("a")
-    await href_element.click()
-    # ...
-
-async def main():
-    async with async_playwright() as playwright:
-        await run(playwright)
-asyncio.run(main())
+href_element = await page.query_selector("a")
+await href_element.click()
 ```
 
 ```python sync
-from playwright.sync_api import sync_playwright
-
-def run(playwright):
-    chromium = playwright.chromium
-    browser = chromium.launch()
-    page = browser.new_page()
-    page.goto("https://example.com")
-    href_element = page.query_selector("a")
-    href_element.click()
-    # ...
-
-with sync_playwright() as playwright:
-    run(playwright)
+href_element = page.query_selector("a")
+href_element.click()
 ```
 
 ```csharp
-using Microsoft.Playwright;
-using System.Threading.Tasks;
-
-class HandleExamples
-{
-    public static async Task Run()
-    {
-        using var playwright = await Playwright.CreateAsync();
-        var browser = await playwright.Chromium.LaunchAsync();
-        var page = await browser.NewPageAsync();
-        await page.GotoAsync("https://www.bing.com");
-        var handle = await page.QuerySelectorAsync("a");
-        await handle.ClickAsync();
-    }
-}
+var handle = await page.QuerySelectorAsync("a");
+await handle.ClickAsync();
 ```
 
 ElementHandle prevents DOM element from garbage collection unless the handle is disposed with
 [`method: JSHandle.dispose`]. ElementHandles are auto-disposed when their origin frame gets navigated.
 
 ElementHandle instances can be used as an argument in [`method: Page.evalOnSelector`] and [`method: Page.evaluate`] methods.
+
+The difference between the [Locator] and ElementHandle is that the ElementHandle points to a particular element, while [Locator] captures the logic of how to retrieve an element.
+
+In the example below, handle points to a particular DOM element on page. If that element changes text or is used by React to render an entirely different component, handle is still pointing to that very DOM element. This can lead to unexpected behaviors.
+
+```js
+const handle = await page.$('text=Submit');
+// ...
+await handle.hover();
+await handle.click();
+```
+
+```java
+ElementHandle handle = page.querySelector("text=Submit");
+handle.hover();
+handle.click();
+```
+
+```python async
+handle = await page.query_selector("text=Submit")
+await handle.hover()
+await handle.click()
+```
+
+```python sync
+handle = page.query_selector("text=Submit")
+handle.hover()
+handle.click()
+```
+
+```csharp
+var handle = await page.QuerySelectorAsync("text=Submit");
+await handle.HoverAsync();
+await handle.ClickAsync();
+```
+
+With the locator, every time the `element` is used, up-to-date DOM element is located in the page using the selector. So in the snippet below, underlying DOM element is going to be located twice.
+
+```js
+const locator = page.locator('text=Submit');
+// ...
+await locator.hover();
+await locator.click();
+```
+
+```java
+Locator locator = page.locator("text=Submit");
+locator.hover();
+locator.click();
+```
+
+```python async
+locator = page.locator("text=Submit")
+await locator.hover()
+await locator.click()
+```
+
+```python sync
+locator = page.locator("text=Submit")
+locator.hover()
+locator.click()
+```
+
+```csharp
+var locator = page.Locator("text=Submit");
+await locator.HoverAsync();
+await locator.ClickAsync();
+```
 
 ## async method: ElementHandle.boundingBox
 - returns: <[null]|[Object]>
@@ -304,8 +317,8 @@ element_handle.dispatch_event("#source", "dragstart", {"dataTransfer": data_tran
 ```
 
 ```csharp
-var handle = await page.EvaluateHandleAsync("() => new DataTransfer()");
-await handle.AsElement().DispatchEventAsync("dragstart", new Dictionary<string, object>
+var dataTransfer = await page.EvaluateHandleAsync("() => new DataTransfer()");
+await elementHandle.DispatchEventAsync("dragstart", new Dictionary<string, object>
 {
     { "dataTransfer", dataTransfer }
 });
@@ -364,8 +377,8 @@ assert tweet_handle.eval_on_selector(".retweets", "node => node.innerText") = "1
 
 ```csharp
 var tweetHandle = await page.QuerySelectorAsync(".tweet");
-Assert.Equals("100", await tweetHandle.EvalOnSelectorAsync(".like", "node => node.innerText"));
-Assert.Equals("10", await tweetHandle.EvalOnSelectorAsync(".retweets", "node => node.innerText"));
+Assert.AreEqual("100", await tweetHandle.EvalOnSelectorAsync(".like", "node => node.innerText"));
+Assert.AreEqual("10", await tweetHandle.EvalOnSelectorAsync(".retweets", "node => node.innerText"));
 ```
 
 ### param: ElementHandle.evalOnSelector.selector = %%-query-selector-%%
@@ -423,7 +436,7 @@ assert feed_handle.eval_on_selector_all(".tweet", "nodes => nodes.map(n => n.inn
 
 ```csharp
 var feedHandle = await page.QuerySelectorAsync(".feed");
-Assert.Equals(new [] { "Hello!", "Hi!" }, await feedHandle.EvalOnSelectorAllAsync<string[]>(".tweet", "nodes => nodes.map(n => n.innerText)"));
+Assert.AreEqual(new [] { "Hello!", "Hi!" }, await feedHandle.EvalOnSelectorAllAsync<string[]>(".tweet", "nodes => nodes.map(n => n.innerText)"));
 ```
 
 ### param: ElementHandle.evalOnSelectorAll.selector = %%-query-selector-%%
@@ -448,8 +461,8 @@ To send fine-grained keyboard events, use [`method: ElementHandle.type`].
 
 Value to set for the `<input>`, `<textarea>` or `[contenteditable]` element.
 
+### option: ElementHandle.fill.force = %%-input-force-%%
 ### option: ElementHandle.fill.noWaitAfter = %%-input-no-wait-after-%%
-
 ### option: ElementHandle.fill.timeout = %%-input-timeout-%%
 
 ## async method: ElementHandle.focus
@@ -498,6 +511,13 @@ Returns the `element.innerHTML`.
 - returns: <[string]>
 
 Returns the `element.innerText`.
+
+## async method: ElementHandle.inputValue
+- returns: <[string]>
+
+Returns `input.value` for `<input>` or `<textarea>` or `<select>` element. Throws for non-input elements.
+
+### option: ElementHandle.inputValue.timeout = %%-input-timeout-%%
 
 ## async method: ElementHandle.isChecked
 - returns: <[boolean]>
@@ -602,27 +622,7 @@ Returns the buffer with the captured screenshot.
 This method waits for the [actionability](./actionability.md) checks, then scrolls element into view before taking a
 screenshot. If the element is detached from DOM, the method throws an error.
 
-### option: ElementHandle.screenshot.path
-- `path` <[path]>
-
-The file path to save the image to. The screenshot type will be inferred from file extension. If [`option: path`] is a
-relative path, then it is resolved relative to the current working directory. If no path is provided, the image won't be
-saved to the disk.
-
-### option: ElementHandle.screenshot.type = %%-screenshot-type-%%
-
-### option: ElementHandle.screenshot.quality
-- `quality` <[int]>
-
-The quality of the image, between 0-100. Not applicable to `png` images.
-
-### option: ElementHandle.screenshot.omitBackground
-- `omitBackground` <[boolean]>
-
-Hides default white background and allows capturing screenshots with transparency. Not applicable to `jpeg` images.
-Defaults to `false`.
-
-### option: ElementHandle.screenshot.timeout = %%-input-timeout-%%
+### option: ElementHandle.screenshot.-inline- = %%-screenshot-options-common-list-%%
 
 ## async method: ElementHandle.scrollIntoViewIfNeeded
 
@@ -710,9 +710,8 @@ await handle.SelectOptionAsync(new[] {
 ```
 
 ### param: ElementHandle.selectOption.values = %%-select-options-values-%%
-
+### option: ElementHandle.selectOption.force = %%-input-force-%%
 ### option: ElementHandle.selectOption.noWaitAfter = %%-input-no-wait-after-%%
-
 ### option: ElementHandle.selectOption.timeout = %%-input-timeout-%%
 
 ## async method: ElementHandle.selectText
@@ -720,7 +719,30 @@ await handle.SelectOptionAsync(new[] {
 This method waits for [actionability](./actionability.md) checks, then focuses the element and selects all its text
 content.
 
+### option: ElementHandle.selectText.force = %%-input-force-%%
 ### option: ElementHandle.selectText.timeout = %%-input-timeout-%%
+
+## async method: ElementHandle.setChecked
+
+This method checks or unchecks an element by performing the following steps:
+1. Ensure that element is a checkbox or a radio input. If not, this method throws.
+1. If the element already has the right checked state, this method returns immediately.
+1. Wait for [actionability](./actionability.md) checks on the matched element, unless [`option: force`] option is
+   set. If the element is detached during the checks, the whole action is retried.
+1. Scroll the element into view if needed.
+1. Use [`property: Page.mouse`] to click in the center of the element.
+1. Wait for initiated navigations to either succeed or fail, unless [`option: noWaitAfter`] option is set.
+1. Ensure that the element is now checked or unchecked. If not, this method throws.
+
+When all steps combined have not finished during the specified [`option: timeout`], this method throws a
+[TimeoutError]. Passing zero timeout disables this.
+
+### param: ElementHandle.setChecked.checked = %%-input-checked-%%
+### option: ElementHandle.setChecked.force = %%-input-force-%%
+### option: ElementHandle.setChecked.noWaitAfter = %%-input-no-wait-after-%%
+### option: ElementHandle.setChecked.position = %%-input-position-%%
+### option: ElementHandle.setChecked.timeout = %%-input-timeout-%%
+### option: ElementHandle.setChecked.trial = %%-input-trial-%%
 
 ## async method: ElementHandle.setInputFiles
 
@@ -953,3 +975,5 @@ This method does not work across navigations, use [`method: Page.waitForSelector
 ### option: ElementHandle.waitForSelector.state = %%-wait-for-selector-state-%%
 
 ### option: ElementHandle.waitForSelector.timeout = %%-input-timeout-%%
+
+### option: ElementHandle.waitForSelector.strict = %%-input-strict-%%

@@ -3,8 +3,9 @@ set -e
 set +x
 
 trap "cd $(pwd -P)" EXIT
-cd "$(dirname $0)"
+cd "$(dirname "$0")"
 SCRIPT_FOLDER="$(pwd -P)"
+source "${SCRIPT_FOLDER}/../utils.sh"
 
 build_gtk() {
   if ! [[ -d ./WebKitBuild/GTK/DependenciesGTK ]]; then
@@ -25,7 +26,7 @@ build_wpe() {
   if [[ -n "${EXPORT_COMPILE_COMMANDS}" ]]; then
     CMAKE_ARGS="--cmakeargs=\"-DCMAKE_EXPORT_COMPILE_COMMANDS=1\""
   fi
-  WEBKIT_JHBUILD=1 WEBKIT_JHBUILD_MODULESET=minimal WEBKIT_OUTPUTDIR=$(pwd)/WebKitBuild/WPE ./Tools/Scripts/build-webkit --wpe --release "${CMAKE_ARGS}" --touch-events --orientation-events --no-bubblewrap-sandbox --no-webxr MiniBrowser
+  WEBKIT_JHBUILD=1 WEBKIT_JHBUILD_MODULESET=minimal WEBKIT_OUTPUTDIR=$(pwd)/WebKitBuild/WPE ./Tools/Scripts/build-webkit --wpe --release "${CMAKE_ARGS}" --touch-events --orientation-events --no-bubblewrap-sandbox --no-webxr --cmakeargs=-DENABLE_COG=OFF MiniBrowser
 }
 
 ensure_linux_deps() {
@@ -39,10 +40,21 @@ if [[ ! -z "${WK_CHECKOUT_PATH}" ]]; then
   cd "${WK_CHECKOUT_PATH}"
   echo "WARNING: checkout path from WK_CHECKOUT_PATH env: ${WK_CHECKOUT_PATH}"
 else
-  cd "checkout"
+  cd "$HOME/webkit"
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then
+  CURRENT_HOST_OS_VERSION=$(getMacVersion)
+  if [[ "${CURRENT_HOST_OS_VERSION}" == "10.15" ]]; then
+    selectXcodeVersionOrDie "11.7"
+  elif [[ "${CURRENT_HOST_OS_VERSION}" == "11."* ]]; then
+    selectXcodeVersionOrDie "12.5"
+  elif [[ "${CURRENT_HOST_OS_VERSION}" == "12."* ]]; then
+    selectXcodeVersionOrDie "13.2"
+  else
+    echo "ERROR: ${CURRENT_HOST_OS_VERSION} is not supported"
+    exit 1
+  fi
   ./Tools/Scripts/build-webkit --release --touch-events --orientation-events
 elif [[ "$(uname)" == "Linux" ]]; then
   if [[ $# == 0 || (-z "$1") ]]; then
@@ -70,7 +82,7 @@ elif [[ "$(uname)" == "Linux" ]]; then
     build_wpe
   fi
 elif [[ "$(uname)" == MINGW* ]]; then
-  /c/Windows/System32/cmd.exe "/c $(cygpath -w ${SCRIPT_FOLDER}/buildwin.bat)"
+  /c/Windows/System32/cmd.exe "/c $(cygpath -w "${SCRIPT_FOLDER}"/buildwin.bat)"
 else
   echo "ERROR: cannot upload on this platform!" 1>&2
   exit 1;

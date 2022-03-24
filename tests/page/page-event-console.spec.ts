@@ -18,28 +18,31 @@
 import { test as it, expect } from './pageTest';
 import util from 'util';
 
-it('should work', async ({page}) => {
+it('should work @smoke', async ({ page, browserName }) => {
   let message = null;
   page.once('console', m => message = m);
   await Promise.all([
-    page.evaluate(() => console.log('hello', 5, {foo: 'bar'})),
+    page.evaluate(() => console.log('hello', 5, { foo: 'bar' })),
     page.waitForEvent('console')
   ]);
-  expect(message.text()).toEqual('hello 5 JSHandle@object');
+  if (browserName !== 'firefox')
+    expect(message.text()).toEqual('hello 5 {foo: bar}');
+  else
+    expect(message.text()).toEqual('hello 5 JSHandle@object');
   expect(message.type()).toEqual('log');
   expect(await message.args()[0].jsonValue()).toEqual('hello');
   expect(await message.args()[1].jsonValue()).toEqual(5);
-  expect(await message.args()[2].jsonValue()).toEqual({foo: 'bar'});
+  expect(await message.args()[2].jsonValue()).toEqual({ foo: 'bar' });
 });
 
-it('should emit same log twice', async ({page}) => {
+it('should emit same log twice', async ({ page }) => {
   const messages = [];
   page.on('console', m => messages.push(m.text()));
   await page.evaluate(() => { for (let i = 0; i < 2; ++i) console.log('hello'); });
   expect(messages).toEqual(['hello', 'hello']);
 });
 
-it('should use text() for inspection', async ({page}) => {
+it('should use text() for inspection', async ({ page }) => {
   let text;
   const inspect = value => {
     text = util.inspect(value);
@@ -49,7 +52,7 @@ it('should use text() for inspection', async ({page}) => {
   expect(text).toEqual('Hello world');
 });
 
-it('should work for different console API calls', async ({page}) => {
+it('should work for different console API calls', async ({ page }) => {
   const messages = [];
   page.on('console', msg => messages.push(msg));
   // All console events will be reported before `page.evaluate` is finished.
@@ -61,10 +64,16 @@ it('should work for different console API calls', async ({page}) => {
     console.dir('calling console.dir');
     console.warn('calling console.warn');
     console.error('calling console.error');
+    console.info('calling console.info');
+    console.debug('calling console.debug');
     console.log(Promise.resolve('should not wait until resolved!'));
   });
+  // WebKit uses console.debug() to report binding calls, make sure they don't get reported.
+  await page.exposeBinding('foobar', async (_, value) => page.evaluate(value => console.log(value), value));
+  await page.evaluate(() => window['foobar']('Using bindings'));
+
   expect(messages.map(msg => msg.type())).toEqual([
-    'timeEnd', 'trace', 'dir', 'warning', 'error', 'log'
+    'timeEnd', 'trace', 'dir', 'warning', 'error', 'info', 'debug', 'log', 'log'
   ]);
   expect(messages[0].text()).toContain('calling console.time');
   expect(messages.slice(1).map(msg => msg.text())).toEqual([
@@ -72,21 +81,51 @@ it('should work for different console API calls', async ({page}) => {
     'calling console.dir',
     'calling console.warn',
     'calling console.error',
-    'JSHandle@promise',
+    'calling console.info',
+    'calling console.debug',
+    'Promise',
+    'Using bindings',
   ]);
 });
 
-it('should not fail for window object', async ({page}) => {
+it('should format the message correctly with time/timeLog/timeEnd', async ({ page, browserName }) => {
+  it.fixme(browserName === 'firefox', 'https://github.com/microsoft/playwright/issues/10580');
+  const messages = [];
+  page.on('console', msg => messages.push(msg));
+  await page.evaluate(async () => {
+    console.time('foo time');
+    await new Promise(x => setTimeout(x, 100));
+    console.timeLog('foo time');
+    await new Promise(x => setTimeout(x, 100));
+    console.timeEnd('foo time');
+  });
+  expect(messages.length).toBe(2);
+  if (browserName === 'webkit')
+    expect(messages[0].type()).toBe('timeEnd');
+  else if (browserName === 'chromium')
+    expect(messages[0].type()).toBe('log');
+  expect(messages[1].type()).toBe('timeEnd');
+
+  // WebKit has a space before the unit: https://bugs.webkit.org/show_bug.cgi?id=233556
+  expect(messages[0].text()).toMatch(/foo time: \d+.\d+ ?ms/);
+  expect(messages[1].text()).toMatch(/foo time: \d+.\d+ ?ms/);
+});
+
+it('should not fail for window object', async ({ page, browserName }) => {
   let message = null;
   page.once('console', msg => message = msg);
   await Promise.all([
     page.evaluate(() => console.error(window)),
     page.waitForEvent('console')
   ]);
-  expect(message.text()).toBe('JSHandle@object');
+  if (browserName !== 'firefox')
+    expect(message.text()).toEqual('Window');
+  else
+    expect(message.text()).toEqual('JSHandle@object');
 });
 
-it('should trigger correct Log', async ({page, server}) => {
+it('should trigger correct Log', async ({ page, server, browserName, isWindows }) => {
+  it.skip(browserName === 'webkit' && isWindows, 'Upstream issue https://bugs.webkit.org/show_bug.cgi?id=229515');
   await page.goto('about:blank');
   const [message] = await Promise.all([
     page.waitForEvent('console'),
@@ -96,7 +135,7 @@ it('should trigger correct Log', async ({page, server}) => {
   expect(message.type()).toEqual('error');
 });
 
-it('should have location for console API calls', async ({page, server}) => {
+it('should have location for console API calls', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   const [message] = await Promise.all([
     page.waitForEvent('console', m => m.text() === 'yellow'),
@@ -112,7 +151,7 @@ it('should have location for console API calls', async ({page, server}) => {
   });
 });
 
-it('should not throw when there are console messages in detached iframes', async ({page, server}) => {
+it('should not throw when there are console messages in detached iframes', async ({ page, server }) => {
   // @see https://github.com/GoogleChrome/puppeteer/issues/3865
   await page.goto(server.EMPTY_PAGE);
   const [popup] = await Promise.all([
@@ -134,4 +173,31 @@ it('should not throw when there are console messages in detached iframes', async
   ]);
   // 4. Connect to the popup and make sure it doesn't throw.
   expect(await popup.evaluate('1 + 1')).toBe(2);
+});
+
+it('should use object previews for arrays and objects', async ({ page, browserName }) => {
+  let text: string;
+  page.on('console', message => {
+    text = message.text();
+  });
+  await page.evaluate(() => console.log([1, 2, 3], { a: 1 }, window));
+
+  if (browserName !== 'firefox')
+    expect(text).toEqual('[1,2,3] {a: 1} Window');
+  else
+    expect(text).toEqual('Array JSHandle@object JSHandle@object');
+});
+
+it('should use object previews for errors', async ({ page, browserName }) => {
+  let text: string;
+  page.on('console', message => {
+    text = message.text();
+  });
+  await page.evaluate(() => console.log(new Error('Exception')));
+  if (browserName === 'chromium')
+    expect(text).toContain('.evaluate');
+  if (browserName === 'webkit')
+    expect(text).toEqual('Error: Exception');
+  if (browserName === 'firefox')
+    expect(text).toEqual('Error');
 });

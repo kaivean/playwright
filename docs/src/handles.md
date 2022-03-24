@@ -48,35 +48,10 @@ var jsHandle = await page.EvaluateHandleAsync("window");
 //  Use jsHandle for evaluations.
 ```
 
-```js
-const ulElementHandle = await page.waitForSelector('ul');
-//  Use ulElementHandle for actions and evaluation.
-```
-
-```java
-ElementHandle ulElementHandle = page.waitForSelector("ul");
-//  Use ulElementHandle for actions and evaluation.
-```
-
-```python async
-ul_element_handle = await page.wait_for_selector('ul')
-#  Use ul_element_handle for actions and evaluation.
-```
-
-```python sync
-ul_element_handle = page.wait_for_selector('ul')
-#  Use ul_element_handle for actions and evaluation.
-```
-
-```csharp
-var ulElementHandle = await page.WaitForSelectorAsync("ul");
-//  Use ulElementHandle for actions and evaluation.
-```
-
 ## Element Handles
 
-:::note
-It is recommended to use selector-based actions like [`method: Page.click`] rather than using the [ElementHandle] for input actions, unless your use case specifically requires the use of handles.
+:::caution Discouraged
+The use of [ElementHandle] is discouraged, use [Locator] objects and web-first assertions instead.
 :::
 
 When [ElementHandle] is required, it is recommended to fetch it with the
@@ -143,7 +118,7 @@ var elementHandle = jsHandle as ElementHandle;
 
 // Assert bounding box for the element
 var boundingBox = await elementHandle.BoundingBoxAsync();
-Assert.Equal(100, boundingBox.Width);
+Assert.AreEqual(100, boundingBox.Width);
 
 // Assert attribute for the element
 var classNames = await elementHandle.GetAttributeAsync("class");

@@ -15,7 +15,7 @@
  */
 
 import { contextTest as it, expect } from './config/browserTest';
-import type { Page, Frame } from '../index';
+import type { Page, Frame } from 'playwright-core';
 
 async function generate(pageOrFrame: Page | Frame, target: string): Promise<string> {
   return pageOrFrame.$eval(target, e => (window as any).playwright.selector(e));
@@ -41,6 +41,11 @@ it.describe('selector generator', () => {
   it('should generate text and normalize whitespace', async ({ page }) => {
     await page.setContent(`<div>Text  some\n\n\n more \t text   </div>`);
     expect(await generate(page, 'div')).toBe('text=Text some more text');
+  });
+
+  it('should not escape spaces inside attribute selectors', async ({ page }) => {
+    await page.setContent(`<input placeholder="Foo b ar"/>`);
+    expect(await generate(page, 'input')).toBe('[placeholder="Foo b ar"]');
   });
 
   it('should generate text for <input type=button>', async ({ page }) => {
@@ -73,12 +78,12 @@ it.describe('selector generator', () => {
       <select><option>foo</option></select>
       <select mark=1><option>bar</option></select>
     `);
-    expect(await generate(page, '[mark="1"]')).toBe(':nth-match(select, 2)');
+    expect(await generate(page, '[mark="1"]')).toBe('select >> nth=1');
   });
 
   it('should use ordinal for identical nodes', async ({ page }) => {
     await page.setContent(`<div>Text</div><div>Text</div><div mark=1>Text</div><div>Text</div>`);
-    expect(await generate(page, 'div[mark="1"]')).toBe(`:nth-match(:text("Text"), 3)`);
+    expect(await generate(page, 'div[mark="1"]')).toBe(`text=Text >> nth=2`);
   });
 
   it('should prefer data-testid', async ({ page }) => {
@@ -94,7 +99,7 @@ it.describe('selector generator', () => {
       <div data-testid=a>
         Text
       </div>`);
-    expect(await generate(page, 'div[mark="1"]')).toBe('[data-testid="a"]');
+    expect(await generate(page, 'div[mark="1"]')).toBe('[data-testid="a"] >> nth=0');
   });
 
   it('should handle second non-unique data-testid', async ({ page }) => {
@@ -105,7 +110,7 @@ it.describe('selector generator', () => {
       <div data-testid=a mark=1>
         Text
       </div>`);
-    expect(await generate(page, 'div[mark="1"]')).toBe(`:nth-match([data-testid="a"], 2)`);
+    expect(await generate(page, 'div[mark="1"]')).toBe(`[data-testid="a"] >> nth=1`);
   });
 
   it('should use readable id', async ({ page }) => {
@@ -121,7 +126,7 @@ it.describe('selector generator', () => {
       <div></div>
       <div id=aAbBcCdDeE mark=1></div>
     `);
-    expect(await generate(page, 'div[mark="1"]')).toBe(`:nth-match(div, 2)`);
+    expect(await generate(page, 'div[mark="1"]')).toBe(`div >> nth=1`);
   });
 
   it('should use has-text', async ({ page }) => {
@@ -195,7 +200,7 @@ it.describe('selector generator', () => {
       <input value="two" mark="1">
       <input value="three">
     `);
-    expect(await generate(page, 'input[mark="1"]')).toBe(':nth-match(input, 2)');
+    expect(await generate(page, 'input[mark="1"]')).toBe('input >> nth=1');
   });
 
   it.describe('should prioritise input element attributes correctly', () => {
@@ -249,7 +254,7 @@ it.describe('selector generator', () => {
       input2.setAttribute('value', 'foo');
       shadowRoot2.appendChild(input2);
     });
-    expect(await generate(page, 'input[value=foo]')).toBe(':nth-match(input, 3)');
+    expect(await generate(page, 'input[value=foo]')).toBe('input >> nth=2');
   });
 
   it('should work in dynamic iframes without navigation', async ({ page }) => {
@@ -277,8 +282,59 @@ it.describe('selector generator', () => {
     }
   });
 
-  it('should work with tricky ids', async ({page}) => {
+  it('should work with tricky attributes', async ({ page }) => {
     await page.setContent(`<button id="this:is-my-tricky.id"><span></span></button>`);
-    expect(await generate(page, 'button')).toBe('[id="this:is-my-tricky.id"]');
+    expect(await generate(page, 'button')).toBe('[id="this\\:is-my-tricky\\.id"]');
+
+    await page.setContent(`<ng:switch><span></span></ng:switch>`);
+    expect(await generate(page, 'ng\\:switch')).toBe('ng\\:switch');
+
+    await page.setContent(`<div><span></span></div>`);
+    await page.$eval('div', div => div.setAttribute('aria-label', `!#'!?:`));
+    expect(await generate(page, 'div')).toBe("[aria-label=\"\\!\\#\\'\\!\\?\\:\"]");
+
+    await page.setContent(`<div><span></span></div>`);
+    await page.$eval('div', div => div.id = `!#'!?:`);
+    expect(await generate(page, 'div')).toBe("[id=\"\\!\\#\\'\\!\\?\\:\"]");
   });
+
+  it('should work without CSS.escape', async ({ page }) => {
+    await page.setContent(`<button></button>`);
+    await page.$eval('button', button => {
+      delete window.CSS.escape;
+      button.setAttribute('name', '-tricky\u0001name');
+    });
+    expect(await generate(page, 'button')).toBe(`button[name="-tricky\\1 name"]`);
+  });
+
+  it('should ignore empty aria-label for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button aria-label="" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('#buttonId');
+  });
+
+  it('should accept valid aria-label for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button aria-label="ariaLabel" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('[aria-label="ariaLabel"]');
+  });
+
+  it('should ignore empty role for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button role="" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('#buttonId');
+  });
+
+  it('should accept valid role for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button role="roleDescription" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('button[role="roleDescription"]');
+  });
+
+  it('should ignore empty data-test-id for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button data-test-id="" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('#buttonId');
+  });
+
+  it('should accept valid data-test-id for candidate consideration', async ({ page }) => {
+    await page.setContent(`<button data-test-id="testId" id="buttonId"></button>`);
+    expect(await generate(page, 'button')).toBe('[data-test-id="testId"]');
+  });
+
 });

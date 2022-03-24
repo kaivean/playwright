@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { test, expect, stripAscii } from './playwright-test-fixtures';
+import { test, expect, stripAnsi } from './playwright-test-fixtures';
 
 function monotonicTime(): number {
   const [seconds, nanoseconds] = process.hrtime();
@@ -40,13 +40,13 @@ test('should collect stdio', async ({ runInlineTest }) => {
   expect(stderr).toEqual([{ text: 'stderr text' }, { buffer: Buffer.from('stderr buffer').toString('base64') }]);
 });
 
-test('should work with not defined errors', async ({runInlineTest}) => {
+test('should work with not defined errors', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'is-not-defined-error.spec.ts': `
       foo();
     `
   });
-  expect(stripAscii(result.output)).toContain('foo is not defined');
+  expect(stripAnsi(result.output)).toContain('foo is not defined');
   expect(result.exitCode).toBe(1);
 });
 
@@ -116,7 +116,7 @@ test('should fail on unexpected pass', async ({ runInlineTest }) => {
   });
   expect(exitCode).toBe(1);
   expect(failed).toBe(1);
-  expect(output).toContain('passed unexpectedly');
+  expect(output).toContain('Expected to fail, but passed');
 });
 
 test('should respect global timeout', async ({ runInlineTest }) => {
@@ -134,17 +134,17 @@ test('should respect global timeout', async ({ runInlineTest }) => {
   expect(monotonicTime() - now).toBeGreaterThan(2900);
 });
 
-test('should exit with code 1 if the specified folder does not exist', async ({runInlineTest}) => {
+test('should exit with code 1 if the specified folder does not exist', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'playwright.config.ts': `
       module.exports = { testDir: '111111111111.js' };
     `,
   });
   expect(result.exitCode).toBe(1);
-  expect(result.output).toContain(`111111111111.js does not exist`);
+  expect(result.output).toContain(`no tests found.`);
 });
 
-test('should exit with code 1 if passed a file name', async ({runInlineTest}) => {
+test('should exit with code 1 if passed a file name', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'playwright.config.ts': `
       module.exports = { testDir: 'test.spec.js' };
@@ -153,11 +153,11 @@ test('should exit with code 1 if passed a file name', async ({runInlineTest}) =>
     `,
   });
   expect(result.exitCode).toBe(1);
-  expect(result.output).toContain(`test.spec.js is not a directory`);
+  expect(result.output).toContain(`no tests found.`);
 });
 
-test('should exit with code 1 when config is not found', async ({runInlineTest}) => {
-  const result = await runInlineTest({'my.config.js': ''}, { 'config': 'foo.config.js' });
+test('should exit with code 1 when config is not found', async ({ runInlineTest }) => {
+  const result = await runInlineTest({ 'my.config.js': '' }, { 'config': 'foo.config.js' });
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain(`foo.config.js does not exist`);
 });

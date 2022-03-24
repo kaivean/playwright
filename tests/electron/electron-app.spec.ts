@@ -16,10 +16,10 @@
 
 import type { BrowserWindow } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { electronTest as test, expect } from './electronTest';
-import { baseTest } from '../config/baseTest';
 
-baseTest('should fire close event', async ({ playwright }) => {
+test('should fire close event', async ({ playwright }) => {
   const electronApp = await playwright._electron.launch({
     args: [path.join(__dirname, 'electron-app.js')],
   });
@@ -86,8 +86,8 @@ test('should wait for first window', async ({ electronApp }) => {
 
 test('should have a clipboard instance', async ({ electronApp }) => {
   const clipboardContentToWrite = 'Hello from Playwright';
-  await electronApp.evaluate(async ({clipboard}, text) => clipboard.writeText(text), clipboardContentToWrite);
-  const clipboardContentRead = await electronApp.evaluate(async ({clipboard}) => clipboard.readText());
+  await electronApp.evaluate(async ({ clipboard }, text) => clipboard.writeText(text), clipboardContentToWrite);
+  const clipboardContentRead = await electronApp.evaluate(async ({ clipboard }) => clipboard.readText());
   expect(clipboardContentRead).toEqual(clipboardContentToWrite);
 });
 
@@ -108,7 +108,7 @@ test('should return browser window', async ({ playwright }) => {
   await electronApp.close();
 });
 
-test('should bypass csp', async ({playwright, server}) => {
+test('should bypass csp', async ({ playwright, server }) => {
   const app = await playwright._electron.launch({
     args: [require('path').join(__dirname, 'electron-app.js')],
     bypassCSP: true,
@@ -122,7 +122,61 @@ test('should bypass csp', async ({playwright, server}) => {
   });
   const page = await app.firstWindow();
   await page.goto(server.PREFIX + '/csp.html');
-  await page.addScriptTag({content: 'window["__injected"] = 42;'});
+  await page.addScriptTag({ content: 'window["__injected"] = 42;' });
   expect(await page.evaluate('window["__injected"]')).toBe(42);
   await app.close();
+});
+
+test('should create page for browser view', async ({ playwright }) => {
+  const app = await playwright._electron.launch({
+    args: [path.join(__dirname, 'electron-window-app.js')],
+  });
+  const browserViewPagePromise = app.waitForEvent('window');
+  await app.evaluate(async electron => {
+    const window = electron.BrowserWindow.getAllWindows()[0];
+    const view = new electron.BrowserView();
+    window.addBrowserView(view);
+    await view.webContents.loadURL('about:blank');
+    view.setBounds({ x: 0, y: 0, width: 256, height: 256 });
+  });
+  await browserViewPagePromise;
+  expect(app.windows()).toHaveLength(2);
+  await app.close();
+});
+
+test('should return same browser window for browser view pages', async ({ playwright }) => {
+  const app = await playwright._electron.launch({
+    args: [path.join(__dirname, 'electron-window-app.js')],
+  });
+  const browserViewPagePromise = app.waitForEvent('window');
+  await app.evaluate(async electron => {
+    const window = electron.BrowserWindow.getAllWindows()[0];
+    const view = new electron.BrowserView();
+    window.addBrowserView(view);
+    await view.webContents.loadURL('about:blank');
+    view.setBounds({ x: 0, y: 0, width: 256, height: 256 });
+  });
+  await browserViewPagePromise;
+  const [firstWindowId, secondWindowId] = await Promise.all(
+      app.windows().map(async page => {
+        const bwHandle = await app.browserWindow(page);
+        const id = await bwHandle.evaluate((bw: BrowserWindow) => bw.id);
+        return id;
+      })
+  );
+  expect(firstWindowId).toEqual(secondWindowId);
+  await app.close();
+});
+
+test('should record video', async ({ playwright }, testInfo) => {
+  const app = await playwright._electron.launch({
+    args: [path.join(__dirname, 'electron-window-app.js')],
+    recordVideo: { dir: testInfo.outputPath('video') }
+  });
+  const page = await app.firstWindow();
+  await page.setContent(`<style>body {background:red}</style>`);
+  await page.waitForTimeout(1000);
+  await app.close();
+  const videoPath = await page.video().path();
+  expect(fs.statSync(videoPath).size).toBeGreaterThan(0);
 });

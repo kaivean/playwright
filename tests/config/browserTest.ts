@@ -14,73 +14,54 @@
  * limitations under the License.
  */
 
-import type { Fixtures } from './test-runner';
-import type { Browser, BrowserContext, BrowserContextOptions, BrowserType, LaunchOptions, Page } from '../../index';
-import { removeFolders } from '../../lib/utils/utils';
-import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
+import * as path from 'path';
+import type { BrowserContext, BrowserContextOptions, BrowserType, Page } from 'playwright-core';
+import { removeFolders } from '../../packages/playwright-core/lib/utils/utils';
+import { baseTest } from './baseTest';
 import { RemoteServer, RemoteServerOptions } from './remoteServer';
-import { baseTest, CommonWorkerFixtures } from './baseTest';
 
-type PlaywrightWorkerOptions = {
-  tracesDir: LaunchOptions['tracesDir'];
-  executablePath: LaunchOptions['executablePath'];
-  proxy: LaunchOptions['proxy'];
-  args: LaunchOptions['args'];
-};
-export type PlaywrightWorkerFixtures = {
-  browserType: BrowserType;
-  browserOptions: LaunchOptions;
-  browser: Browser;
+export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
   browserVersion: string;
+  defaultSameSiteCookieValue: string;
+  browserMajorVersion: number;
+  browserType: BrowserType;
+  isAndroid: boolean;
+  isElectron: boolean;
 };
-type PlaywrightTestOptions = {
-  hasTouch: BrowserContextOptions['hasTouch'];
-};
-type PlaywrightTestFixtures = {
+
+type BrowserTestTestFixtures = PageTestFixtures & {
   createUserDataDir: () => Promise<string>;
   launchPersistent: (options?: Parameters<BrowserType['launchPersistentContext']>[1]) => Promise<{ context: BrowserContext, page: Page }>;
   startRemoteServer: (options?: RemoteServerOptions) => Promise<RemoteServer>;
-  contextOptions: BrowserContextOptions;
   contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
-  context: BrowserContext;
-  page: Page;
 };
-export type PlaywrightOptions = PlaywrightWorkerOptions & PlaywrightTestOptions;
 
-export const playwrightFixtures: Fixtures<PlaywrightTestOptions & PlaywrightTestFixtures, PlaywrightWorkerOptions & PlaywrightWorkerFixtures, {}, CommonWorkerFixtures> = {
-  tracesDir: [ undefined, { scope: 'worker' } ],
-  executablePath: [ undefined, { scope: 'worker' } ],
-  proxy: [ undefined, { scope: 'worker' } ],
-  args: [ undefined, { scope: 'worker' } ],
-  hasTouch: undefined,
+const test = baseTest.extend<BrowserTestTestFixtures, BrowserTestWorkerFixtures>({
+  browserVersion: [async ({ browser }, run) => {
+    await run(browser.version());
+  }, { scope: 'worker' } ],
 
   browserType: [async ({ playwright, browserName }, run) => {
     await run(playwright[browserName]);
   }, { scope: 'worker' } ],
 
-  browserOptions: [async ({ headless, channel, executablePath, tracesDir, proxy, args }, run) => {
-    await run({
-      headless,
-      channel,
-      executablePath,
-      tracesDir,
-      proxy,
-      args,
-      handleSIGINT: false,
-    });
+  defaultSameSiteCookieValue: [async ({ browserName, browserMajorVersion }, run) => {
+    await run(browserName === 'chromium' || (browserName === 'firefox' && browserMajorVersion >= 96 && browserMajorVersion < 97) ? 'Lax' : 'None');
   }, { scope: 'worker' } ],
 
-  browser: [async ({ browserType, browserOptions }, run) => {
-    const browser = await browserType.launch(browserOptions);
-    await run(browser);
-    await browser.close();
+  browserMajorVersion: [async ({ browserVersion }, run) => {
+    await run(Number(browserVersion.split('.')[0]));
   }, { scope: 'worker' } ],
 
-  browserVersion: [async ({ browser }, run) => {
-    await run(browser.version());
-  }, { scope: 'worker' } ],
+  isAndroid: [false, { scope: 'worker' } ],
+  isElectron: [false, { scope: 'worker' } ],
+
+  contextFactory: async ({ _contextFactory }: any, run) => {
+    await run(_contextFactory);
+  },
 
   createUserDataDir: async ({}, run) => {
     const dirs: string[] = [];
@@ -98,13 +79,13 @@ export const playwrightFixtures: Fixtures<PlaywrightTestOptions & PlaywrightTest
     await removeFolders(dirs);
   },
 
-  launchPersistent: async ({ createUserDataDir, browserType, browserOptions }, run) => {
+  launchPersistent: async ({ createUserDataDir, browserType }, run) => {
     let persistentContext: BrowserContext | undefined;
     await run(async options => {
       if (persistentContext)
-        throw new Error('can only launch one persitent context');
+        throw new Error('can only launch one persistent context');
       const userDataDir = await createUserDataDir();
-      persistentContext = await browserType.launchPersistentContext(userDataDir, { ...browserOptions, ...options });
+      persistentContext = await browserType.launchPersistentContext(userDataDir, { ...options });
       const page = persistentContext.pages()[0];
       return { context: persistentContext, page };
     });
@@ -112,51 +93,26 @@ export const playwrightFixtures: Fixtures<PlaywrightTestOptions & PlaywrightTest
       await persistentContext.close();
   },
 
-  startRemoteServer: async ({ browserType, browserOptions }, run) => {
+  startRemoteServer: async ({ childProcess, browserType }, run) => {
     let remoteServer: RemoteServer | undefined;
     await run(async options => {
       if (remoteServer)
         throw new Error('can only start one remote server');
       remoteServer = new RemoteServer();
-      await remoteServer._start(browserType, browserOptions, options);
+      await remoteServer._start(childProcess, browserType, options);
       return remoteServer;
     });
-    if (remoteServer)
+    if (remoteServer) {
       await remoteServer.close();
+      // Give any connected browsers a chance to disconnect to avoid
+      // poisoning next test with quasy-alive browsers.
+      await new Promise(f => setTimeout(f, 1000));
+    }
   },
+});
 
-  contextOptions: async ({ video, hasTouch, browserVersion }, run, testInfo) => {
-    const debugName = path.relative(testInfo.project.outputDir, testInfo.outputDir).replace(/[\/\\]/g, '-');
-    const contextOptions = {
-      recordVideo: video ? { dir: testInfo.outputPath('') } : undefined,
-      _debugName: debugName,
-      hasTouch,
-    } as BrowserContextOptions;
-    await run(contextOptions);
-  },
-
-  contextFactory: async ({ browser, contextOptions }, run) => {
-    const contexts: BrowserContext[] = [];
-    await run(async options => {
-      const context = await browser.newContext({ ...contextOptions, ...options });
-      contexts.push(context);
-      return context;
-    });
-    await Promise.all(contexts.map(context => context.close()));
-  },
-
-  context: async ({ contextFactory }, run) => {
-    await run(await contextFactory());
-  },
-
-  page: async ({ context }, run) => {
-    await run(await context.newPage());
-  },
-};
-
-const test = baseTest.extend<PlaywrightTestOptions & PlaywrightTestFixtures, PlaywrightWorkerOptions & PlaywrightWorkerFixtures>(playwrightFixtures);
 export const playwrightTest = test;
 export const browserTest = test;
 export const contextTest = test;
 
-export { expect } from './test-runner';
+export { expect } from '@playwright/test';

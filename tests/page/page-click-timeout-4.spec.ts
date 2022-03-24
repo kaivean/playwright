@@ -17,7 +17,7 @@
 
 import { test as it, expect } from './pageTest';
 
-it('should timeout waiting for stable position', async ({page, server}) => {
+it('should timeout waiting for stable position', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/input/button.html');
   const button = await page.$('button');
   await button.evaluate(button => {
@@ -28,4 +28,20 @@ it('should timeout waiting for stable position', async ({page, server}) => {
   expect(error.message).toContain('elementHandle.click: Timeout 3000ms exceeded.');
   expect(error.message).toContain('waiting for element to be visible, enabled and stable');
   expect(error.message).toContain('element is not stable - waiting');
+});
+
+it('should click for the second time after first timeout', async ({ page, server, mode }) => {
+  it.skip(mode !== 'default');
+
+  await page.goto(server.PREFIX + '/input/button.html');
+  const __testHookBeforePointerAction = () => new Promise(f => setTimeout(f, 1500));
+  const error = await page.click('button', { timeout: 1000, __testHookBeforePointerAction } as any).catch(e => e);
+  expect(error.message).toContain('page.click: Timeout 1000ms exceeded.');
+
+  expect(await page.evaluate('result')).toBe('Was not clicked');
+  await page.waitForTimeout(2000);
+  expect(await page.evaluate('result')).toBe('Was not clicked');
+
+  await page.click('button');
+  expect(await page.evaluate('result')).toBe('Clicked');
 });

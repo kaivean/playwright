@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { test, expect } from './playwright-test-fixtures';
+import { test, expect, stripAnsi } from './playwright-test-fixtures';
 
 test('test modifiers should work', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -130,7 +130,7 @@ test('test modifiers should work', async ({ runInlineTest }) => {
   expect(result.skipped).toBe(9);
 });
 
-test('test modifiers should check types', async ({runTSC}) => {
+test('test modifiers should check types', async ({ runTSC }) => {
   const result = await runTSC({
     'helper.ts': `
       export const test = pwt.test.extend<{ foo: boolean }>({
@@ -179,6 +179,18 @@ test('test modifiers should check types', async ({runTSC}) => {
         // @ts-expect-error
         test.skip(42);
       });
+      test.skip('skipped', async ({}) => {
+      });
+      test.fixme('fixme', async ({}) => {
+      });
+      // @ts-expect-error
+      test.skip('skipped', 'skipped');
+      // @ts-expect-error
+      test.fixme('fixme', 'fixme');
+      // @ts-expect-error
+      test.skip(true, async () => {});
+      // @ts-expect-error
+      test.fixme(true, async () => {});
     `,
   });
   expect(result.exitCode).toBe(0);
@@ -213,4 +225,143 @@ test('modifier with a function should throw in the test', async ({ runInlineTest
   });
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain('test.skip() with a function can only be called inside describe block');
+});
+
+test('test.skip with worker fixtures only should skip before hooks and tests', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const test = pwt.test.extend({
+        foo: [ 'foo', { scope: 'worker' }],
+      });
+      const logs = [];
+      test.beforeEach(() => {
+        console.log('\\n%%beforeEach');
+      });
+      test('passed', () => {
+        console.log('\\n%%passed');
+      });
+      test.describe('suite1', () => {
+        test.skip(({ foo }) => {
+          console.log('\\n%%skip');
+          return foo === 'foo';
+        }, 'reason');
+        test.beforeAll(() => {
+          console.log('\\n%%beforeAll');
+        });
+        test('skipped1', () => {
+          console.log('\\n%%skipped1');
+        });
+        test.describe('suite2', () => {
+          test('skipped2', () => {
+            console.log('\\n%%skipped2');
+          });
+        });
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+  expect(result.skipped).toBe(2);
+  expect(result.report.suites[0].specs[0].tests[0].annotations).toEqual([]);
+  expect(result.report.suites[0].suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.report.suites[0].suites[0].suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%beforeEach',
+    '%%passed',
+    '%%skip',
+  ]);
+});
+
+test('test.skip without a callback in describe block should skip hooks', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const { test } = pwt;
+      const logs = [];
+      test.beforeAll(() => {
+        console.log('%%beforeAll');
+      });
+      test.beforeEach(() => {
+        console.log('%%beforeEach');
+      });
+      test.skip(true, 'reason');
+      test('skipped1', () => {
+        console.log('%%skipped1');
+      });
+      test.describe('suite1', () => {
+        test('skipped2', () => {
+          console.log('%%skipped2');
+        });
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.skipped).toBe(2);
+  expect(result.report.suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.report.suites[0].suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.output).not.toContain('%%');
+});
+
+test('test.skip should not define a skipped test inside another test', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const { test } = pwt;
+      const logs = [];
+      test('passes', () => {
+        test.skip('foo', () => {
+          console.log('%%dontseethis');
+          throw new Error('foo');
+        });
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('It looks like you are calling test.skip() inside the test and pass a callback');
+});
+
+test('modifier timeout should be reported', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const { test } = pwt;
+      test.skip(async () => new Promise(() => {}));
+      test('fails', () => {
+      });
+    `,
+  }, { timeout: 2000 });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Timeout of 2000ms exceeded in skip modifier.');
+  expect(stripAnsi(result.output)).toContain('6 |       test.skip(async () => new Promise(() => {}));');
+});
+
+test('should not run hooks if modifier throws', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const { test } = pwt;
+      test.skip(() => {
+        console.log('%%modifier');
+        throw new Error('Oh my');
+      });
+      test.beforeAll(() => {
+        console.log('%%beforeEach');
+      });
+      test.beforeEach(() => {
+        console.log('%%beforeEach');
+      });
+      test.afterEach(() => {
+        console.log('%%afterEach');
+      });
+      test.afterAll(() => {
+        console.log('%%beforeEach');
+      });
+      test('skipped1', () => {
+        console.log('%%skipped1');
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%modifier',
+  ]);
 });

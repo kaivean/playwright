@@ -15,10 +15,25 @@
  * limitations under the License.
  */
 
-import { test as it, expect } from './pageTest';
+import { test as base, expect } from './pageTest';
 import fs from 'fs';
 
-it('should work', async ({page, server}) => {
+const it = base.extend<{
+  // We access test servers at 10.0.2.2 from inside the browser on Android,
+  // which is actually forwarded to the desktop localhost.
+  // To use request such an url with apiRequestContext on the desktop, we need to change it back to localhost.
+  rewriteAndroidLoopbackURL(url: string): string
+      }>({
+        rewriteAndroidLoopbackURL: ({ isAndroid }, use) => use(givenURL => {
+          if (!isAndroid)
+            return givenURL;
+          const requestURL = new URL(givenURL);
+          requestURL.hostname = 'localhost';
+          return requestURL.toString();
+        })
+      });
+
+it('should work', async ({ page, server }) => {
   await page.route('**/*', route => {
     route.fulfill({
       status: 201,
@@ -35,7 +50,20 @@ it('should work', async ({page, server}) => {
   expect(await page.evaluate(() => document.body.textContent)).toBe('Yo, page!');
 });
 
-it('should work with status code 422', async ({page, server}) => {
+it('should work with buffer as body', async ({ page, server, browserName, isLinux }) => {
+  it.fail(browserName === 'webkit' && isLinux, 'Loading of application/octet-stream resource fails');
+  await page.route('**/*', route => {
+    route.fulfill({
+      status: 200,
+      body: Buffer.from('Yo, page!')
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(response.status()).toBe(200);
+  expect(await page.evaluate(() => document.body.textContent)).toBe('Yo, page!');
+});
+
+it('should work with status code 422', async ({ page, server }) => {
   await page.route('**/*', route => {
     route.fulfill({
       status: 422,
@@ -48,7 +76,7 @@ it('should work with status code 422', async ({page, server}) => {
   expect(await page.evaluate(() => document.body.textContent)).toBe('Yo, page!');
 });
 
-it('should allow mocking binary responses', async ({page, server, browserName, headless, asset, isAndroid}) => {
+it('should allow mocking binary responses', async ({ page, server, browserName, headless, asset, isAndroid }) => {
   it.skip(browserName === 'firefox' && !headless, 'Firefox headed produces a different image.');
   it.skip(isAndroid);
 
@@ -69,7 +97,7 @@ it('should allow mocking binary responses', async ({page, server, browserName, h
   expect(await img.screenshot()).toMatchSnapshot('mock-binary-response.png');
 });
 
-it('should allow mocking svg with charset', async ({page, server, browserName, headless, isAndroid}) => {
+it('should allow mocking svg with charset', async ({ page, server, browserName, headless, isAndroid }) => {
   it.skip(browserName === 'firefox' && !headless, 'Firefox headed produces a different image.');
   it.skip(isAndroid);
 
@@ -89,7 +117,7 @@ it('should allow mocking svg with charset', async ({page, server, browserName, h
   expect(await img.screenshot()).toMatchSnapshot('mock-svg.png');
 });
 
-it('should work with file path', async ({page, server, asset, isAndroid}) => {
+it('should work with file path', async ({ page, server, asset, isAndroid }) => {
   it.skip(isAndroid);
 
   await page.route('**/*', route => route.fulfill({ contentType: 'shouldBeIgnored', path: asset('pptr.png') }));
@@ -103,7 +131,7 @@ it('should work with file path', async ({page, server, asset, isAndroid}) => {
   expect(await img.screenshot()).toMatchSnapshot('mock-binary-response.png');
 });
 
-it('should stringify intercepted request response headers', async ({page, server}) => {
+it('should stringify intercepted request response headers', async ({ page, server }) => {
   await page.route('**/*', route => {
     route.fulfill({
       status: 200,
@@ -120,7 +148,7 @@ it('should stringify intercepted request response headers', async ({page, server
   expect(await page.evaluate(() => document.body.textContent)).toBe('Yo, page!');
 });
 
-it('should not modify the headers sent to the server', async ({page, server}) => {
+it('should not modify the headers sent to the server', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/empty.html');
   const interceptedRequests = [];
 
@@ -157,7 +185,7 @@ it('should not modify the headers sent to the server', async ({page, server}) =>
   expect(interceptedRequests[1].headers).toEqual(interceptedRequests[0].headers);
 });
 
-it('should include the origin header', async ({page, server, isAndroid}) => {
+it('should include the origin header', async ({ page, server, isAndroid }) => {
   it.skip(isAndroid, 'No cross-process on Android');
 
   await page.goto(server.PREFIX + '/empty.html');
@@ -179,4 +207,114 @@ it('should include the origin header', async ({page, server, isAndroid}) => {
   }, server.CROSS_PROCESS_PREFIX + '/something');
   expect(text).toBe('done');
   expect(interceptedRequest.headers()['origin']).toEqual(server.PREFIX);
+});
+
+it('should fulfill with global fetch result', async ({ playwright, page, server, isElectron, rewriteAndroidLoopbackURL }) => {
+  it.fixme(isElectron, 'error: Browser context management is not supported.');
+  await page.route('**/*', async route => {
+    const request = await playwright.request.newContext();
+    const response = await request.get(rewriteAndroidLoopbackURL(server.PREFIX + '/simple.json'));
+    route.fulfill({ response });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({ 'foo': 'bar' });
+});
+
+it('should fulfill with fetch result', async ({ page, server, isElectron, rewriteAndroidLoopbackURL }) => {
+  it.fixme(isElectron, 'error: Browser context management is not supported.');
+  await page.route('**/*', async route => {
+    const response = await page.request.get(rewriteAndroidLoopbackURL(server.PREFIX + '/simple.json'));
+    route.fulfill({ response });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({ 'foo': 'bar' });
+});
+
+it('should fulfill with fetch result and overrides', async ({ page, server, isElectron, rewriteAndroidLoopbackURL }) => {
+  it.fixme(isElectron, 'error: Browser context management is not supported.');
+  await page.route('**/*', async route => {
+    const response = await page.request.get(rewriteAndroidLoopbackURL(server.PREFIX + '/simple.json'));
+    route.fulfill({
+      response,
+      status: 201,
+      headers: {
+        'Content-Type': 'application/json', // Case matters for the tested behavior
+        'foo': 'bar'
+      }
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(response.status()).toBe(201);
+  expect((await response.allHeaders()).foo).toEqual('bar');
+  expect(await response.json()).toEqual({ 'foo': 'bar' });
+});
+
+it('should fetch original request and fulfill', async ({ page, server, isElectron, isAndroid }) => {
+  it.fixme(isElectron, 'error: Browser context management is not supported.');
+  it.skip(isAndroid, 'The internal Android localhost (10.0.0.2) != the localhost on the host');
+  await page.route('**/*', async route => {
+    const response = await page.request.fetch(route.request());
+    route.fulfill({
+      response,
+    });
+  });
+  const response = await page.goto(server.PREFIX + '/title.html');
+  expect(response.status()).toBe(200);
+  expect(await page.title()).toEqual('Woof-Woof');
+});
+
+it('should fulfill with multiple set-cookie', async ({ page, server, isAndroid, isElectron }) => {
+  it.fixme(isElectron, 'Electron 14+ is required');
+  it.fixme(isAndroid);
+  const cookies = ['a=b', 'c=d'];
+  await page.route('**/empty.html', async route => {
+    route.fulfill({
+      status: 200,
+      headers: {
+        'X-Header-1': 'v1',
+        'Set-Cookie': cookies.join('\n'),
+        'X-Header-2': 'v2',
+      },
+      body: ''
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect((await page.evaluate(() => document.cookie)).split(';').map(s => s.trim()).sort()).toEqual(cookies);
+  expect(await response.headerValue('X-Header-1')).toBe('v1');
+  expect(await response.headerValue('X-Header-2')).toBe('v2');
+});
+
+it('should fulfill with fetch response that has multiple set-cookie', async ({ playwright, page, server, isAndroid }) => {
+  it.fixme(isAndroid);
+  server.setRoute('/empty.html', (req, res) => {
+    res.setHeader('Set-Cookie', ['a=b', 'c=d']);
+    res.setHeader('Content-Type', 'text/html');
+    res.end();
+  });
+  await page.route('**/empty.html', async route => {
+    const request = await playwright.request.newContext();
+    const response = await request.fetch(route.request());
+    route.fulfill({ response });
+  });
+  await page.goto(server.EMPTY_PAGE);
+  const cookie = await page.evaluate(() => document.cookie);
+  expect(cookie.split(';').map(s => s.trim()).sort()).toEqual(['a=b', 'c=d']);
+});
+
+it('headerValue should return set-cookie from intercepted response', async ({ page, server, browserName }) => {
+  it.fail(browserName === 'chromium', 'Set-Cookie is missing in response after interception');
+  it.fixme(browserName === 'webkit', 'Set-Cookie with \n in intercepted response does not pass validation in WebCore, see also https://github.com/microsoft/playwright/pull/9273');
+  await page.route('**/empty.html', async route => {
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Set-Cookie': 'a=b',
+      },
+      body: ''
+    });
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(await response.headerValue('Set-Cookie')).toBe('a=b');
 });

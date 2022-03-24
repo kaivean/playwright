@@ -19,8 +19,8 @@ import { playwrightTest as it, expect } from './config/browserTest';
 import { verifyViewport } from './config/utils';
 import fs from 'fs';
 
-it('context.cookies() should work', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent();
+it('context.cookies() should work @smoke', async ({ server, launchPersistent, defaultSameSiteCookieValue }) => {
+  const { page } = await launchPersistent();
   await page.goto(server.EMPTY_PAGE);
   const documentCookie = await page.evaluate(() => {
     document.cookie = 'username=John Doe';
@@ -35,17 +35,18 @@ it('context.cookies() should work', async ({server, launchPersistent}) => {
     expires: -1,
     httpOnly: false,
     secure: false,
-    sameSite: 'None',
+    sameSite: defaultSameSiteCookieValue,
   }]);
 });
 
-it('context.addCookies() should work', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent();
+it('context.addCookies() should work', async ({ server, launchPersistent, browserName, isWindows }) => {
+  const { page } = await launchPersistent();
   await page.goto(server.EMPTY_PAGE);
   await page.context().addCookies([{
     url: server.EMPTY_PAGE,
     name: 'username',
-    value: 'John Doe'
+    value: 'John Doe',
+    sameSite: 'Lax',
   }]);
   expect(await page.evaluate(() => document.cookie)).toBe('username=John Doe');
   expect(await page.context().cookies()).toEqual([{
@@ -56,12 +57,12 @@ it('context.addCookies() should work', async ({server, launchPersistent}) => {
     expires: -1,
     httpOnly: false,
     secure: false,
-    sameSite: 'None',
+    sameSite: (browserName === 'webkit' && isWindows) ? 'None' : 'Lax',
   }]);
 });
 
-it('context.clearCookies() should work', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent();
+it('context.clearCookies() should work', async ({ server, launchPersistent }) => {
+  const { page } = await launchPersistent();
   await page.goto(server.EMPTY_PAGE);
   await page.context().addCookies([{
     url: server.EMPTY_PAGE,
@@ -79,8 +80,8 @@ it('context.clearCookies() should work', async ({server, launchPersistent}) => {
   expect(await page.evaluate('document.cookie')).toBe('');
 });
 
-it('should(not) block third party cookies', async ({server, launchPersistent, browserName}) => {
-  const {page, context} = await launchPersistent();
+it('should(not) block third party cookies', async ({ server, launchPersistent, browserName, browserMajorVersion }) => {
+  const { page, context } = await launchPersistent();
   await page.goto(server.EMPTY_PAGE);
   await page.evaluate(src => {
     let fulfill;
@@ -96,7 +97,7 @@ it('should(not) block third party cookies', async ({server, launchPersistent, br
     return document.cookie;
   });
   await page.waitForTimeout(2000);
-  const allowsThirdParty = browserName === 'chromium' || browserName === 'firefox';
+  const allowsThirdParty = browserName === 'firefox' && browserMajorVersion >= 97;
   expect(documentCookie).toBe(allowsThirdParty ? 'username=John Doe' : '');
   const cookies = await context.cookies(server.CROSS_PROCESS_PREFIX + '/grid.html');
   if (allowsThirdParty) {
@@ -117,20 +118,20 @@ it('should(not) block third party cookies', async ({server, launchPersistent, br
   }
 });
 
-it('should support viewport option', async ({launchPersistent}) => {
-  const {page, context} = await launchPersistent({viewport: { width: 456, height: 789 }});
+it('should support viewport option', async ({ launchPersistent }) => {
+  const { page, context } = await launchPersistent({ viewport: { width: 456, height: 789 } });
   await verifyViewport(page, 456, 789);
   const page2 = await context.newPage();
   await verifyViewport(page2, 456, 789);
 });
 
-it('should support deviceScaleFactor option', async ({launchPersistent}) => {
-  const {page} = await launchPersistent({deviceScaleFactor: 3});
+it('should support deviceScaleFactor option', async ({ launchPersistent }) => {
+  const { page } = await launchPersistent({ deviceScaleFactor: 3 });
   expect(await page.evaluate('window.devicePixelRatio')).toBe(3);
 });
 
-it('should support userAgent option', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent({userAgent: 'foobar'});
+it('should support userAgent option', async ({ server, launchPersistent }) => {
+  const { page } = await launchPersistent({ userAgent: 'foobar' });
   expect(await page.evaluate(() => navigator.userAgent)).toBe('foobar');
   const [request] = await Promise.all([
     server.waitForRequest('/empty.html'),
@@ -139,15 +140,15 @@ it('should support userAgent option', async ({server, launchPersistent}) => {
   expect(request.headers['user-agent']).toBe('foobar');
 });
 
-it('should support bypassCSP option', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent({bypassCSP: true});
+it('should support bypassCSP option', async ({ server, launchPersistent }) => {
+  const { page } = await launchPersistent({ bypassCSP: true });
   await page.goto(server.PREFIX + '/csp.html');
-  await page.addScriptTag({content: 'window["__injected"] = 42;'});
+  await page.addScriptTag({ content: 'window["__injected"] = 42;' });
   expect(await page.evaluate('__injected')).toBe(42);
 });
 
-it('should support javascriptEnabled option', async ({launchPersistent, browserName}) => {
-  const {page} = await launchPersistent({javaScriptEnabled: false});
+it('should support javascriptEnabled option', async ({ launchPersistent, browserName }) => {
+  const { page } = await launchPersistent({ javaScriptEnabled: false });
   await page.goto('data:text/html, <script>var something = "forbidden"</script>');
   let error = null;
   await page.evaluate('something').catch(e => error = e);
@@ -157,23 +158,23 @@ it('should support javascriptEnabled option', async ({launchPersistent, browserN
     expect(error.message).toContain('something is not defined');
 });
 
-it('should support httpCredentials option', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent({httpCredentials: { username: 'user', password: 'pass' }});
+it('should support httpCredentials option', async ({ server, launchPersistent }) => {
+  const { page } = await launchPersistent({ httpCredentials: { username: 'user', password: 'pass' } });
   server.setAuth('/playground.html', 'user', 'pass');
   const response = await page.goto(server.PREFIX + '/playground.html');
   expect(response.status()).toBe(200);
 });
 
-it('should support offline option', async ({server, launchPersistent}) => {
-  const {page} = await launchPersistent({offline: true});
+it('should support offline option', async ({ server, launchPersistent }) => {
+  const { page } = await launchPersistent({ offline: true });
   const error = await page.goto(server.EMPTY_PAGE).catch(e => e);
   expect(error).toBeTruthy();
 });
 
-it('should support acceptDownloads option', async ({server, launchPersistent}) => {
-  it.skip(true, 'Unskip once we support downloads in persistent context.');
+it('should support acceptDownloads option', async ({ server, launchPersistent, mode }) => {
+  it.skip(mode === 'service', 'download.path() is not avaialble in remote mode');
 
-  const {page} = await launchPersistent({acceptDownloads: true});
+  const { page } = await launchPersistent();
   server.setRoute('/download', (req, res) => {
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', 'attachment');

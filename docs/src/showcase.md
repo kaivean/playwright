@@ -26,10 +26,13 @@ title: "Community Showcase"
 ## Tools
 
 * [Applitools](https://applitools.com): Add AI-powered visual assertions and run your Playwright tests on all browser, device, and viewport combinations in parallel, without requiring any setup.
+* [BrowserStack](https://www.browserstack.com/docs/automate/playwright): Run cross-browser Playwright tests in parallel on the BrowserStack cloud
+* [Checkly](https://checklyhq.com): Run Playwright checks on a schedule or on demand to monitor and test your web application.
 * [CodeceptJS](https://github.com/Codeception/CodeceptJS): Write scenario-driven Playwright tests with synchronous code
 * [dom-to-playwright](https://github.com/Xiphe/dom-to-playwright) to copy a JSDOM snapshot into a Playwright page.
 * [expected-condition-playwright](https://github.com/elaichenkov/expected-condition-playwright): Supplies a set of common expected conditions that can wait for certain states and conditions
 * [Headless Testing](https://headlesstesting.com/support/start/playwright.html): Run Playwright tests on browsers in the cloud
+* [Lariat](https://github.com/Widen/lariat): Simplify page object construction for your Playwright tests
 * [Lumberjack](https://github.com/JakePartusch/lumberjack): Automated accessibility scanner to run checks on your entire website
 * [mockiavelli](https://github.com/HLTech/mockiavelli) Request mocking library for Playwright to test SPA in isolation from backend APIs.
 * [Moon](https://github.com/aerokube/moon): Run Playwright tests in parallel in Kubernetes cluster (free up to 4 parallel sessions)
@@ -45,7 +48,7 @@ title: "Community Showcase"
 
 ## Frameworks
 
-* [jest-playwright](https://github.com/mmarkelov/jest-playwright): Jest preset to run Playwright tests with Jest
+* [karma-playwright-launcher](https://github.com/Onslip/karma-playwright-launcher): Playwright powered browser support for Karma
 * [query-selector-shadow-dom](https://github.com/Georgegriff/query-selector-shadow-dom): Custom selector engine to pierce shadow DOM roots
 * [playwright-fluent](https://github.com/hdorgeval/playwright-fluent): Fluent API around Playwright
 * [robotframework-browser](https://robotframework-browser.org/) Robotframework library that uses Playwright to achieve good development ergonomics.
@@ -62,6 +65,8 @@ title: "Community Showcase"
 * [playwright-jest-circus-allure](https://github.com/d-shch/playwright-jest-circus-allure): Example how to use allure-report and jest-circus with playwright
 * [Heroku Playwright Example](https://github.com/mxschmitt/heroku-playwright-example): Example using Playwright on Heroku
 * [Sauce Labs Playwright Example](https://github.com/saucelabs/saucectl-playwright-example): Example using Playwright on Sauce Labs
+* [BrowserStack Playwright Samples](https://github.com/browserstack/playwright-browserstack): Playwright sample tests to run on BrowserStack
+* [Playwright - Parallel execution on AWS Lambda](https://github.com/PauloGoncalvesBH/running-playwright-on-aws-lambda): Running hundreds of Playwright tests in a few seconds with AWS Lambda
 
 ## Guides
 

@@ -166,7 +166,7 @@ await page.route('**/xhr_endpoint', route => route.fulfill({ path: 'mock_data.js
 
 ```java
 page.route("**/xhr_endpoint", route -> route.fulfill(
-  new Route.FulfillOptions().setPath(Paths.get("mock_data.json")));
+  new Route.FulfillOptions().setPath(Paths.get("mock_data.json"))));
 ```
 
 ```python async
@@ -219,6 +219,12 @@ Optional response body as raw bytes.
 
 File path to respond with. The content type will be inferred from file extension. If `path` is a relative path, then it
 is resolved relative to the current working directory.
+
+### option: Route.fulfill.response
+* langs: js, java, python
+- `response` <[APIResponse]>
+
+[APIResponse] to fulfill route's request with. Individual fields of the response (such as headers) can be overridden using fulfill options.
 
 ## method: Route.request
 - returns: <[Request]>

@@ -14,17 +14,21 @@
  * limitations under the License.
  */
 
-import { baseTest } from '../config/baseTest';
-import type { Page } from '../../index';
-export { expect } from '../config/test-runner';
+import { TestType } from '@playwright/test';
+import { PlatformWorkerFixtures } from '../config/platformFixtures';
+import { TestModeWorkerFixtures, TestModeWorkerOptions } from '../config/testModeFixtures';
+import { androidTest } from '../android/androidTest';
+import { browserTest } from '../config/browserTest';
+import { electronTest } from '../electron/electronTest';
+import { PageTestFixtures, PageWorkerFixtures } from './pageTestApi';
+import { ServerFixtures, ServerWorkerOptions } from '../config/serverFixtures';
+export { expect } from '@playwright/test';
 
-// Page test does not guarantee an isolated context, just a new page (because Android).
-export type PageTestFixtures = {
-  browserVersion: string;
-  browserMajorVersion: number;
-  page: Page;
-  isAndroid: boolean;
-  isElectron: boolean;
-};
+let impl: TestType<PageTestFixtures & ServerFixtures, PageWorkerFixtures & PlatformWorkerFixtures & TestModeWorkerFixtures & TestModeWorkerOptions & ServerWorkerOptions> = browserTest;
 
-export const test = baseTest.declare<PageTestFixtures>();
+if (process.env.PWPAGE_IMPL === 'android')
+  impl = androidTest;
+if (process.env.PWPAGE_IMPL === 'electron')
+  impl = electronTest;
+
+export const test = impl;

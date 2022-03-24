@@ -532,7 +532,7 @@ static BOOL areEssentiallyEqual(double a, double b)
         title = url.lastPathComponent ?: url._web_userVisibleString;
     }
 
-    self.window.title = title;
+    self.window.title = [NSString stringWithFormat:@"🎭 Playwright: %@", title];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
@@ -740,6 +740,15 @@ static NSSet *dataTypes()
         return;
     }
 
+    if (navigationAction.buttonNumber == 1 &&
+        (navigationAction.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) != 0) {
+        WKWindowFeatures* windowFeatures = [[[WKWindowFeatures alloc] init] autorelease];
+        WKWebView* newView = [self webView:webView createWebViewWithConfiguration:webView.configuration forNavigationAction:navigationAction windowFeatures:windowFeatures];
+        [newView loadRequest:navigationAction.request];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+
     if (navigationAction._canHandleRequest) {
         decisionHandler(WKNavigationActionPolicyAllow);
         return;
@@ -911,7 +920,10 @@ static NSSet *dataTypes()
 - (IBAction)saveAsPDF:(id)sender
 {
     NSSavePanel *panel = [NSSavePanel savePanel];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     panel.allowedFileTypes = @[ @"pdf" ];
+#pragma clang diagnostic pop
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSInteger result) {
         if (result == NSModalResponseOK) {
             [_webView createPDFWithConfiguration:nil completionHandler:^(NSData *pdfSnapshotData, NSError *error) {
@@ -924,7 +936,10 @@ static NSSet *dataTypes()
 - (IBAction)saveAsWebArchive:(id)sender
 {
     NSSavePanel *panel = [NSSavePanel savePanel];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     panel.allowedFileTypes = @[ @"webarchive" ];
+#pragma clang diagnostic pop
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSInteger result) {
         if (result == NSModalResponseOK) {
             [_webView createWebArchiveDataWithCompletionHandler:^(NSData *archiveData, NSError *error) {

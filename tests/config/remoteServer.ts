@@ -15,10 +15,8 @@
  */
 
 import path from 'path';
-import { spawn } from 'child_process';
-import type { BrowserType, Browser, LaunchOptions } from '../../index';
-
-const playwrightPath = path.join(__dirname, '..', '..');
+import type { BrowserType, Browser, LaunchOptions } from 'playwright-core';
+import { CommonFixtures, TestChildProcess } from './commonFixtures';
 
 export type RemoteServerOptions = {
   stallOnClose?: boolean;
@@ -28,29 +26,26 @@ export type RemoteServerOptions = {
 };
 
 export class RemoteServer {
-  _output: Map<any, any>;
-  _outputCallback: Map<any, any>;
+  private _process: TestChildProcess;
+  _output: Map<string, string>;
+  _outputCallback: Map<string, () => void>;
   _browserType: BrowserType;
-  _child: import('child_process').ChildProcess;
-  _exitPromise: Promise<unknown>;
   _exitAndDisconnectPromise: Promise<any>;
   _browser: Browser;
-  _didExit: boolean;
   _wsEndpoint: string;
 
-  async _start(browserType: BrowserType, browserOptions: LaunchOptions, remoteServerOptions: RemoteServerOptions = {}) {
+  async _start(childProcess: CommonFixtures['childProcess'], browserType: BrowserType, remoteServerOptions: RemoteServerOptions = {}) {
     this._output = new Map();
     this._outputCallback = new Map();
-    this._didExit = false;
 
     this._browserType = browserType;
+    const browserOptions = (browserType as any)._defaultLaunchOptions;
     // Copy options to prevent a large JSON string when launching subprocess.
     // Otherwise, we get `Error: spawn ENAMETOOLONG` on Windows.
     const launchOptions: LaunchOptions = {
       args: browserOptions.args,
       headless: browserOptions.headless,
       channel: browserOptions.channel,
-      tracesDir: browserOptions.tracesDir,
       handleSIGINT: true,
       handleSIGTERM: true,
       handleSIGHUP: true,
@@ -58,34 +53,24 @@ export class RemoteServer {
       logger: undefined,
     };
     const options = {
-      playwrightPath,
       browserTypeName: browserType.name(),
       launchOptions,
       ...remoteServerOptions,
     };
-    this._child = spawn('node', [path.join(__dirname, 'remote-server-impl.js'), JSON.stringify(options)], { env: process.env });
-    this._child.on('error', (...args) => console.log('ERROR', ...args));
-    this._exitPromise = new Promise(resolve => this._child.on('exit', (exitCode, signal) => {
-      this._didExit = true;
-      resolve(exitCode);
-    }));
+    this._process = childProcess({
+      command: ['node', path.join(__dirname, 'remote-server-impl.js'), JSON.stringify(options)],
+    });
 
-    let outputString = '';
-    this._child.stdout.on('data', data => {
-      outputString += data.toString();
-      // Uncomment to debug.
-      // console.log(data.toString());
+    let index = 0;
+    this._process.onOutput = () => {
       let match;
-      while ((match = outputString.match(/\(([^()]+)=>([^()]+)\)/))) {
+      while ((match = this._process.output.substring(index).match(/\(([^()]+)=>([^()]+)\)/))) {
         const key = match[1];
         const value = match[2];
         this._addOutput(key, value);
-        outputString = outputString.substring(match.index + match[0].length);
+        index += match.index + match[0].length;
       }
-    });
-    this._child.stderr.on('data', data => {
-      console.log(data.toString());
-    });
+    };
 
     this._wsEndpoint = await this.out('wsEndpoint');
 
@@ -96,7 +81,7 @@ export class RemoteServer {
     }
   }
 
-  _addOutput(key, value) {
+  _addOutput(key: string, value: string) {
     this._output.set(key, value);
     const cb = this._outputCallback.get(key);
     this._outputCallback.delete(key);
@@ -104,9 +89,9 @@ export class RemoteServer {
       cb();
   }
 
-  async out(key) {
+  async out(key: string) {
     if (!this._output.has(key))
-      await new Promise(f => this._outputCallback.set(key, f));
+      await new Promise<void>(f => this._outputCallback.set(key, f));
     return this._output.get(key);
   }
 
@@ -115,11 +100,11 @@ export class RemoteServer {
   }
 
   child() {
-    return this._child;
+    return this._process.process;
   }
 
   async childExitCode() {
-    return await this._exitPromise;
+    return await this._process.exitCode;
   }
 
   async close() {
@@ -127,8 +112,7 @@ export class RemoteServer {
       await this._browser.close();
       this._browser = undefined;
     }
-    if (!this._didExit)
-      this._child.kill();
+    await this._process.close();
     return await this.childExitCode();
   }
 }

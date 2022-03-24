@@ -14,27 +14,27 @@
  * limitations under the License.
  */
 
-import type { AndroidDevice, BrowserContext } from '../../index';
-import { CommonWorkerFixtures, baseTest } from '../config/baseTest';
-import type { Fixtures } from '../config/test-runner';
-import { PageTestFixtures } from '../page/pageTest';
-export { expect } from '../config/test-runner';
+import { baseTest } from '../config/baseTest';
+import { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
+import type { AndroidDevice, BrowserContext } from 'playwright-core';
+export { expect } from '@playwright/test';
 
-type AndroidWorkerFixtures = {
+type AndroidWorkerFixtures = PageWorkerFixtures & {
   androidDevice: AndroidDevice;
+  androidContext: BrowserContext;
 };
 
-export const androidFixtures: Fixtures<PageTestFixtures, AndroidWorkerFixtures & { androidContext: BrowserContext }, {}, CommonWorkerFixtures> = {
-  androidDevice: [ async ({ playwright }, run) => {
+export const androidTest = baseTest.extend<PageTestFixtures, AndroidWorkerFixtures>({
+  androidDevice: [async ({ playwright }, run) => {
     const device = (await playwright._android.devices())[0];
     await device.shell('am force-stop org.chromium.webview_shell');
     await device.shell('am force-stop com.android.chrome');
     device.setDefaultTimeout(90000);
     await run(device);
     await device.close();
-  }, { scope: 'worker' } ],
+  }, { scope: 'worker' }],
 
-  browserVersion: async ({ androidDevice }, run) => {
+  browserVersion: [async ({ androidDevice }, run) => {
     const browserVersion = (await androidDevice.shell('dumpsys package com.android.chrome'))
         .toString('utf8')
         .split('\n')
@@ -42,25 +42,27 @@ export const androidFixtures: Fixtures<PageTestFixtures, AndroidWorkerFixtures &
         .trim()
         .split('=')[1];
     await run(browserVersion);
-  },
+  }, { scope: 'worker' }],
 
-  browserMajorVersion: async ({ browserVersion }, run) => {
+  browserMajorVersion: [async ({ browserVersion }, run) => {
     await run(Number(browserVersion.split('.')[0]));
-  },
+  }, { scope: 'worker' }],
 
-  isAndroid: true,
-  isElectron: false,
+  isAndroid: [true, { scope: 'worker' }],
+  isElectron: [false, { scope: 'worker' }],
 
-  androidContext: [ async ({ androidDevice }, run) => {
-    await run(await androidDevice.launchBrowser());
-  }, { scope: 'worker' } ],
+  androidContext: [async ({ androidDevice }, run) => {
+    const context = await androidDevice.launchBrowser();
+    const [page] = context.pages();
+    await page.goto('data:text/html,Default page');
+    await run(context);
+  }, { scope: 'worker' }],
 
   page: async ({ androidContext }, run) => {
+    // Retain default page, otherwise Clank will re-create it.
+    while (androidContext.pages().length > 1)
+      await androidContext.pages()[1].close();
     const page = await androidContext.newPage();
     await run(page);
-    for (const page of androidContext.pages())
-      await page.close();
   },
-};
-
-export const androidTest = baseTest.extend<PageTestFixtures, AndroidWorkerFixtures>(androidFixtures as any);
+});

@@ -22,7 +22,7 @@ import { verifyViewport } from './config/utils';
 browserTest.describe('page screenshot', () => {
   browserTest.skip(({ browserName, headless }) => browserName === 'firefox' && !headless, 'Firefox headed produces a different image.');
 
-  browserTest('should run in parallel in multiple pages', async ({server, contextFactory}) => {
+  browserTest('should run in parallel in multiple pages', async ({ server, contextFactory }) => {
     const context = await contextFactory();
     const N = 5;
     const pages = await Promise.all(Array(N).fill(0).map(async () => {
@@ -39,9 +39,8 @@ browserTest.describe('page screenshot', () => {
     await Promise.all(pages.map(page => page.close()));
   });
 
-  browserTest('should work with a mobile viewport', async ({browser, server, browserName}) => {
+  browserTest('should work with a mobile viewport', async ({ browser, server, browserName }) => {
     browserTest.skip(browserName === 'firefox');
-    browserTest.fixme(browserName === 'chromium');
 
     const context = await browser.newContext({ viewport: { width: 320, height: 480 }, isMobile: true });
     const page = await context.newPage();
@@ -51,11 +50,10 @@ browserTest.describe('page screenshot', () => {
     await context.close();
   });
 
-  browserTest('should work with a mobile viewport and clip', async ({browser, server, browserName, channel}) => {
+  browserTest('should work with a mobile viewport and clip', async ({ browser, server, browserName, channel }) => {
     browserTest.skip(browserName === 'firefox');
-    browserTest.skip(!!channel, 'Different result in stable/beta');
 
-    const context = await browser.newContext({viewport: { width: 320, height: 480 }, isMobile: true});
+    const context = await browser.newContext({ viewport: { width: 320, height: 480 }, isMobile: true });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/overflow.html');
     const screenshot = await page.screenshot({ clip: { x: 10, y: 10, width: 100, height: 150 } });
@@ -63,10 +61,10 @@ browserTest.describe('page screenshot', () => {
     await context.close();
   });
 
-  browserTest('should work with a mobile viewport and fullPage', async ({browser, server, browserName}) => {
+  browserTest('should work with a mobile viewport and fullPage', async ({ browser, server, browserName }) => {
     browserTest.skip(browserName === 'firefox');
 
-    const context = await browser.newContext({viewport: { width: 320, height: 480 }, isMobile: true});
+    const context = await browser.newContext({ viewport: { width: 320, height: 480 }, isMobile: true });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/overflow-large.html');
     const screenshot = await page.screenshot({ fullPage: true });
@@ -74,12 +72,39 @@ browserTest.describe('page screenshot', () => {
     await context.close();
   });
 
-  browserTest('should work with device scale factor', async ({browser, server}) => {
+  browserTest('should work with device scale factor', async ({ browser, server }) => {
     const context = await browser.newContext({ viewport: { width: 320, height: 480 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/grid.html');
     const screenshot = await page.screenshot();
     expect(screenshot).toMatchSnapshot('screenshot-device-scale-factor.png');
+    await context.close();
+  });
+
+  browserTest('should work with device scale factor and clip', async ({ browser, server }) => {
+    const context = await browser.newContext({ viewport: { width: 500, height: 500 }, deviceScaleFactor: 3 });
+    const page = await context.newPage();
+    await page.goto(server.PREFIX + '/grid.html');
+    const screenshot = await page.screenshot({ clip: { x: 50, y: 100, width: 150, height: 100 } });
+    expect(screenshot).toMatchSnapshot('screenshot-device-scale-factor-clip.png');
+    await context.close();
+  });
+
+  browserTest('should work with device scale factor and size:css', async ({ browser, server }) => {
+    const context = await browser.newContext({ viewport: { width: 320, height: 480 }, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    await page.goto(server.PREFIX + '/grid.html');
+    const screenshot = await page.screenshot({ size: 'css' });
+    expect(screenshot).toMatchSnapshot('screenshot-device-scale-factor-css-size.png');
+    await context.close();
+  });
+
+  browserTest('should work with device scale factor, clip and size:css', async ({ browser, server }) => {
+    const context = await browser.newContext({ viewport: { width: 500, height: 500 }, deviceScaleFactor: 3 });
+    const page = await context.newPage();
+    await page.goto(server.PREFIX + '/grid.html');
+    const screenshot = await page.screenshot({ clip: { x: 50, y: 100, width: 150, height: 100 }, size: 'css' });
+    expect(screenshot).toMatchSnapshot('screenshot-device-scale-factor-clip-css-size.png');
     await context.close();
   });
 
@@ -117,15 +142,47 @@ browserTest.describe('page screenshot', () => {
     expect(pixel(0, 8339).r).toBeLessThan(128);
     expect(pixel(0, 8339).b).toBeGreaterThan(128);
   });
+
+  browserTest('should handle vh units ', async ({ contextFactory }) => {
+    const context = await contextFactory();
+    const page = await context.newPage();
+
+    await page.setViewportSize({ width: 800, height: 500 });
+    await page.evaluate(() => {
+      document.body.style.margin = '0';
+      document.body.style.padding = '0';
+      document.documentElement.style.margin = '0';
+      document.documentElement.style.padding = '0';
+      const div = document.createElement('div');
+      div.style.width = '100%';
+      div.style.borderTop = '100vh solid red';
+      div.style.borderBottom = '100vh solid blue';
+      document.body.appendChild(div);
+    });
+    const buffer = await page.screenshot({ fullPage: true });
+    const decoded = PNG.sync.read(buffer);
+
+    const pixel = (x: number, y: number) => {
+      const dst = new PNG({ width: 1, height: 1 });
+      PNG.bitblt(decoded, dst, x, y, 1, 1);
+      const pixels = dst.data;
+      return { r: pixels[0], g: pixels[1], b: pixels[2], a: pixels[3] };
+    };
+
+    expect(pixel(0, 0).r).toBeGreaterThan(128);
+    expect(pixel(0, 0).b).toBeLessThan(128);
+    expect(pixel(0, 999).r).toBeLessThan(128);
+    expect(pixel(0, 999).b).toBeGreaterThan(128);
+  });
 });
 
-browserTest.describe('element sceenshot', () => {
+browserTest.describe('element screenshot', () => {
   browserTest.skip(({ browserName, headless }) => browserName === 'firefox' && !headless);
 
-  browserTest('element screenshot should work with a mobile viewport', async ({browser, server, browserName}) => {
+  browserTest('element screenshot should work with a mobile viewport', async ({ browser, server, browserName }) => {
     browserTest.skip(browserName === 'firefox');
 
-    const context = await browser.newContext({viewport: { width: 320, height: 480 }, isMobile: true});
+    const context = await browser.newContext({ viewport: { width: 320, height: 480 }, isMobile: true });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/grid.html');
     await page.evaluate(() => window.scrollBy(50, 100));
@@ -135,7 +192,7 @@ browserTest.describe('element sceenshot', () => {
     await context.close();
   });
 
-  browserTest('element screenshot should work with device scale factor', async ({browser, server, browserName}) => {
+  browserTest('element screenshot should work with device scale factor', async ({ browser, server, browserName }) => {
     browserTest.skip(browserName === 'firefox');
 
     const context = await browser.newContext({ viewport: { width: 320, height: 480 }, deviceScaleFactor: 2 });
@@ -148,7 +205,7 @@ browserTest.describe('element sceenshot', () => {
     await context.close();
   });
 
-  browserTest('should take screenshots when default viewport is null', async ({server, browser}) => {
+  browserTest('should take screenshots when default viewport is null', async ({ server, browser }) => {
     const context = await browser.newContext({ viewport: null });
     const page = await context.newPage();
     await page.setContent(`<div style='height: 10000px; background: red'></div>`);
@@ -167,7 +224,7 @@ browserTest.describe('element sceenshot', () => {
     await context.close();
   });
 
-  browserTest('should take fullPage screenshots when default viewport is null', async ({server, browser}) => {
+  browserTest('should take fullPage screenshots when default viewport is null', async ({ server, browser }) => {
     const context = await browser.newContext({ viewport: null });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/grid.html');
@@ -222,8 +279,8 @@ browserTest.describe('element sceenshot', () => {
     await context.close();
   });
 
-  browserTest('should take element screenshot when default viewport is null and restore back', async ({server, browser}) => {
-    const context = await browser.newContext({viewport: null});
+  browserTest('should take element screenshot when default viewport is null and restore back', async ({ server, browser }) => {
+    const context = await browser.newContext({ viewport: null });
     const page = await context.newPage();
     await page.setContent(`
       <div style="height: 14px">oooo</div>
@@ -252,7 +309,7 @@ browserTest.describe('element sceenshot', () => {
     await context.close();
   });
 
-  browserTest('should restore viewport after element screenshot and exception', async ({browser, mode}) => {
+  browserTest('should restore viewport after element screenshot and exception', async ({ browser, mode }) => {
     browserTest.skip(mode !== 'default');
 
     const context = await browser.newContext({ viewport: { width: 350, height: 360 } });
@@ -263,6 +320,104 @@ browserTest.describe('element sceenshot', () => {
     const error = await elementHandle.screenshot({ __testHookBeforeScreenshot } as any).catch(e => e);
     expect(error.message).toContain('oh my');
     await verifyViewport(page, 350, 360);
+    await context.close();
+  });
+
+  browserTest('element screenshots should handle vh units ', async ({ contextFactory }) => {
+    const context = await contextFactory();
+    const page = await context.newPage();
+
+    await page.setViewportSize({ width: 800, height: 500 });
+    await page.evaluate(() => {
+      const div = document.createElement('div');
+      div.style.width = '100%';
+      div.style.borderTop = '100vh solid red';
+      div.style.borderBottom = '100vh solid blue';
+      document.body.appendChild(div);
+    });
+    const elementHandle = await page.$('div');
+    const buffer = await elementHandle.screenshot();
+    const decoded = PNG.sync.read(buffer);
+
+    const pixel = (x: number, y: number) => {
+      const dst = new PNG({ width: 1, height: 1 });
+      PNG.bitblt(decoded, dst, x, y, 1, 1);
+      const pixels = dst.data;
+      return { r: pixels[0], g: pixels[1], b: pixels[2], a: pixels[3] };
+    };
+
+    expect(pixel(0, 0).r).toBeGreaterThan(128);
+    expect(pixel(0, 0).b).toBeLessThan(128);
+    expect(pixel(0, 999).r).toBeLessThan(128);
+    expect(pixel(0, 999).b).toBeGreaterThan(128);
+  });
+
+  browserTest('should work if the main resource hangs', async ({ browser, browserName, mode, server }) => {
+    browserTest.skip(mode !== 'default');
+    browserTest.fixme(browserName === 'chromium', 'https://github.com/microsoft/playwright/issues/9757');
+    const page = await browser.newPage();
+    server.setRoute('/slow', (req, res) => {
+      res.writeHead(200, {
+        'content-length': 4096,
+        'content-type': 'text/html',
+      });
+    });
+    try {
+      await page.goto(server.PREFIX + '/slow', { timeout: 1000 }).catch(() => {});
+      const screenshot = await page.screenshot();
+      expect(screenshot).toMatchSnapshot('hanging-main-resource.png');
+    } finally {
+      await page.close();
+    }
+  });
+
+  browserTest('should capture full element when larger than viewport with device scale factor', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 501, height: 501 }, deviceScaleFactor: 2.5 });
+    const page = await context.newPage();
+    await page.setContent(`
+      <div style="height: 14px">oooo</div>
+      <style>
+      div.to-screenshot {
+        border: 4px solid red;
+        box-sizing: border-box;
+        width: 600px;
+        height: 600px;
+        margin-left: 50px;
+        background: rgb(0, 100, 200);
+      }
+      ::-webkit-scrollbar{
+        display: none;
+      }
+      </style>
+      <div class="to-screenshot"></div>
+    `);
+    const screenshot = await page.locator('div.to-screenshot').screenshot();
+    expect(screenshot).toMatchSnapshot('element-larger-than-viewport-dsf.png');
+    await context.close();
+  });
+
+  browserTest('should capture full element when larger than viewport with device scale factor and size:css', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 501, height: 501 }, deviceScaleFactor: 2.5 });
+    const page = await context.newPage();
+    await page.setContent(`
+      <div style="height: 14px">oooo</div>
+      <style>
+      div.to-screenshot {
+        border: 4px solid red;
+        box-sizing: border-box;
+        width: 600px;
+        height: 600px;
+        margin-left: 50px;
+        background: rgb(0, 100, 200);
+      }
+      ::-webkit-scrollbar{
+        display: none;
+      }
+      </style>
+      <div class="to-screenshot"></div>
+    `);
+    const screenshot = await page.locator('div.to-screenshot').screenshot({ size: 'css' });
+    expect(screenshot).toMatchSnapshot('element-larger-than-viewport-dsf-css-size.png');
     await context.close();
   });
 });

@@ -175,23 +175,6 @@ test('should support different testDirs', async ({ runInlineTest }) => {
   expect(result.report.suites[1].specs[0].title).toBe('runs twice');
 });
 
-test('should allow export default form the config file', async ({ runInlineTest }) => {
-  const result = await runInlineTest({
-    'playwright.config.ts': `
-      export default { timeout: 1000 };
-    `,
-    'a.test.ts': `
-      const { test } = pwt;
-      test('fails', async ({}, testInfo) => {
-        await new Promise(f => setTimeout(f, 2000));
-      });
-    `
-  });
-
-  expect(result.exitCode).toBe(1);
-  expect(result.failed).toBe(1);
-  expect(result.output).toContain('Timeout of 1000ms exceeded.');
-});
 
 test('should allow root testDir and use it for relative paths', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -235,7 +218,7 @@ test('should throw when test() is called in config file', async ({ runInlineTest
       });
     `,
   });
-  expect(result.output).toContain('test() can only be called in a test file');
+  expect(result.output).toContain('Playwright Test did not expect test() to be called here');
 });
 
 test('should filter by project, case-insensitive', async ({ runInlineTest }) => {
@@ -276,7 +259,77 @@ test('should print nice error when project is unknown', async ({ runInlineTest }
     `
   }, { project: 'suite3' });
   expect(exitCode).toBe(1);
-  expect(output).toContain('Project "suite3" not found. Available named projects: "suite1", "suite2"');
+  expect(output).toContain('Project(s) "suite3" not found. Available named projects: "suite1", "suite2"');
+});
+
+test('should filter by project list, case-insensitive', async ({ runInlineTest }) => {
+  const { passed, failed, output, skipped } = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { projects: [
+        { name: 'suite1' },
+        { name: 'suite2' },
+        { name: 'suite3' },
+        { name: 'suite4' },
+      ] };
+    `,
+    'a.test.ts': `
+      const { test } = pwt;
+      test('pass', async ({}, testInfo) => {
+        console.log(testInfo.project.name);
+      });
+    `
+  }, { project: ['SUite2',  'Suite3'] });
+  expect(passed).toBe(2);
+  expect(failed).toBe(0);
+  expect(skipped).toBe(0);
+  expect(output).toContain('suite2');
+  expect(output).toContain('suite3');
+  expect(output).not.toContain('suite1');
+  expect(output).not.toContain('suite4');
+});
+
+test('should filter when duplicate project names exist', async ({ runInlineTest }) => {
+  const { passed, failed, output, skipped } = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { projects: [
+        { name: 'suite1' },
+        { name: 'suite2' },
+        { name: 'suite1' },
+        { name: 'suite4' },
+      ] };
+    `,
+    'a.test.ts': `
+      const { test } = pwt;
+      test('pass', async ({}, testInfo) => {
+        console.log(testInfo.project.name);
+      });
+    `
+  }, { project: ['suite1',  'sUIte4'] });
+  expect(passed).toBe(3);
+  expect(failed).toBe(0);
+  expect(skipped).toBe(0);
+  expect(output).toContain('suite1');
+  expect(output).toContain('suite4');
+  expect(output).not.toContain('suite2');
+});
+
+test('should print nice error when some of the projects are unknown', async ({ runInlineTest }) => {
+  const { output, exitCode } = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { projects: [
+        { name: 'suite1' },
+        { name: 'suite2' },
+      ] };
+    `,
+    'a.test.ts': `
+      const { test } = pwt;
+      test('pass', async ({}, testInfo) => {
+        console.log(testInfo.project.name);
+      });
+    `
+  }, { project: ['suitE1', 'suIte3', 'SUite4'] });
+  expect(exitCode).toBe(1);
+  expect(output).toContain('Project(s) "suIte3", "SUite4" not found. Available named projects: "suite1", "suite2"');
 });
 
 test('should work without config file', async ({ runInlineTest }) => {
@@ -308,7 +361,7 @@ test('should inerhit use options in projects', async ({ runInlineTest }) => {
       };
     `,
     'a.test.ts': `
-      const { test } = pwt;
+      const test = pwt.test.extend({ foo: ['', {option:true}], bar: ['', {option: true}] });
       test('pass', async ({ foo, bar  }, testInfo) => {
         test.expect(foo).toBe('config');
         test.expect(bar).toBe('project');
@@ -330,72 +383,11 @@ test('should work with undefined values and base', async ({ runInlineTest }) => 
     'a.test.ts': `
       const { test } = pwt;
       test('pass', async ({}, testInfo) => {
-        expect(testInfo.config.updateSnapshots).toBe('none');
+        expect(testInfo.config.updateSnapshots).toBe('missing');
       });
     `
-  }, {}, { CI: '1' });
+  });
 
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(1);
-});
-
-test('should work with custom reporter', async ({ runInlineTest }) => {
-  const result = await runInlineTest({
-    'reporter.ts': `
-      class Reporter {
-        constructor(options) {
-          this.options = options;
-        }
-        onBegin() {
-          console.log('\\n%%reporter-begin%%' + this.options.begin);
-        }
-        onTestBegin() {
-          console.log('\\n%%reporter-testbegin%%');
-        }
-        onStdOut() {
-          console.log('\\n%%reporter-stdout%%');
-        }
-        onStdErr() {
-          console.log('\\n%%reporter-stderr%%');
-        }
-        onTestEnd() {
-          console.log('\\n%%reporter-testend%%');
-        }
-        onTimeout() {
-          console.log('\\n%%reporter-timeout%%');
-        }
-        onError() {
-          console.log('\\n%%reporter-error%%');
-        }
-        onEnd() {
-          console.log('\\n%%reporter-end%%' + this.options.end);
-        }
-      }
-      export default Reporter;
-    `,
-    'playwright.config.ts': `
-      module.exports = {
-        reporter: [
-          [ './reporter.ts', { begin: 'begin', end: 'end' } ]
-        ]
-      };
-    `,
-    'a.test.ts': `
-      const { test } = pwt;
-      test('pass', async ({}) => {
-        console.log('log');
-        console.error('error');
-      });
-    `
-  }, { reporter: '' });
-
-  expect(result.exitCode).toBe(0);
-  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
-    '%%reporter-begin%%begin',
-    '%%reporter-testbegin%%',
-    '%%reporter-stdout%%',
-    '%%reporter-stderr%%',
-    '%%reporter-testend%%',
-    '%%reporter-end%%end',
-  ]);
 });

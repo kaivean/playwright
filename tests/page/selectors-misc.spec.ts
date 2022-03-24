@@ -17,7 +17,7 @@
 
 import { test as it, expect } from './pageTest';
 
-it('should work for open shadow roots', async ({page, server}) => {
+it('should work for open shadow roots', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/deep-shadow.html');
   expect(await page.$eval(`id=target`, e => e.textContent)).toBe('Hello from root2');
   expect(await page.$eval(`data-testid=foo`, e => e.textContent)).toBe('Hello from root1');
@@ -27,7 +27,7 @@ it('should work for open shadow roots', async ({page, server}) => {
   expect(await page.$$(`data-testid:light=foo`)).toEqual([]);
 });
 
-it('should click on links in shadow dom', async ({page, server, browserName, browserMajorVersion, isElectron, isAndroid}) => {
+it('should click on links in shadow dom', async ({ page, server, browserName, browserMajorVersion, isElectron, isAndroid }) => {
   it.fixme(browserName === 'chromium' && browserMajorVersion < 91, 'Remove when crrev.com/864024 gets to the stable channel');
   it.fixme(isAndroid);
   it.fixme(isElectron);
@@ -38,7 +38,7 @@ it('should click on links in shadow dom', async ({page, server, browserName, bro
   expect(await page.evaluate(() => (window as any).clickCount)).toBe(1);
 });
 
-it('should work with :visible', async ({page}) => {
+it('should work with :visible', async ({ page }) => {
   await page.setContent(`
     <section>
       <div id=target1></div>
@@ -58,7 +58,27 @@ it('should work with :visible', async ({page}) => {
   expect(await page.$eval('div:visible', div => div.id)).toBe('target2');
 });
 
-it('should work with :nth-match', async ({page}) => {
+it('should work with >> visible=', async ({ page }) => {
+  await page.setContent(`
+    <section>
+      <div id=target1></div>
+      <div id=target2></div>
+    </section>
+  `);
+  expect(await page.$('div >> visible=true')).toBe(null);
+
+  const error = await page.waitForSelector(`div >> visible=true`, { timeout: 100 }).catch(e => e);
+  expect(error.message).toContain('100ms');
+
+  const promise = page.waitForSelector(`div >> visible=true`, { state: 'attached' });
+  await page.$eval('#target2', div => div.textContent = 'Now visible');
+  const element = await promise;
+  expect(await element.evaluate(e => e.id)).toBe('target2');
+
+  expect(await page.$eval('div >> visible=true', div => div.id)).toBe('target2');
+});
+
+it('should work with :nth-match', async ({ page }) => {
   await page.setContent(`
     <section>
       <div id=target1></div>
@@ -93,7 +113,31 @@ it('should work with :nth-match', async ({page}) => {
   expect(await element.evaluate(e => e.id)).toBe('target3');
 });
 
-it('should work with position selectors', async ({page}) => {
+it('should work with nth=', async ({ page }) => {
+  await page.setContent(`
+    <section>
+      <div id=target1></div>
+      <div id=target2></div>
+    </section>
+  `);
+  expect(await page.$('div >> nth=2')).toBe(null);
+  expect(await page.$eval('div >> nth=0', e => e.id)).toBe('target1');
+  expect(await page.$eval('div >> nth=1', e => e.id)).toBe('target2');
+  expect(await page.$eval('section > div >> nth=1', e => e.id)).toBe('target2');
+  expect(await page.$eval('section, div >> nth=1', e => e.id)).toBe('target1');
+  expect(await page.$eval('div, section >> nth=2', e => e.id)).toBe('target2');
+
+  const promise = page.waitForSelector(`div >> nth=2`, { state: 'attached' });
+  await page.$eval('section', section => {
+    const div = document.createElement('div');
+    div.setAttribute('id', 'target3');
+    section.appendChild(div);
+  });
+  const element = await promise;
+  expect(await element.evaluate(e => e.id)).toBe('target3');
+});
+
+it('should work with position selectors', async ({ page }) => {
   /*
 
        +--+  +--+
@@ -227,6 +271,27 @@ it('xpath should be relative', async ({ page }) => {
   expect(await page.$eval(`div >> xpath=/*[@class="find-me"]`, e => e.id)).toBe('target2');
 });
 
+it('should work with pipe in xpath', async ({ page, server }) => {
+  await page.setContent(`
+    <span class="find-me" id=t1>1</span>
+    <div>
+      <span class="find-me" id=t2>2</span>
+    </div>
+    <div id=t3>3</span>
+  `);
+  expect(await page.$$eval(`//*[@id="t1"]|//*[@id="t3"]`, els => els.length)).toBe(2);
+
+  const e1 = await page.waitForSelector(`//*[@id="t1"]|//*[@id="t3"]`);
+  expect(e1).toBeTruthy();
+  expect(await e1.evaluate(e => e.id)).toBe('t1');
+
+  const e2 = await page.waitForSelector(`//*[@id="unknown"]|//*[@id="t2"]`);
+  expect(e2).toBeTruthy();
+  expect(await e2.evaluate(e => e.id)).toBe('t2');
+
+  await page.click(`//code|//span[@id="t2"]`);
+});
+
 it('data-testid on the handle should be relative', async ({ page }) => {
   await page.setContent(`
     <span data-testid="find-me" id=target1>1</span>
@@ -239,4 +304,72 @@ it('data-testid on the handle should be relative', async ({ page }) => {
   const div = await page.$('div');
   expect(await div.$eval(`data-testid=find-me`, e => e.id)).toBe('target2');
   expect(await page.$eval(`div >> data-testid=find-me`, e => e.id)).toBe('target2');
+});
+
+it('should properly determine visibility of display:contents elements', async ({ page }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/11202' });
+
+  await page.setContent(`
+    <div>
+      <p style="display:contents">DISPLAY CONTENTS</p>
+    </div>`);
+  await page.waitForSelector('"DISPLAY CONTENTS"');
+
+  await page.setContent(`
+    <div>
+      <article style="display:contents"><div>DISPLAY CONTENTS</div></article>
+    </div>`);
+  await page.waitForSelector('article');
+
+  await page.setContent(`
+    <div>
+      <article style="display:contents"><div style="display:contents">DISPLAY CONTENTS</div></article>
+    </div>`);
+  await page.waitForSelector('article');
+
+  await page.setContent(`
+    <div>
+      <article style="display:contents"><div></div>DISPLAY CONTENTS<span></span></article>
+    </div>`);
+  await page.waitForSelector('article');
+
+  await page.setContent(`
+    <div>
+      <article style="display:contents"><div></div></article>
+    </div>`);
+  await page.waitForSelector('article', { state: 'hidden' });
+});
+
+it('should work with has=', async ({ page, server }) => {
+  await page.goto(server.PREFIX + '/deep-shadow.html');
+  expect(await page.$$eval(`div >> has="#target"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> has="[data-testid=foo]"`, els => els.length)).toBe(3);
+  expect(await page.$$eval(`div >> has="[attr*=value]"`, els => els.length)).toBe(2);
+
+  await page.setContent(`<section><span></span><div></div></section><section><br></section>`);
+  expect(await page.$$eval(`section >> has="span, div"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> has="span, div"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> has="br"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> has="span, br"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`section >> has="span, br, div"`, els => els.length)).toBe(2);
+
+  await page.setContent(`<div><span>hello</span></div><div><span>world</span></div>`);
+  expect(await page.$$eval(`div >> has="text=world"`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> has="text=world"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
+  expect(await page.$$eval(`div >> has="text=\\"hello\\""`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> has="text=\\"hello\\""`, e => e.outerHTML)).toBe(`<div><span>hello</span></div>`);
+  expect(await page.$$eval(`div >> has="xpath=./span"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> has="span"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> has="span >> text=wor"`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> has="span >> text=wor"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
+  expect(await page.$eval(`div >> has="span >> text=wor" >> span`, e => e.outerHTML)).toBe(`<span>world</span>`);
+
+  const error1 = await page.$(`div >> has=abc`).catch(e => e);
+  expect(error1.message).toContain('Malformed selector: has=abc');
+  const error2 = await page.$(`has="div"`).catch(e => e);
+  expect(error2.message).toContain('"has" selector cannot be first');
+  const error3 = await page.$(`div >> has=33`).catch(e => e);
+  expect(error3.message).toContain('Malformed selector: has=33');
+  const error4 = await page.$(`div >> has="span!"`).catch(e => e);
+  expect(error4.message).toContain('Unexpected token "!" while parsing selector "span!"');
 });

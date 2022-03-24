@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const util = require('util');
+const mime = require('mime');
 const WebSocketServer = require('ws').Server;
 
 const fulfillSymbol = Symbol('fullfil callback');
@@ -69,14 +70,24 @@ class TestServer {
     else
       this._server = http.createServer(this._onRequest.bind(this));
     this._server.on('connection', socket => this._onSocket(socket));
-    this._wsServer = new WebSocketServer({server: this._server, path: '/ws'});
-    this._wsServer.on('connection', ws => {
-      if (this._onWebSocketConnectionData !== undefined)
-        ws.send(this._onWebSocketConnectionData);
+    this._wsServer = new WebSocketServer({ noServer: true });
+    this._server.on('upgrade', async (request, socket, head) => {
+      const pathname = url.parse(request.url).pathname;
+      if (pathname === '/ws-slow')
+        await new Promise(f => setTimeout(f, 2000));
+      if (!['/ws', '/ws-slow'].includes(pathname)) {
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      this._wsServer.handleUpgrade(request, socket, head, ws => {
+        // Next emit is only for our internal 'connection' listeners.
+        this._wsServer.emit('connection', ws, request);
+      });
     });
     this._server.listen(port);
     this._dirPath = dirPath;
-    this.debugServer = require('debug')('pw:server');
+    this.debugServer = require('debug')('pw:testserver');
 
     this._startTime = new Date();
     this._cachedPathPrefix = null;
@@ -89,12 +100,12 @@ class TestServer {
     this._auths = new Map();
     /** @type {!Map<string, string>} */
     this._csp = new Map();
+    /** @type {!Map<string, Object>} */
+    this._extraHeaders = new Map();
     /** @type {!Set<string>} */
     this._gzipRoutes = new Set();
     /** @type {!Map<string, !Promise>} */
     this._requestSubscribers = new Map();
-    /** @type {string|undefined} */
-    this._onWebSocketConnectionData = undefined;
 
     const cross_origin = loopback || '127.0.0.1';
     const same_origin = loopback || 'localhost';
@@ -145,6 +156,14 @@ class TestServer {
     this._csp.set(path, csp);
   }
 
+  /**
+   * @param {string} path
+   * @param {Object<string, string>} object
+   */
+  setExtraHeaders(path, object) {
+    this._extraHeaders.set(path, object);
+  }
+
   async stop() {
     this.reset();
     for (const socket of this._sockets)
@@ -167,7 +186,8 @@ class TestServer {
    */
   setRedirect(from, to) {
     this.setRoute(from, (req, res) => {
-      res.writeHead(302, { location: to });
+      let headers = this._extraHeaders.get(req.url) || {};
+      res.writeHead(302, { ...headers, location: to });
       res.end();
     });
   }
@@ -195,6 +215,7 @@ class TestServer {
     this._routes.clear();
     this._auths.clear();
     this._csp.clear();
+    this._extraHeaders.clear();
     this._gzipRoutes.clear();
     const error = new Error('Static Server has been reset');
     for (const subscriber of this._requestSubscribers.values())
@@ -214,14 +235,16 @@ class TestServer {
         throw error;
     });
     request.postBody = new Promise(resolve => {
-      let body = Buffer.from([]);
-      request.on('data', chunk => body = Buffer.concat([body, chunk]));
-      request.on('end', () => resolve(body));
+      const chunks = [];
+      request.on('data', chunk => {
+        chunks.push(chunk);
+      });
+      request.on('end', () => resolve(Buffer.concat(chunks)));
     });
-    const pathName = url.parse(request.url).path;
-    this.debugServer(`request ${request.method} ${pathName}`);
-    if (this._auths.has(pathName)) {
-      const auth = this._auths.get(pathName);
+    const path = url.parse(request.url).path;
+    this.debugServer(`request ${request.method} ${path}`);
+    if (this._auths.has(path)) {
+      const auth = this._auths.get(path);
       const credentials = Buffer.from((request.headers.authorization || '').split(' ')[1] || '', 'base64').toString();
       this.debugServer(`request credentials ${credentials}`);
       this.debugServer(`actual credentials ${auth.username}:${auth.password}`);
@@ -233,11 +256,11 @@ class TestServer {
       }
     }
     // Notify request subscriber.
-    if (this._requestSubscribers.has(pathName)) {
-      this._requestSubscribers.get(pathName)[fulfillSymbol].call(null, request);
-      this._requestSubscribers.delete(pathName);
+    if (this._requestSubscribers.has(path)) {
+      this._requestSubscribers.get(path)[fulfillSymbol].call(null, request);
+      this._requestSubscribers.delete(path);
     }
-    const handler = this._routes.get(pathName);
+    const handler = this._routes.get(path);
     if (handler) {
       handler.call(null, request, response);
     } else {
@@ -272,6 +295,12 @@ class TestServer {
     if (this._csp.has(pathName))
       response.setHeader('Content-Security-Policy', this._csp.get(pathName));
 
+    if (this._extraHeaders.has(pathName)) {
+      const object = this._extraHeaders.get(pathName);
+      for (const key in object)
+        response.setHeader(key, object[key]);
+    }
+
     const {err, data} = await fs.promises.readFile(filePath).then(data => ({data})).catch(err => ({err}));
     // The HTTP transaction might be already terminated after async hop here - do nothing in this case.
     if (response.writableEnded)
@@ -282,7 +311,7 @@ class TestServer {
       return;
     }
     const extension = filePath.substring(filePath.lastIndexOf('.') + 1);
-    const mimeType = extensionToMime[extension] || 'application/octet-stream';
+    const mimeType = mime.getType(extension) || 'application/octet-stream';
     const isTextEncoding = /^text\/|^application\/(javascript|json)/.test(mimeType);
     const contentType = isTextEncoding ? `${mimeType}; charset=utf-8` : mimeType;
     response.setHeader('Content-Type', contentType);
@@ -297,6 +326,10 @@ class TestServer {
     }
   }
 
+  onceWebSocketConnection(handler) {
+    this._wsServer.once('connection', handler);
+  }
+
   waitForWebSocketConnectionRequest() {
     return new Promise(fullfil => {
       this._wsServer.once('connection', (ws, req) => fullfil(req));
@@ -304,208 +337,8 @@ class TestServer {
   }
 
   sendOnWebSocketConnection(data) {
-    this._onWebSocketConnectionData = data;
+    this.onceWebSocketConnection(ws => ws.send(data));
   }
 }
-
-const extensionToMime = {
-  'ai': 'application/postscript',
-  'apng': 'image/apng',
-  'appcache': 'text/cache-manifest',
-  'au': 'audio/basic',
-  'bmp': 'image/bmp',
-  'cer': 'application/pkix-cert',
-  'cgm': 'image/cgm',
-  'coffee': 'text/coffeescript',
-  'conf': 'text/plain',
-  'crl': 'application/pkix-crl',
-  'css': 'text/css',
-  'csv': 'text/csv',
-  'def': 'text/plain',
-  'doc': 'application/msword',
-  'dot': 'application/msword',
-  'drle': 'image/dicom-rle',
-  'dtd': 'application/xml-dtd',
-  'ear': 'application/java-archive',
-  'emf': 'image/emf',
-  'eps': 'application/postscript',
-  'exr': 'image/aces',
-  'fits': 'image/fits',
-  'g3': 'image/g3fax',
-  'gbr': 'application/rpki-ghostbusters',
-  'gif': 'image/gif',
-  'glb': 'model/gltf-binary',
-  'gltf': 'model/gltf+json',
-  'gz': 'application/gzip',
-  'h261': 'video/h261',
-  'h263': 'video/h263',
-  'h264': 'video/h264',
-  'heic': 'image/heic',
-  'heics': 'image/heic-sequence',
-  'heif': 'image/heif',
-  'heifs': 'image/heif-sequence',
-  'htm': 'text/html',
-  'html': 'text/html',
-  'ics': 'text/calendar',
-  'ief': 'image/ief',
-  'ifb': 'text/calendar',
-  'iges': 'model/iges',
-  'igs': 'model/iges',
-  'in': 'text/plain',
-  'ini': 'text/plain',
-  'jade': 'text/jade',
-  'jar': 'application/java-archive',
-  'jls': 'image/jls',
-  'jp2': 'image/jp2',
-  'jpe': 'image/jpeg',
-  'jpeg': 'image/jpeg',
-  'jpf': 'image/jpx',
-  'jpg': 'image/jpeg',
-  'jpg2': 'image/jp2',
-  'jpgm': 'video/jpm',
-  'jpgv': 'video/jpeg',
-  'jpm': 'image/jpm',
-  'jpx': 'image/jpx',
-  'js': 'application/javascript',
-  'json': 'application/json',
-  'json5': 'application/json5',
-  'jsx': 'text/jsx',
-  'jxr': 'image/jxr',
-  'kar': 'audio/midi',
-  'ktx': 'image/ktx',
-  'less': 'text/less',
-  'list': 'text/plain',
-  'litcoffee': 'text/coffeescript',
-  'log': 'text/plain',
-  'm1v': 'video/mpeg',
-  'm21': 'application/mp21',
-  'm2a': 'audio/mpeg',
-  'm2v': 'video/mpeg',
-  'm3a': 'audio/mpeg',
-  'm4a': 'audio/mp4',
-  'm4p': 'application/mp4',
-  'man': 'text/troff',
-  'manifest': 'text/cache-manifest',
-  'markdown': 'text/markdown',
-  'mathml': 'application/mathml+xml',
-  'md': 'text/markdown',
-  'mdx': 'text/mdx',
-  'me': 'text/troff',
-  'mesh': 'model/mesh',
-  'mft': 'application/rpki-manifest',
-  'mid': 'audio/midi',
-  'midi': 'audio/midi',
-  'mj2': 'video/mj2',
-  'mjp2': 'video/mj2',
-  'mjs': 'application/javascript',
-  'mml': 'text/mathml',
-  'mov': 'video/quicktime',
-  'mp2': 'audio/mpeg',
-  'mp21': 'application/mp21',
-  'mp2a': 'audio/mpeg',
-  'mp3': 'audio/mpeg',
-  'mp4': 'video/mp4',
-  'mp4a': 'audio/mp4',
-  'mp4s': 'application/mp4',
-  'mp4v': 'video/mp4',
-  'mpe': 'video/mpeg',
-  'mpeg': 'video/mpeg',
-  'mpg': 'video/mpeg',
-  'mpg4': 'video/mp4',
-  'mpga': 'audio/mpeg',
-  'mrc': 'application/marc',
-  'ms': 'text/troff',
-  'msh': 'model/mesh',
-  'n3': 'text/n3',
-  'oga': 'audio/ogg',
-  'ogg': 'audio/ogg',
-  'ogv': 'video/ogg',
-  'ogx': 'application/ogg',
-  'otf': 'font/otf',
-  'p10': 'application/pkcs10',
-  'p7c': 'application/pkcs7-mime',
-  'p7m': 'application/pkcs7-mime',
-  'p7s': 'application/pkcs7-signature',
-  'p8': 'application/pkcs8',
-  'pdf': 'application/pdf',
-  'pki': 'application/pkixcmp',
-  'pkipath': 'application/pkix-pkipath',
-  'png': 'image/png',
-  'ps': 'application/postscript',
-  'pskcxml': 'application/pskc+xml',
-  'qt': 'video/quicktime',
-  'rmi': 'audio/midi',
-  'rng': 'application/xml',
-  'roa': 'application/rpki-roa',
-  'roff': 'text/troff',
-  'rsd': 'application/rsd+xml',
-  'rss': 'application/rss+xml',
-  'rtf': 'application/rtf',
-  'rtx': 'text/richtext',
-  's3m': 'audio/s3m',
-  'sgi': 'image/sgi',
-  'sgm': 'text/sgml',
-  'sgml': 'text/sgml',
-  'shex': 'text/shex',
-  'shtml': 'text/html',
-  'sil': 'audio/silk',
-  'silo': 'model/mesh',
-  'slim': 'text/slim',
-  'slm': 'text/slim',
-  'snd': 'audio/basic',
-  'spx': 'audio/ogg',
-  'stl': 'model/stl',
-  'styl': 'text/stylus',
-  'stylus': 'text/stylus',
-  'svg': 'image/svg+xml',
-  'svgz': 'image/svg+xml',
-  't': 'text/troff',
-  't38': 'image/t38',
-  'text': 'text/plain',
-  'tfx': 'image/tiff-fx',
-  'tif': 'image/tiff',
-  'tiff': 'image/tiff',
-  'tr': 'text/troff',
-  'ts': 'video/mp2t',
-  'tsv': 'text/tab-separated-values',
-  'ttc': 'font/collection',
-  'ttf': 'font/ttf',
-  'ttl': 'text/turtle',
-  'txt': 'text/plain',
-  'uri': 'text/uri-list',
-  'uris': 'text/uri-list',
-  'urls': 'text/uri-list',
-  'vcard': 'text/vcard',
-  'vrml': 'model/vrml',
-  'vtt': 'text/vtt',
-  'war': 'application/java-archive',
-  'wasm': 'application/wasm',
-  'wav': 'audio/wav',
-  'weba': 'audio/webm',
-  'webm': 'video/webm',
-  'webmanifest': 'application/manifest+json',
-  'webp': 'image/webp',
-  'wmf': 'image/wmf',
-  'woff': 'font/woff',
-  'woff2': 'font/woff2',
-  'wrl': 'model/vrml',
-  'x3d': 'model/x3d+xml',
-  'x3db': 'model/x3d+fastinfoset',
-  'x3dbz': 'model/x3d+binary',
-  'x3dv': 'model/x3d-vrml',
-  'x3dvz': 'model/x3d+vrml',
-  'x3dz': 'model/x3d+xml',
-  'xaml': 'application/xaml+xml',
-  'xht': 'application/xhtml+xml',
-  'xhtml': 'application/xhtml+xml',
-  'xm': 'audio/xm',
-  'xml': 'text/xml',
-  'xsd': 'application/xml',
-  'xsl': 'application/xml',
-  'xslt': 'application/xslt+xml',
-  'yaml': 'text/yaml',
-  'yml': 'text/yaml',
-  'zip': 'application/zip'
-};
 
 module.exports = {TestServer};

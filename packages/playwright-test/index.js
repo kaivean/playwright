@@ -14,7 +14,13 @@
  * limitations under the License.
  */
 
-module.exports = {
-  ...require('./lib/inprocess'),
-  ...require('./lib/test/index')
+const pwt = require('./lib/index');
+const playwright = require('playwright-core');
+const combinedExports = {
+  ...playwright,
+  ...pwt,
 };
+
+Object.defineProperty(combinedExports, '__esModule', { value: true });
+
+module.exports = combinedExports;

@@ -16,7 +16,7 @@
 
 import { test, expect } from './playwright-test-fixtures';
 
-test('should get top level stdio', async ({runInlineTest}) => {
+test('should get top level stdio', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'a.spec.js': `
       const { test } = pwt;
@@ -28,17 +28,18 @@ test('should get top level stdio', async ({runInlineTest}) => {
       });
     `
   });
-  expect(result.output.split('\n').filter(x => x.startsWith('%%'))).toEqual([
-    '%% top level stdout',
-    '%% top level stderr',
-    '%% top level stdout', // top level logs appear twice, because the file is required twice
-    '%% top level stderr',
+  // top level logs appear twice, because the file is required twice
+  expect(result.output.split('\n').filter(x => x.startsWith('%%')).sort()).toEqual([
+    '%% stderr in a test',
     '%% stdout in a test',
-    '%% stderr in a test'
+    '%% top level stderr',
+    '%% top level stderr',
+    '%% top level stdout',
+    '%% top level stdout',
   ]);
 });
 
-test('should get stdio from env afterAll', async ({runInlineTest}) => {
+test('should get stdio from worker fixture teardown', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'helper.ts': `
       export const test = pwt.test.extend({
@@ -60,3 +61,18 @@ test('should get stdio from env afterAll', async ({runInlineTest}) => {
   ]);
 });
 
+test('should ignore stdio when quiet', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { quiet: true };
+    `,
+    'a.spec.js': `
+      const { test } = pwt;
+      test('is a test', () => {
+        console.log('\\n%% stdout in a test');
+        console.error('\\n%% stderr in a test');
+      });
+    `
+  }, { reporter: 'list' });
+  expect(result.output).not.toContain('%%');
+});

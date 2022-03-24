@@ -18,7 +18,7 @@
 import { test as it, expect } from './pageTest';
 import { attachFrame } from '../config/utils';
 
-it('should work for main frame navigation request', async ({page, server}) => {
+it('should work for main frame navigation request', async ({ page, server }) => {
   const requests = [];
   page.on('request', request => requests.push(request));
   await page.goto(server.EMPTY_PAGE);
@@ -26,7 +26,7 @@ it('should work for main frame navigation request', async ({page, server}) => {
   expect(requests[0].frame()).toBe(page.mainFrame());
 });
 
-it('should work for subframe navigation request', async ({page, server}) => {
+it('should work for subframe navigation request', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   const requests = [];
   page.on('request', request => requests.push(request));
@@ -35,7 +35,7 @@ it('should work for subframe navigation request', async ({page, server}) => {
   expect(requests[0].frame()).toBe(page.frames()[1]);
 });
 
-it('should work for fetch requests', async ({page, server}) => {
+it('should work for fetch requests @smoke', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   const requests = [];
   page.on('request', request => requests.push(request));
@@ -44,7 +44,7 @@ it('should work for fetch requests', async ({page, server}) => {
   expect(requests[0].frame()).toBe(page.mainFrame());
 });
 
-it('should work for a redirect', async ({page, server}) => {
+it('should work for a redirect', async ({ page, server }) => {
   server.setRedirect('/foo.html', '/empty.html');
   const requests = [];
   page.on('request', request => requests.push(request));
@@ -56,7 +56,7 @@ it('should work for a redirect', async ({page, server}) => {
 });
 
 // https://github.com/microsoft/playwright/issues/3993
-it('should not work for a redirect and interception', async ({page, server}) => {
+it('should not work for a redirect and interception', async ({ page, server }) => {
   server.setRedirect('/foo.html', '/empty.html');
   const requests = [];
   await page.route('**', route => {
@@ -71,7 +71,7 @@ it('should not work for a redirect and interception', async ({page, server}) => 
   expect(requests[0].url()).toBe(server.PREFIX + '/foo.html');
 });
 
-it('should return headers', async ({page, server, browserName}) => {
+it('should return headers', async ({ page, server, browserName }) => {
   const response = await page.goto(server.EMPTY_PAGE);
   if (browserName === 'chromium')
     expect(response.request().headers()['user-agent']).toContain('Chrome');
@@ -83,18 +83,17 @@ it('should return headers', async ({page, server, browserName}) => {
 
 it('should get the same headers as the server', async ({ page, server, browserName, platform }) => {
   it.fail(browserName === 'webkit' && platform === 'win32', 'Curl does not show accept-encoding and accept-language');
-  it.fixme(browserName === 'chromium', 'Flaky, see https://github.com/microsoft/playwright/issues/6690');
-
   let serverRequest;
   server.setRoute('/empty.html', (request, response) => {
     serverRequest = request;
     response.end('done');
   });
   const response = await page.goto(server.PREFIX + '/empty.html');
-  expect(response.request().headers()).toEqual(serverRequest.headers);
+  const headers = await response.request().allHeaders();
+  expect(headers).toEqual(serverRequest.headers);
 });
 
-it('should get the same headers as the server CORP', async ({page, server, browserName, platform}) => {
+it('should get the same headers as the server CORS', async ({ page, server, browserName, platform }) => {
   it.fail(browserName === 'webkit' && platform === 'win32', 'Curl does not show accept-encoding and accept-language');
 
   await page.goto(server.PREFIX + '/empty.html');
@@ -109,24 +108,25 @@ it('should get the same headers as the server CORP', async ({page, server, brows
     const data = await fetch(url);
     return data.text();
   }, server.CROSS_PROCESS_PREFIX + '/something');
-  const response = await responsePromise;
   expect(text).toBe('done');
-  expect(response.request().headers()).toEqual(serverRequest.headers);
+  const response = await responsePromise;
+  const headers = await response.request().allHeaders();
+  expect(headers).toEqual(serverRequest.headers);
 });
 
-it('should return postData', async ({page, server, isAndroid}) => {
+it('should return postData', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   await page.goto(server.EMPTY_PAGE);
   server.setRoute('/post', (req, res) => res.end());
   let request = null;
   page.on('request', r => request = r);
-  await page.evaluate(() => fetch('./post', { method: 'POST', body: JSON.stringify({foo: 'bar'})}));
+  await page.evaluate(() => fetch('./post', { method: 'POST', body: JSON.stringify({ foo: 'bar' }) }));
   expect(request).toBeTruthy();
   expect(request.postData()).toBe('{"foo":"bar"}');
 });
 
-it('should work with binary post data', async ({page, server, isAndroid}) => {
+it('should work with binary post data', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   await page.goto(server.EMPTY_PAGE);
@@ -143,7 +143,7 @@ it('should work with binary post data', async ({page, server, isAndroid}) => {
     expect(buffer[i]).toBe(i);
 });
 
-it('should work with binary post data and interception', async ({page, server, isAndroid}) => {
+it('should work with binary post data and interception', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   await page.goto(server.EMPTY_PAGE);
@@ -161,7 +161,7 @@ it('should work with binary post data and interception', async ({page, server, i
     expect(buffer[i]).toBe(i);
 });
 
-it('should override post data content type', async ({page, server, isAndroid}) => {
+it('should override post data content type', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   await page.goto(server.EMPTY_PAGE);
@@ -185,7 +185,7 @@ it('should override post data content type', async ({page, server, isAndroid}) =
   expect(request.headers['content-type']).toBe('application/x-www-form-urlencoded; charset=UTF-8');
 });
 
-it('should be |undefined| when there is no post data', async ({page, server, isAndroid}) => {
+it('should get |undefined| with postData() when there is no post data', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   const response = await page.goto(server.EMPTY_PAGE);
@@ -204,7 +204,7 @@ it('should parse the json post data', async ({ page, server, isAndroid }) => {
   expect(request.postDataJSON()).toEqual({ 'foo': 'bar' });
 });
 
-it('should parse the data if content-type is application/x-www-form-urlencoded', async ({page, server, isAndroid}) => {
+it('should parse the data if content-type is application/x-www-form-urlencoded', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid, 'Post data does not work');
 
   await page.goto(server.EMPTY_PAGE);
@@ -214,16 +214,16 @@ it('should parse the data if content-type is application/x-www-form-urlencoded',
   await page.setContent(`<form method='POST' action='/post'><input type='text' name='foo' value='bar'><input type='number' name='baz' value='123'><input type='submit'></form>`);
   await page.click('input[type=submit]');
   expect(request).toBeTruthy();
-  expect(request.postDataJSON()).toEqual({'foo': 'bar','baz': '123'});
+  expect(request.postDataJSON()).toEqual({ 'foo': 'bar','baz': '123' });
 });
 
-it('should be |undefined| when there is no post data', async ({ page, server }) => {
+it('should get |undefined| with postDataJSON() when there is no post data', async ({ page, server }) => {
   const response = await page.goto(server.EMPTY_PAGE);
   expect(response.request().postDataJSON()).toBe(null);
 });
 
-it('should return event source', async ({page, server}) => {
-  const SSE_MESSAGE = {foo: 'bar'};
+it('should return event source', async ({ page, server }) => {
+  const SSE_MESSAGE = { foo: 'bar' };
   // 1. Setup server-sent events on server that immediately sends a message to the client.
   server.setRoute('/sse', (req, res) => {
     res.writeHead(200, {
@@ -247,7 +247,7 @@ it('should return event source', async ({page, server}) => {
   expect(requests[0].resourceType()).toBe('eventsource');
 });
 
-it('should return navigation bit', async ({page, server}) => {
+it('should return navigation bit', async ({ page, server }) => {
   const requests = new Map();
   page.on('request', request => requests.set(request.url().split('/').pop(), request));
   server.setRedirect('/rrredirect', '/frames/one-frame.html');
@@ -259,9 +259,93 @@ it('should return navigation bit', async ({page, server}) => {
   expect(requests.get('style.css').isNavigationRequest()).toBe(false);
 });
 
-it('should return navigation bit when navigating to image', async ({page, server}) => {
+it('should return navigation bit when navigating to image', async ({ page, server }) => {
   const requests = [];
   page.on('request', request => requests.push(request));
   await page.goto(server.PREFIX + '/pptr.png');
   expect(requests[0].isNavigationRequest()).toBe(true);
+});
+
+it('should report raw headers', async ({ page, server, browserName, platform }) => {
+  let expectedHeaders: { name: string, value: string }[];
+  server.setRoute('/headers', (req, res) => {
+    expectedHeaders = [];
+    for (let i = 0; i < req.rawHeaders.length; i += 2)
+      expectedHeaders.push({ name: req.rawHeaders[i], value: req.rawHeaders[i + 1] });
+    if (browserName === 'webkit' && platform === 'win32') {
+      expectedHeaders = expectedHeaders.filter(({ name }) => name.toLowerCase() !== 'accept-encoding');
+      // Convert "value": "en-US, en-US" => "en-US"
+      expectedHeaders = expectedHeaders.map(e => {
+        const { name, value } = e;
+        if (name.toLowerCase() !== 'accept-language')
+          return e;
+        const values = value.split(',').map(v => v.trim());
+        if (values.length === 1)
+          return e;
+        if (values[0] !== values[1])
+          return e;
+        return { name, value: values[0] };
+      });
+    }
+    res.end();
+  });
+  await page.goto(server.EMPTY_PAGE);
+  const [request] = await Promise.all([
+    page.waitForRequest('**/*'),
+    page.evaluate(() => fetch('/headers', {
+      headers: [
+        ['header-a', 'value-a'],
+        ['header-b', 'value-b'],
+        ['header-a', 'value-a-1'],
+        ['header-a', 'value-a-2'],
+      ]
+    }))
+  ]);
+  const headers = await request.headersArray();
+  expect(headers.sort((a, b) => a.name.localeCompare(b.name))).toEqual(expectedHeaders.sort((a, b) => a.name.localeCompare(b.name)));
+  expect(await request.headerValue('header-a')).toEqual('value-a, value-a-1, value-a-2');
+  expect(await request.headerValue('not-there')).toEqual(null);
+});
+
+it('should report raw response headers in redirects', async ({ page, server, browserName }) => {
+  it.skip(browserName === 'webkit', `WebKit won't give us raw headers for redirects`);
+  server.setExtraHeaders('/redirect/1.html', { 'sec-test-header': '1.html' });
+  server.setExtraHeaders('/redirect/2.html', { 'sec-test-header': '2.html' });
+  server.setExtraHeaders('/empty.html', { 'sec-test-header': 'empty.html' });
+  server.setRedirect('/redirect/1.html', '/redirect/2.html');
+  server.setRedirect('/redirect/2.html', '/empty.html');
+
+  const expectedUrls = ['/redirect/1.html', '/redirect/2.html', '/empty.html'].map(s => server.PREFIX + s);
+  const expectedHeaders = ['1.html', '2.html', 'empty.html'];
+
+  const response = await page.goto(server.PREFIX + '/redirect/1.html');
+  const redirectChain = [];
+  const headersChain = [];
+  for (let req = response.request(); req; req = req.redirectedFrom()) {
+    redirectChain.unshift(req.url());
+    const res = await req.response();
+    const headers = await res.allHeaders();
+    headersChain.unshift(headers['sec-test-header']);
+  }
+
+  expect(redirectChain).toEqual(expectedUrls);
+  expect(headersChain).toEqual(expectedHeaders);
+});
+
+it('should report all cookies in one header', async ({ page, server }) => {
+  const expectedHeaders = {};
+  server.setRoute('/headers', (req, res) => {
+    for (let i = 0; i < req.rawHeaders.length; i += 2)
+      expectedHeaders[req.rawHeaders[i]] = req.rawHeaders[i + 1];
+    res.end();
+  });
+
+  await page.goto(server.EMPTY_PAGE);
+  await page.evaluate(() => {
+    document.cookie = 'myCookie=myValue';
+    document.cookie = 'myOtherCookie=myOtherValue';
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  const cookie = (await response.request().allHeaders())['cookie'];
+  expect(cookie).toBe('myCookie=myValue; myOtherCookie=myOtherValue');
 });

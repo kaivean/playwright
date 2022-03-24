@@ -16,23 +16,35 @@
 
 import { test, expect } from './playwright-test-fixtures';
 
-test('basics should work', async ({runTSC}) => {
+test('basics should work', async ({ runTSC }) => {
   const result = await runTSC({
     'a.spec.ts': `
       const { test } = pwt;
       test.describe('suite', () => {
         test.beforeEach(async () => {});
+        test.afterEach(async () => {});
+        test.beforeAll(async () => {});
+        test.afterAll(async () => {});
         test('my test', async({}, testInfo) => {
           expect(testInfo.title).toBe('my test');
           testInfo.annotations[0].type;
         });
+        test.skip('my test', async () => {});
+        test.fixme('my test', async () => {});
       });
+      test.describe.parallel('suite', () => {});
+      test.describe.parallel.only('suite', () => {});
+      test.describe.serial('suite', () => {});
+      test.describe.serial.only('suite', () => {});
+      test.describe.skip('suite', () => {});
+      // @ts-expect-error
+      test.foo();
     `
   });
   expect(result.exitCode).toBe(0);
 });
 
-test('can pass sync functions everywhere', async ({runTSC}) => {
+test('can pass sync functions everywhere', async ({ runTSC }) => {
   const result = await runTSC({
     'a.spec.ts': `
       const test = pwt.test.extend<{ foo: string }>({
@@ -48,7 +60,7 @@ test('can pass sync functions everywhere', async ({runTSC}) => {
   expect(result.exitCode).toBe(0);
 });
 
-test('can return anything from hooks', async ({runTSC}) => {
+test('can return anything from hooks', async ({ runTSC }) => {
   const result = await runTSC({
     'a.spec.ts': `
       const { test } = pwt;
@@ -61,11 +73,17 @@ test('can return anything from hooks', async ({runTSC}) => {
   expect(result.exitCode).toBe(0);
 });
 
-test('test.declare should check types', async ({runTSC}) => {
+test('test.extend options should check types', async ({ runTSC }) => {
   const result = await runTSC({
     'helper.ts': `
+      export type Params = { foo: string };
       export const test = pwt.test;
-      export const test1 = test.declare<{ foo: string }>();
+      export const test1 = test.extend<Params>({ foo: [ 'foo', { option: true } ] });
+      export const test1b = test.extend<{ bar: string }>({ bar: [ 'bar', { option: true } ] });
+      export const testerror = test.extend<{ foo: string }>({
+        // @ts-expect-error
+        foo: 123
+      });
       export const test2 = test1.extend<{ bar: number }>({
         bar: async ({ foo }, run) => { await run(parseInt(foo)); }
       });
@@ -73,26 +91,33 @@ test('test.declare should check types', async ({runTSC}) => {
         // @ts-expect-error
         bar: async ({ baz }, run) => { await run(42); }
       });
+      // TODO: enable when _extendTest is out of experiment.
+      // export const test4 = test1._extendTest(test1b);
+      export const test4 = test1;
     `,
     'playwright.config.ts': `
-      import { test1 } from './helper';
-      const configs: pwt.Config[] = [];
+      import { Params } from './helper';
+      const configs: pwt.Config<Params>[] = [];
+
       configs.push({});
+
       configs.push({
-        define: {
-          test: test1,
-          fixtures: { foo: 'foo' }
-        },
+        use: { foo: 'bar' },
       });
 
       configs.push({
         // @ts-expect-error
-        define: { test: {}, fixtures: {} },
+        use: { foo: true },
+      });
+
+      configs.push({
+        // @ts-expect-error
+        use: { unknown: true },
       });
       module.exports = configs;
     `,
     'a.spec.ts': `
-      import { test, test1, test2, test3 } from './helper';
+      import { test, test1, test2, test3, test4 } from './helper';
       // @ts-expect-error
       test('my test', async ({ foo }) => {});
       test1('my test', async ({ foo }) => {});
@@ -101,6 +126,8 @@ test('test.declare should check types', async ({runTSC}) => {
       test2('my test', async ({ foo, bar }) => {});
       // @ts-expect-error
       test2('my test', async ({ foo, baz }) => {});
+      // TODO: enable when _extendTest is out of experiment.
+      // test4('my test', async ({ foo, bar }) => {});
     `
   });
   expect(result.exitCode).toBe(0);

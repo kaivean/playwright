@@ -22,6 +22,8 @@ const path = require('path');
 
 /** @typedef {import('../../markdown').MarkdownNode} MarkdownNode */
 
+const IGNORE_CLASSES = ['PlaywrightAssertions', 'LocatorAssertions', 'PageAssertions', 'APIResponseAssertions', 'ScreenshotAssertions'];
+
 module.exports = function lint(documentation, jsSources, apiFileName) {
   const errors = [];
   documentation.copyDocsFromSuperclasses(errors);
@@ -46,6 +48,8 @@ module.exports = function lint(documentation, jsSources, apiFileName) {
     }
   }
   for (const cls of documentation.classesArray) {
+    if (IGNORE_CLASSES.includes(cls.name))
+      continue;
     const methods = apiMethods.get(cls.name);
     if (!methods) {
       errors.push(`Documented "${cls.name}" not found in sources`);
@@ -56,13 +60,13 @@ module.exports = function lint(documentation, jsSources, apiFileName) {
         continue;
       const params = methods.get(member.alias);
       if (!params) {
-        errors.push(`Documented "${cls.name}.${member.alias}" not found is sources`);
+        errors.push(`Documented "${cls.name}.${member.alias}" not found in sources`);
         continue;
       }
       const memberParams = paramsForMember(member);
       for (const paramName of memberParams) {
         if (!params.has(paramName) && paramName !== 'options')
-          errors.push(`Documented "${cls.name}.${member.alias}.${paramName}" not found is sources`);
+          errors.push(`Documented "${cls.name}.${member.alias}.${paramName}" not found in sources`);
       }
     }
   }
@@ -77,9 +81,6 @@ function paramsForMember(member) {
     return new Set();
   return new Set(member.argsArray.map(a => a.alias));
 }
-
-// Including experimental method names (with a leading underscore) that would be otherwise skipped
-const allowExperimentalMethods = new Set([ 'Download._cancel' ]);
 
 /**
  * @param {string[]} rootNames
@@ -117,8 +118,6 @@ function listMethods(rootNames, apiFileName) {
    * @param {string} methodName
    */
   function shouldSkipMethodByName(className, methodName) {
-    if (allowExperimentalMethods.has(`${className}.${methodName}`))
-      return false;
     if (methodName.startsWith('_') || methodName === 'T' || methodName === 'toString')
       return true;
     if (/** @type {any} */(EventEmitter).prototype.hasOwnProperty(methodName))

@@ -16,24 +16,13 @@
 
 import { test, expect } from './playwright-test-fixtures';
 
-test('sanity', async ({runTSC}) => {
-  const result = await runTSC({
-    'a.spec.ts': `
-      const { test } = pwt;
-      // @ts-expect-error
-      test.foo();
-    `
-  });
-  expect(result.exitCode).toBe(0);
-});
-
-test('should check types of fixtures', async ({runTSC}) => {
+test('should check types of fixtures', async ({ runTSC }) => {
   const result = await runTSC({
     'helper.ts': `
       export type MyOptions = { foo: string, bar: number };
       export const test = pwt.test.extend<{ foo: string }, { bar: number }>({
         foo: 'foo',
-        bar: [ 42, { scope: 'worker' } ],
+        bar: [ 42, { scope: 'worker', timeout: 123 } ],
       });
 
       const good1 = test.extend<{}>({ foo: async ({ bar }, run) => run('foo') });
@@ -46,7 +35,17 @@ test('should check types of fixtures', async ({runTSC}) => {
         foo: async ({ baz }, run) => run('foo')
       });
       const good7 = test.extend<{ baz: boolean }>({
-        baz: [ false, { auto: true } ],
+        baz: [ false, { auto: true, timeout: 0 } ],
+      });
+      const good8 = test.extend<{ foo: string }>({
+        foo: [ async ({}, use) => {
+          await use('foo');
+        }, { scope: 'test' } ],
+      });
+      const good9 = test.extend<{}, {}>({
+        bar: [ async ({}, use) => {
+          await use(42);
+        }, { scope: 'worker' } ],
       });
 
       // @ts-expect-error
@@ -71,6 +70,36 @@ test('should check types of fixtures', async ({runTSC}) => {
         // @ts-expect-error
         baz: true,
       });
+      const fail9 = test.extend<{ foo: string }>({
+        foo: [ async ({}, use) => {
+          await use('foo');
+        // @ts-expect-error
+        }, { scope: 'test', auto: true } ],
+      });
+      const fail10 = test.extend<{}, {}>({
+        bar: [ async ({}, use) => {
+          await use(42);
+        // @ts-expect-error
+        }, { scope: 'test' } ],
+      });
+      const fail11 = test.extend<{ yay: string }>({
+        yay: [ async ({}, use) => {
+          await use('foo');
+        // @ts-expect-error
+        }, { scope: 'test', timeout: 'str' } ],
+      });
+
+      type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
+      type AssertType<T, S> = S extends T ? AssertNotAny<S> : false;
+      const funcTest = pwt.test.extend<{ foo: (x: number, y: string) => Promise<string> }>({
+        foo: async ({}, use) => {
+          await use(async (x, y) => {
+            const assertionX: AssertType<number, typeof x> = true;
+            const assertionY: AssertType<string, typeof y> = true;
+            return y;
+          });
+        },
+      })
     `,
     'playwright.config.ts': `
       import { MyOptions } from './helper';
@@ -125,9 +154,7 @@ test('should check types of fixtures', async ({runTSC}) => {
 
       // @ts-expect-error
       test.beforeAll(async ({ a }) => {});
-      // @ts-expect-error
       test.beforeAll(async ({ foo, bar }) => {});
-      test.beforeAll(async ({ bar }) => {});
       test.beforeAll(() => {});
 
       // @ts-expect-error
@@ -137,16 +164,14 @@ test('should check types of fixtures', async ({runTSC}) => {
 
       // @ts-expect-error
       test.afterAll(async ({ a }) => {});
-      // @ts-expect-error
       test.afterAll(async ({ foo, bar }) => {});
-      test.afterAll(async ({ bar }) => {});
       test.afterAll(() => {});
     `
   });
   expect(result.exitCode).toBe(0);
 });
 
-test('config should allow void/empty options', async ({runTSC}) => {
+test('config should allow void/empty options', async ({ runTSC }) => {
   const result = await runTSC({
     'playwright.config.ts': `
       const configs: pwt.Config[] = [];

@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import { baseTest, CommonWorkerFixtures } from '../config/baseTest';
-import { ElectronApplication, Page } from '../../index';
-import type { Fixtures } from '../config/test-runner';
+import { baseTest } from '../config/baseTest';
 import * as path from 'path';
-import { PageTestFixtures } from '../page/pageTest';
-export { expect } from '../config/test-runner';
+import { ElectronApplication, Page } from 'playwright-core';
+import { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
+export { expect } from '@playwright/test';
 
 type ElectronTestFixtures = PageTestFixtures & {
   electronApp: ElectronApplication;
@@ -27,11 +26,12 @@ type ElectronTestFixtures = PageTestFixtures & {
 };
 
 const electronVersion = require('electron/package.json').version;
-export const electronFixtures: Fixtures<ElectronTestFixtures, {}, {}, CommonWorkerFixtures> = {
-  browserVersion: electronVersion,
-  browserMajorVersion: Number(electronVersion.split('.')[0]),
-  isAndroid: false,
-  isElectron: true,
+
+export const electronTest = baseTest.extend<ElectronTestFixtures, PageWorkerFixtures>({
+  browserVersion: [electronVersion, { scope: 'worker' }],
+  browserMajorVersion: [Number(electronVersion.split('.')[0]), { scope: 'worker' }],
+  isAndroid: [false, { scope: 'worker' }],
+  isElectron: [true, { scope: 'worker' }],
 
   electronApp: async ({ playwright }, run) => {
     // This env prevents 'Electron Security Policy' console message.
@@ -48,7 +48,9 @@ export const electronFixtures: Fixtures<ElectronTestFixtures, {}, {}, CommonWork
     await run(async () => {
       const [ window ] = await Promise.all([
         electronApp.waitForEvent('window'),
-        electronApp.evaluate(electron => {
+        electronApp.evaluate(async electron => {
+          // Avoid "Error: Cannot create BrowserWindow before app is ready".
+          await electron.app.whenReady();
           const window = new electron.BrowserWindow({
             width: 800,
             height: 600,
@@ -66,10 +68,7 @@ export const electronFixtures: Fixtures<ElectronTestFixtures, {}, {}, CommonWork
       await window.close();
   },
 
-
   page: async ({ newWindow }, run) => {
     await run(await newWindow());
   },
-};
-
-export const electronTest = baseTest.extend<ElectronTestFixtures>(electronFixtures);
+});

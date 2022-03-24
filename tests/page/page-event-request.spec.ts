@@ -18,14 +18,14 @@
 import { test as it, expect } from './pageTest';
 import { attachFrame } from '../config/utils';
 
-it('should fire for navigation requests', async ({page, server}) => {
+it('should fire for navigation requests', async ({ page, server }) => {
   const requests = [];
   page.on('request', request => requests.push(request));
   await page.goto(server.EMPTY_PAGE);
   expect(requests.length).toBe(1);
 });
 
-it('should fire for iframes', async ({page, server}) => {
+it('should fire for iframes', async ({ page, server }) => {
   const requests = [];
   page.on('request', request => requests.push(request));
   await page.goto(server.EMPTY_PAGE);
@@ -33,7 +33,7 @@ it('should fire for iframes', async ({page, server}) => {
   expect(requests.length).toBe(2);
 });
 
-it('should fire for fetches', async ({page, server}) => {
+it('should fire for fetches', async ({ page, server }) => {
   const requests = [];
   page.on('request', request => requests.push(request));
   await page.goto(server.EMPTY_PAGE);
@@ -41,8 +41,9 @@ it('should fire for fetches', async ({page, server}) => {
   expect(requests.length).toBe(2);
 });
 
-it('should report requests and responses handled by service worker', async ({page, server, isAndroid}) => {
+it('should report requests and responses handled by service worker', async ({ page, server, isAndroid, isElectron }) => {
   it.fixme(isAndroid);
+  it.fixme(isElectron);
 
   await page.goto(server.PREFIX + '/serviceworkers/fetchdummy/sw.html');
   await page.evaluate(() => window['activationPromise']);
@@ -55,4 +56,65 @@ it('should report requests and responses handled by service worker', async ({pag
   const response = await request.response();
   expect(response.url()).toBe(server.PREFIX + '/serviceworkers/fetchdummy/foo');
   expect(await response.text()).toBe('responseFromServiceWorker:foo');
+});
+
+it('should return response body when Cross-Origin-Opener-Policy is set', async ({ page, server, browserName }) => {
+  server.setRoute('/empty.html', (req, res) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.end('Hello there!');
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(page.url()).toBe(server.EMPTY_PAGE);
+  await response.finished();
+  expect(response.request().failure()).toBeNull();
+  expect(await response.text()).toBe('Hello there!');
+});
+
+it('should fire requestfailed when intercepting race', async ({ page, server, browserName }) => {
+  it.skip(browserName !== 'chromium', 'This test is specifically testing Chromium race');
+
+  const promsie = new Promise<void>(resolve => {
+    let counter = 0;
+    const failures = new Set();
+    const alive = new Set();
+    page.on('request', request => {
+      expect(alive.has(request)).toBe(false);
+      expect(failures.has(request)).toBe(false);
+      alive.add(request);
+    });
+    page.on('requestfailed', request => {
+      expect(failures.has(request)).toBe(false);
+      expect(alive.has(request)).toBe(true);
+      alive.delete(request);
+      failures.add(request);
+      if (++counter === 10)
+        resolve();
+    });
+  });
+
+  // Stall requests to make sure we don't get requestfinished.
+  await page.route('**', route => {});
+
+  await page.setContent(`
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <iframe src="${server.EMPTY_PAGE}"></iframe>
+    <script>
+      function abortAll() {
+        const frames = document.querySelectorAll("iframe");
+        for (const frame of frames)
+          frame.src = "about:blank";
+      }
+      abortAll();
+    </script>
+  `);
+
+  await promsie;
 });

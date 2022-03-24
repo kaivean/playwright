@@ -32,11 +32,11 @@ const { selectors, firefox } = require('playwright');  // Or 'chromium' or 'webk
   await page.setContent(`<div><button>Click me</button></div>`);
 
   // Use the selector prefixed with its name.
-  const button = await page.$('tag=button');
+  const button = page.locator('tag=button');
   // Combine it with other selector engines.
   await page.click('tag=div >> text="Click me"');
   // Can use it in any methods supporting selectors.
-  const buttonCount = await page.$$eval('tag=button', buttons => buttons.length);
+  const buttonCount = await page.locator('tag=button').count();
 
   await browser.close();
 })();
@@ -60,20 +60,86 @@ Browser browser = playwright.firefox().launch();
 Page page = browser.newPage();
 page.setContent("<div><button>Click me</button></div>");
 // Use the selector prefixed with its name.
-ElementHandle button = page.querySelector("tag=button");
+Locator button = page.locator("tag=button");
 // Combine it with other selector engines.
 page.click("tag=div >> text=\"Click me\"");
 // Can use it in any methods supporting selectors.
-int buttonCount = (int) page.evalOnSelectorAll("tag=button", "buttons => buttons.length");
+int buttonCount = (int) page.locator("tag=button").count();
 browser.close();
 ```
 
 ```python async
-# FIXME: add snippet
+import asyncio
+from playwright.async_api import async_playwright
+
+async def run(playwright):
+    tag_selector = """
+      {
+          // Returns the first element matching given selector in the root's subtree.
+          query(root, selector) {
+              return root.querySelector(selector);
+          },
+          // Returns all elements matching given selector in the root's subtree.
+          queryAll(root, selector) {
+              return Array.from(root.querySelectorAll(selector));
+          }
+      }"""
+
+    # Register the engine. Selectors will be prefixed with "tag=".
+    await playwright.selectors.register("tag", tag_selector)
+    browser = await playwright.chromium.launch()
+    page = await browser.new_page()
+    await page.set_content('<div><button>Click me</button></div>')
+
+    # Use the selector prefixed with its name.
+    button = await page.query_selector('tag=button')
+    # Combine it with other selector engines.
+    await page.click('tag=div >> text="Click me"')
+    # Can use it in any methods supporting selectors.
+    button_count = await page.locator('tag=button').count()
+    print(button_count)
+    await browser.close()
+
+async def main():
+    async with async_playwright() as playwright:
+        await run(playwright)
+
+asyncio.run(main())
 ```
 
 ```python sync
-# FIXME: add snippet
+from playwright.sync_api import sync_playwright
+
+def run(playwright):
+    tag_selector = """
+      {
+          // Returns the first element matching given selector in the root's subtree.
+          query(root, selector) {
+              return root.querySelector(selector);
+          },
+          // Returns all elements matching given selector in the root's subtree.
+          queryAll(root, selector) {
+              return Array.from(root.querySelectorAll(selector));
+          }
+      }"""
+
+    # Register the engine. Selectors will be prefixed with "tag=".
+    playwright.selectors.register("tag", tag_selector)
+    browser = playwright.chromium.launch()
+    page = browser.new_page()
+    page.set_content('<div><button>Click me</button></div>')
+
+    # Use the selector prefixed with its name.
+    button = page.locator('tag=button')
+    # Combine it with other selector engines.
+    page.click('tag=div >> text="Click me"')
+    # Can use it in any methods supporting selectors.
+    button_count = page.locator('tag=button').count()
+    print(button_count)
+    browser.close()
+
+with sync_playwright() as playwright:
+    run(playwright)
 ```
 
 ```csharp
@@ -94,11 +160,11 @@ await using var browser = await playwright.Chromium.LaunchAsync();
 var page = await browser.NewPageAsync();
 await page.SetContentAsync("<div><button>Click me</button></div>");
 // Use the selector prefixed with its name.
-var button = await page.QuerySelectorAsync("tag=button");
+var button = page.Locator("tag=button");
 // Combine it with other selector engines.
 await page.ClickAsync("tag=div >> text=\"Click me\"");
 // Can use it in any methods supporting selectors.
-int buttonCount = await page.EvalOnSelectorAllAsync<int>("tag=button", "buttons => buttons.length");
+int buttonCount = await page.Locator("tag=button").CountAsync();
 ```
 
 ### param: Selectors.register.name

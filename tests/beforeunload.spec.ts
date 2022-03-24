@@ -17,8 +17,8 @@
 
 import { contextTest as it, expect } from './config/browserTest';
 
-it('should close browser with beforeunload page', async ({server, browserType, browserOptions }) => {
-  const browser = await browserType.launch(browserOptions);
+it('should close browser with beforeunload page', async ({ server, browserType }) => {
+  const browser = await browserType.launch();
   const page = await browser.newPage();
   await page.goto(server.PREFIX + '/beforeunload.html');
   // We have to interact with a page so that 'beforeunload' handlers
@@ -27,7 +27,7 @@ it('should close browser with beforeunload page', async ({server, browserType, b
   await browser.close();
 });
 
-it('should close browsercontext with beforeunload page', async ({server, page, context }) => {
+it('should close browsercontext with beforeunload page', async ({ server, page, context }) => {
   await page.goto(server.PREFIX + '/beforeunload.html');
   // We have to interact with a page so that 'beforeunload' handlers
   // fire.
@@ -35,7 +35,15 @@ it('should close browsercontext with beforeunload page', async ({server, page, c
   await context.close();
 });
 
-it('should close page with beforeunload listener', async ({context, server}) => {
+it('should be able to navigate away from page with beforeunload', async ({ server, page, context }) => {
+  await page.goto(server.PREFIX + '/beforeunload.html');
+  // We have to interact with a page so that 'beforeunload' handlers
+  // fire.
+  await page.click('body');
+  await page.goto(server.EMPTY_PAGE);
+});
+
+it('should close page with beforeunload listener', async ({ context, server }) => {
   const newPage = await context.newPage();
   await newPage.goto(server.PREFIX + '/beforeunload.html');
   // We have to interact with a page so that 'beforeunload' handlers
@@ -44,7 +52,7 @@ it('should close page with beforeunload listener', async ({context, server}) => 
   await newPage.close();
 });
 
-it('should run beforeunload if asked for', async ({context, server, browserName}) => {
+it('should run beforeunload if asked for @smoke', async ({ context, server, browserName }) => {
   const newPage = await context.newPage();
   await newPage.goto(server.PREFIX + '/beforeunload.html');
   // We have to interact with a page so that 'beforeunload' handlers
@@ -68,7 +76,7 @@ it('should run beforeunload if asked for', async ({context, server, browserName}
   ]);
 });
 
-it('should access page after beforeunload', async ({page, server}) => {
+it('should access page after beforeunload', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/beforeunload.html');
   // We have to interact with a page so that 'beforeunload' handlers
   // fire.

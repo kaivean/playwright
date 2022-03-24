@@ -191,13 +191,13 @@ test('should run the fixture every time', async ({ runInlineTest }) => {
       const test = pwt.test.extend({
         asdf: async ({}, test) => await test(counter++),
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 1', async ({asdf}) => {
         expect(asdf).toBe(0);
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 2', async ({asdf}) => {
         expect(asdf).toBe(1);
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 3', async ({asdf}) => {
         expect(asdf).toBe(2);
       });
     `,
@@ -212,13 +212,13 @@ test('should only run worker fixtures once', async ({ runInlineTest }) => {
       const test = pwt.test.extend({
         asdf: [ async ({}, test) => await test(counter++), { scope: 'worker' } ],
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 1', async ({asdf}) => {
         expect(asdf).toBe(0);
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 2', async ({asdf}) => {
         expect(asdf).toBe(0);
       });
-      test('should use asdf', async ({asdf}) => {
+      test('should use asdf 3', async ({asdf}) => {
         expect(asdf).toBe(0);
       });
     `,
@@ -312,7 +312,7 @@ test('automatic fixtures should work', async ({ runInlineTest }) => {
       });
       test.beforeAll(async ({}) => {
         expect(counterWorker).toBe(1);
-        expect(counterTest).toBe(0);
+        expect(counterTest).toBe(1);
       });
       test.beforeEach(async ({}) => {
         expect(counterWorker).toBe(1);
@@ -338,6 +338,63 @@ test('automatic fixtures should work', async ({ runInlineTest }) => {
   });
   expect(result.exitCode).toBe(0);
   expect(result.results.map(r => r.status)).toEqual(['passed', 'passed']);
+});
+
+test('automatic fixture should start before regular fixture and teardown after', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const test = pwt.test;
+      test.use({
+        auto: [ async ({}, runTest) => {
+          console.log('\\n%%auto-setup');
+          await runTest();
+          console.log('\\n%%auto-teardown');
+        }, { auto: true } ],
+        foo: async ({}, runTest) => {
+          console.log('\\n%%foo-setup');
+          await runTest();
+          console.log('\\n%%foo-teardown');
+        },
+      });
+      test('test 1', async ({ foo }) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%auto-setup',
+    '%%foo-setup',
+    '%%foo-teardown',
+    '%%auto-teardown',
+  ]);
+});
+
+test('automatic fixtures should keep workerInfo after conditional skip', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const test = pwt.test;
+      test.use({
+        automaticTestFixture: [ async ({}, runTest, workerInfo) => {
+          await runTest();
+          expect(workerInfo.workerIndex).toBe(0);
+          console.log('success test fixture')
+        }, { auto: true } ],
+
+        automaticWorkerFixture: [ async ({}, runTest, workerInfo) => {
+          await runTest();
+          expect(workerInfo.workerIndex).toBe(0);
+          console.log('success worker fixture')
+        }, { scope: 'worker', auto: true } ],
+      });
+      test.skip(({ }) => false);
+      test('good', async ({ }) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('success test fixture');
+  expect(result.output).toContain('success worker fixture');
+  expect(result.results.map(r => r.status)).toEqual(['passed']);
 });
 
 test('tests does not run non-automatic worker fixtures', async ({ runInlineTest }) => {
@@ -435,7 +492,8 @@ test('should understand worker fixture params in overrides calling base', async 
   const result = await runInlineTest({
     'a.test.js': `
       const test1 = pwt.test.extend({
-        param: [ 'param', { scope: 'worker' }],
+        param: [ 'param', { scope: 'worker', option: true }],
+      }).extend({
         foo: async ({}, test) => await test('foo'),
         bar: async ({foo}, test) => await test(foo + '-bar'),
       });
@@ -529,7 +587,7 @@ test('should create a new worker for worker fixtures', async ({ runInlineTest })
     'a.test.ts': `
       const { test } = pwt;
       test('base test', async ({}, testInfo) => {
-        expect(testInfo.workerIndex).toBe(0);
+        console.log('\\n%%base-' + testInfo.workerIndex);
       });
 
       const test2 = test.extend({
@@ -539,7 +597,7 @@ test('should create a new worker for worker fixtures', async ({ runInlineTest })
         }, { scope: 'worker' }],
       });
       test2('a test', async ({ foo }, testInfo) => {
-        expect(testInfo.workerIndex).toBe(1);
+        console.log('\\n%%a-' + testInfo.workerIndex);
       });
     `,
     'b.test.ts': `
@@ -551,12 +609,16 @@ test('should create a new worker for worker fixtures', async ({ runInlineTest })
         },
       });
       test2('b test', async ({ bar }, testInfo) => {
-        expect(testInfo.workerIndex).toBe(0);
+        console.log('\\n%%b-' + testInfo.workerIndex);
       });
     `,
   }, { workers: 1 });
   expect(result.output).toContain('foo-a');
   expect(result.output).toContain('bar-b');
+  const baseWorker = +result.output.match(/%%base-(\d)/)[1];
+  expect(result.output).toContain(`%%base-${baseWorker}`);
+  expect(result.output).toContain(`%%a-${1 - baseWorker}`);
+  expect(result.output).toContain(`%%b-${baseWorker}`);
   expect(result.passed).toBe(3);
 });
 
@@ -595,4 +657,73 @@ test('should run tests in order', async ({ runInlineTest }) => {
     '%%afterEach',
     '%%test3',
   ]);
+});
+
+test('worker fixture should not receive TestInfo', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const test = pwt.test;
+      test.use({
+        worker: [async ({}, use, info) => {
+          expect(info.title).toBe(undefined);
+          await use();
+        }, { scope: 'worker' }],
+        test: async ({ worker }, use, info) => {
+          expect(info.title).not.toBe(undefined);
+          await use();
+        },
+      });
+      test('test 1', async ({ test }) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(0);
+});
+
+test('worker teardown errors reflected in timed-out tests', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const test = pwt.test.extend({
+        foo: [async ({}, use) => {
+          let cb;
+          await use(new Promise((f, r) => cb = r));
+          cb(new Error('Rejecting!'));
+        }, { scope: 'worker' }]
+      });
+      test('timedout', async ({ foo }) => {
+        await foo;
+      });
+    `,
+  }, { timeout: 1000 });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Timeout of 1000ms exceeded.');
+  expect(result.output).toContain('Rejecting!');
+});
+
+test('should not complain about fixtures of non-focused tests', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const { test } = pwt;
+      test.only('works', () => {});
+      test('unknown fixture', ({ foo }) => {});
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('should not complain about fixtures of unused hooks', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const { test } = pwt;
+      test.only('works', () => {});
+      test.describe('unused suite', () => {
+        test.beforeAll(({ foo }) => {});
+        test('unused test', () => {});
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
 });

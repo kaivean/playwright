@@ -45,6 +45,11 @@ Note that since you don't need Playwright to install web browsers when testing E
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i -D playwright
 ```
 
+**Supported Electron versions are:**
+* v12.2.0+
+* v13.4.0+
+* v14+
+
 ## async method: Electron.launch
 - returns: <[ElectronApplication]>
 
@@ -72,7 +77,7 @@ Current working directory to launch application from.
 
 Specifies environment variables that will be visible to Electron. Defaults to `process.env`.
 
-#### option: Electron.launch.timeout
+### option: Electron.launch.timeout
 - `timeout` <[float]>
 
 Maximum time in milliseconds to wait for the application to start. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -87,9 +92,9 @@ Maximum time in milliseconds to wait for the application to start. Defaults to `
 ### option: Electron.launch.locale = %%-context-option-locale-%%
 ### option: Electron.launch.offline = %%-context-option-offline-%%
 ### option: Electron.launch.recordhar = %%-context-option-recordhar-%%
-### option: Electron.launch.recordhar.path = %%-context-option-recordhar-path-%%
-### option: Electron.launch.recordhar.recordHarOmitContent = %%-context-option-recordhar-omit-content-%%
+### option: Electron.launch.recordharpath = %%-context-option-recordhar-path-%%
+### option: Electron.launch.recordHarOmitContent = %%-context-option-recordhar-omit-content-%%
 ### option: Electron.launch.recordvideo = %%-context-option-recordvideo-%%
-### option: Electron.launch.recordvideo.dir = %%-context-option-recordvideo-dir-%%
-### option: Electron.launch.recordvideo.size = %%-context-option-recordvideo-size-%%
+### option: Electron.launch.recordvideodir = %%-context-option-recordvideo-dir-%%
+### option: Electron.launch.recordvideosize = %%-context-option-recordvideo-size-%%
 ### option: Electron.launch.timezoneId = %%-context-option-timezoneid-%%

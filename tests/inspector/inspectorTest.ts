@@ -15,12 +15,11 @@
  */
 
 import { contextTest } from '../config/browserTest';
-import type { Page } from '../../index';
+import type { Page } from 'playwright-core';
 import * as path from 'path';
-import type { Source } from '../../src/server/supplements/recorder/recorderTypes';
-import { ChildProcess, spawn } from 'child_process';
-import { chromium } from '../../index';
-export { expect } from '../config/test-runner';
+import type { Source } from '../../packages/playwright-core/src/server/supplements/recorder/recorderTypes';
+import { CommonFixtures, TestChildProcess } from '../config/commonFixtures';
+export { expect } from '@playwright/test';
 
 type CLITestArgs = {
   recorderPageGetter: () => Promise<Page>;
@@ -28,6 +27,8 @@ type CLITestArgs = {
   openRecorder: () => Promise<Recorder>;
   runCLI: (args: string[]) => CLIMock;
 };
+
+const playwrightToAutomateInspector = require('../../packages/playwright-core/lib/inProcessFactory').createInProcessPlaywright();
 
 export const test = contextTest.extend<CLITestArgs>({
   recorderPageGetter: async ({ context, toImpl, mode }, run, testInfo) => {
@@ -37,7 +38,7 @@ export const test = contextTest.extend<CLITestArgs>({
       while (!toImpl(context).recorderAppForTest)
         await new Promise(f => setTimeout(f, 100));
       const wsEndpoint = toImpl(context).recorderAppForTest.wsEndpoint;
-      const browser = await chromium.connectOverCDP({ wsEndpoint });
+      const browser = await playwrightToAutomateInspector.chromium.connectOverCDP({ wsEndpoint });
       const c = browser.contexts()[0];
       return c.pages()[0] || await c.waitForEvent('page');
     });
@@ -49,13 +50,13 @@ export const test = contextTest.extend<CLITestArgs>({
     });
   },
 
-  runCLI: async ({ browserName, channel, headless, mode, executablePath }, run, testInfo) => {
+  runCLI: async ({ childProcess, browserName, channel, headless, mode, launchOptions }, run, testInfo) => {
     process.env.PWTEST_RECORDER_PORT = String(10907 + testInfo.workerIndex);
     testInfo.skip(mode === 'service');
 
     let cli: CLIMock | undefined;
     await run(cliArgs => {
-      cli = new CLIMock(browserName, channel, headless, cliArgs, executablePath);
+      cli = new CLIMock(childProcess, browserName, channel, headless, cliArgs, launchOptions.executablePath);
       return cli;
     });
     if (cli)
@@ -177,59 +178,52 @@ class Recorder {
 }
 
 class CLIMock {
-  private process: ChildProcess;
-  private data: string;
+  private process: TestChildProcess;
   private waitForText: string;
   private waitForCallback: () => void;
   exited: Promise<void>;
 
-  constructor(browserName: string, channel: string | undefined, headless: boolean | undefined, args: string[], executablePath: string | undefined) {
-    this.data = '';
+  constructor(childProcess: CommonFixtures['childProcess'], browserName: string, channel: string | undefined, headless: boolean | undefined, args: string[], executablePath: string | undefined) {
     const nodeArgs = [
-      path.join(__dirname, '..', '..', 'lib', 'cli', 'cli.js'),
+      'node',
+      path.join(__dirname, '..', '..', 'packages', 'playwright-core', 'lib', 'cli', 'cli.js'),
       'codegen',
       ...args,
       `--browser=${browserName}`,
     ];
     if (channel)
       nodeArgs.push(`--channel=${channel}`);
-    this.process = spawn('node', nodeArgs, {
+    this.process = childProcess({
+      command: nodeArgs,
       env: {
-        ...process.env,
         PWTEST_CLI_EXIT: '1',
         PWTEST_CLI_HEADLESS: headless ? '1' : undefined,
         PWTEST_CLI_EXECUTABLE_PATH: executablePath,
       },
-      stdio: 'pipe'
     });
-    this.process.stdout.on('data', data => {
-      this.data = data.toString();
-      if (this.waitForCallback && this.data.includes(this.waitForText))
+    this.process.onOutput = () => {
+      if (this.waitForCallback && this.process.output.includes(this.waitForText))
         this.waitForCallback();
-    });
-    this.exited = new Promise((f, r) => {
-      this.process.stderr.on('data', data => {
-        console.error(data.toString());
-      });
-      this.process.on('exit', (exitCode, signal) => {
-        if (exitCode)
-          r(new Error(`Process failed with exit code ${exitCode}`));
-        if (signal)
-          r(new Error(`Process recieved signal: ${signal}`));
-        f();
-      });
-    });
+    };
+    this.exited = this.process.cleanExit();
   }
 
-  async waitFor(text: string): Promise<void> {
-    if (this.data.includes(text))
+  async waitFor(text: string, timeout = 10_000): Promise<void> {
+    if (this.process.output.includes(text))
       return Promise.resolve();
     this.waitForText = text;
-    return new Promise(f => this.waitForCallback = f);
+    return new Promise((f, r) => {
+      this.waitForCallback = f;
+      if (timeout) {
+        setTimeout(() => {
+          r(new Error('Timed out waiting for text:\n' + text + '\n\nReceived:\n' + this.text()));
+        }, timeout);
+      }
+    });
   }
 
   text() {
-    return removeAnsiColors(this.data);
+    return removeAnsiColors(this.process.output);
   }
 }
 

@@ -24,6 +24,17 @@ fi
 
 trap "cd $(pwd -P)" EXIT
 cd "$(dirname $0)"
+SCRIPT_FOLDER="$(pwd -P)"
+source "${SCRIPT_FOLDER}/../utils.sh"
+
+CURRENT_HOST_OS_VERSION=$(getMacVersion)
+# As of Oct 2021, we build FFMPEG for Mac with Xcode 13 to align toolchains.
+if [[ "${CURRENT_HOST_OS_VERSION}" == "10."* ]]; then
+  echo "ERROR: ${CURRENT_HOST_OS_VERSION} is not supported"
+  exit 1
+else
+  selectXcodeVersionOrDie "13.2"
+fi
 
 source ./CONFIG.sh
 
@@ -46,7 +57,7 @@ function build_libvpx {
   cd libvpx
   git checkout "${LIBVPX_VERSION}"
   # Compile libvpx according to the docs:
-  # - https://chromium.googlesource.com/webm/libvpx/+/master/README
+  # - https://chromium.googlesource.com/webm/libvpx/+/main/README
   ./configure --prefix="${PREFIX}" ${LIBVPX_CONFIG}
   make && make install
 }
@@ -80,7 +91,11 @@ for dependency in ${REQUIERED_BUILD_TOOLS[@]}; do
 done
 
 if [[ ${#missing_build_tools[@]} != 0 ]]; then
-  die "ERROR: missing dependencies! Please run:    brew install ${missing_build_tools[@]}"
+  if [[ "$1" == "--full" ]]; then
+    brew install ${missing_build_tools[@]}
+  else
+    die "ERROR: missing dependencies! Please run:    brew install ${missing_build_tools[@]}"
+  fi
 fi
 
 # Cleanup

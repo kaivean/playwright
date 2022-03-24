@@ -1,18 +1,10 @@
 ---
 id: intro
-title: "Getting Started"
+title: "Getting started"
 ---
 
 <!-- TOC -->
 - [Release notes](./release-notes.md)
-
-## Installation
-
-Start with installing `playwright` dotnet tool globally. This only needs to be done once. Learn more about [Playwright CLI](./cli.md) tool.
-
-```bash
-dotnet tool install --global Microsoft.Playwright.CLI
-```
 
 ## First project
 
@@ -23,10 +15,15 @@ Create a console project and add the Playwright dependency.
 dotnet new console -n PlaywrightDemo
 cd PlaywrightDemo
 
-# Install dependencies, build project and download necessary browsers.
+# Add project dependency
 dotnet add package Microsoft.Playwright
+# Build the project
 dotnet build
-playwright install
+# Install required browsers - replace netX with actual output folder name, f.ex. net6.0.
+pwsh bin\Debug\netX\playwright.ps1 install
+
+# If the pwsh command does not work (throws TypeNotFound), make sure to use an up-to-date version of PowerShell.
+dotnet tool update --global PowerShell
 ```
 
 Create a `Program.cs` that will navigate to `https://playwright.dev/dotnet` and take a screenshot in Chromium.
@@ -57,10 +54,10 @@ dotnet run
 By default, Playwright runs the browsers in headless mode. To see the browser UI, pass the `Headless = false` flag while launching the browser. You can also use [`option: slowMo`] to slow down execution. Learn more in the debugging tools [section](./debug.md).
 
 ```csharp
-await playwright.Firefox.LaunchAsync(new BrowserTypeLaunchOptions 
-{ 
-    Headless = false, 
-    SlowMo = 50, 
+await playwright.Firefox.LaunchAsync(new BrowserTypeLaunchOptions
+{
+    Headless = false,
+    SlowMo = 50,
 });
 ```
 
@@ -77,9 +74,12 @@ cd PlaywrightTests
 Install dependencies, build project and download necessary browsers. This is only done once per project.
 
 ```bash
+# Add project dependency
 dotnet add package Microsoft.Playwright.NUnit
+# Build the project
 dotnet build
-playwright install
+# Install required browsers
+pwsh bin\Debug\netX\playwright.ps1 install
 ```
 
 Edit UnitTest1.cs file.
@@ -116,10 +116,41 @@ dotnet test -- NUnit.NumberOfTestWorkers=5
 
 ## Record scripts
 
-[Command Line Interface](./cli.md) can be used to record user interactions and generate C# code.
+[Command line tools](./cli.md) can be used to record user interactions and generate C# code.
 
 ```bash
-playwright codegen
+pwsh bin\Debug\netX\playwright.ps1 codegen
+```
+
+## Install browsers via API
+
+It's possible to run [Command line tools](./cli.md) commands via the .NET API:
+
+```csharp
+var exitCode = Microsoft.Playwright.Program.Main(new[] {"install"});
+if (exitCode != 0)
+{
+    throw new Exception($"Playwright exited with code {exitCode}");
+}
+```
+
+## Bundle drivers for different platforms
+
+Playwright by default does bundle only the driver for the .NET publish target runtime. If you want to bundle for additional platforms, you can
+override this behavior by using either `all`, `none` or `linux`, `win`, `osx` in your project file.
+
+```xml
+<PropertyGroup>
+  <PlaywrightPlatform>all</PlaywrightPlatform>
+</PropertyGroup>
+```
+
+or:
+
+```xml
+<PropertyGroup>
+  <PlaywrightPlatform>osx;linux</PlaywrightPlatform>
+</PropertyGroup>
 ```
 
 ## System requirements
@@ -143,6 +174,6 @@ dependencies to run the browsers.
 Only Ubuntu 18.04 and Ubuntu 20.04 are officially supported.
 :::
 
-See also in the [Command Line Interface](./cli.md#install-system-dependencies)
+See also in the [Command line tools](./cli.md#install-system-dependencies)
 which has a command to install all necessary dependencies automatically for Ubuntu
 LTS releases.

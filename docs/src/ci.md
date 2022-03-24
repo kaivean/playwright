@@ -13,12 +13,16 @@ configurations for common CI providers.
 3 steps to get your tests running on CI:
 
 1. **Ensure CI agent can run browsers**: Use [our Docker image](./docker.md)
-   in Linux agents. Windows and macOS agents do not require any additional dependencies.
+   in Linux agents or install your dependencies using the [CLI](./cli.md#install-system-dependencies). Windows and macOS agents do not require any additional dependencies.
 1. **Install Playwright**:
    ```bash js
+   # Install NPM packages
    npm ci
    # or
    npm install
+
+   # Install Playwright browsers
+   npx playwright install
    ```
    ```bash python
    pip install playwright
@@ -35,20 +39,32 @@ configurations for common CI providers.
 
 ## CI configurations
 
-### GitHub Actions
+The [Command line tools](./cli.md#install-system-dependencies) can be used to install all operating system dependencies on GitHub Actions.
 
-The [Playwright GitHub Action](https://github.com/microsoft/playwright-github-action) can be used to run Playwright tests on GitHub Actions.
+### GitHub Actions
 
 ```yml js
 steps:
-  - uses: microsoft/playwright-github-action@v1
+  - uses: actions/checkout@v2
+  - uses: actions/setup-node@v2
+    with:
+      node-version: '14'
+  - name: Install dependencies
+    run: npm ci
+  - name: Install Playwright
+    run: npx playwright install --with-deps
   - name: Run your tests
     run: npm test
+  - name: Upload test results
+    if: always()
+    uses: actions/upload-artifact@v2
+    with:
+      name: playwright-results
+      path: test-results
 ```
 
 ```yml python
 steps:
-  - uses: microsoft/playwright-github-action@v1
   - name: Set up Python
     uses: actions/setup-python@v2
     with:
@@ -60,55 +76,49 @@ steps:
       pip install -e .
   - name: Ensure browsers are installed
     run: python -m playwright install
+  - name: Install operating system dependencies
+    run: python -m playwright install-deps
   - name: Run your tests
     run: pytest
 ```
 
-We run [our tests](https://github.com/microsoft/playwright/blob/master/.github/workflows/tests.yml) on GitHub Actions, across a matrix of 3 platforms (Windows, Linux, macOS) and 3 browsers (Chromium, Firefox, WebKit).
+We run [our tests](https://github.com/microsoft/playwright/blob/main/.github/workflows/tests_secondary.yml) on GitHub Actions, across a matrix of 3 platforms (Windows, Linux, macOS) and 3 browsers (Chromium, Firefox, WebKit).
+
+### GitHub Actions on deployment
+
+This will start the tests after a [GitHub Deployment](https://developer.github.com/v3/repos/deployments/) went into the `success` state.
+Services like Azure Static Web Apps, Netlify, Vercel, etc. use this pattern so you can run your end-to-end tests on their deployed enviornment.
+
+```yml
+name: Playwright Tests
+on:
+  deployment_status:
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    if: github.event.deployment_status.state == 'success'
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '14.x'
+    - name: Install dependencies
+      run: npm ci
+    - name: Install Playwright
+      run: npx playwright install --with-deps
+    - name: Run Playwright tests
+      run: npm run test:e2e
+      env:
+        # This might depend on your test-runner/language binding
+        PLAYWRIGHT_TEST_BASE_URL: ${{ github.event.deployment_status.target_url }}
+```
 
 ### Docker
 
 We have a [pre-built Docker image](./docker.md) which can either be used directly, or as a reference to update your existing Docker definitions.
 
 Suggested configuration
-1. By default, Docker runs a container with a `/dev/shm` shared memory space 64MB.
-   This is [typically too small](https://github.com/c0b/chrome-in-docker/issues/1) for Chromium
-   and will cause Chromium to crash when rendering large pages. To fix, run the container with
-   `docker run --shm-size=1gb` to increase the size of `/dev/shm`. Since Chromium 65, this is no
-   longer necessary. Instead, launch the browser with the `--disable-dev-shm-usage` flag:
-
-   ```js
-   const browser = await playwright.chromium.launch({
-     args: ['--disable-dev-shm-usage']
-   });
-   ```
-
-   ```java
-   Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
-     .setArgs(Arrays.asList("--disable-dev-shm-usage")));
-   ```
-
-   ```python async
-   browser = await playwright.chromium.launch(
-      args=['--disable-dev-shm-usage']
-   )
-   ```
-
-   ```python sync
-   browser = playwright.chromium.launch({
-      args=['--disable-dev-shm-usage']
-   })
-   ```
-
-   ```csharp
-   await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-   {
-        Args = new[] { "--disable-dev-shm-usage" }
-   });
-   ```
-
-   This will write shared memory files into `/tmp` instead of `/dev/shm`. See
-   [crbug.com/736452](https://bugs.chromium.org/p/chromium/issues/detail?id=736452) for more details.
 1. Using `--ipc=host` is also recommended when using Chromium—without it Chromium can run out of memory
    and crash. Learn more about this option in [Docker docs](https://docs.docker.com/engine/reference/run/#ipc-settings---ipc).
 1. Seeing other weird errors when launching Chromium? Try running your container
@@ -128,7 +138,7 @@ For Linux agents, you can use [our Docker container](./docker.md) with Azure Pip
 pool:
   vmImage: 'ubuntu-20.04'
 
-container: mcr.microsoft.com/playwright:focal
+container: mcr.microsoft.com/playwright:v1.21.0-focal
 
 steps:
 ...
@@ -196,7 +206,7 @@ Running Playwright on CircleCI requires the following steps:
 
    ```yml
    docker:
-     - image: mcr.microsoft.com/playwright:focal
+     - image: mcr.microsoft.com/playwright:v1.21.0-focal
    environment:
      NODE_ENV: development # Needed if playwright is in `devDependencies`
    ```
@@ -218,7 +228,7 @@ to run tests on Jenkins.
 
 ```groovy
 pipeline {
-   agent { docker { image 'mcr.microsoft.com/playwright:focal' } }
+   agent { docker { image 'mcr.microsoft.com/playwright:v1.21.0-focal' } }
    stages {
       stage('e2e-tests') {
          steps {
@@ -235,7 +245,7 @@ pipeline {
 Bitbucket Pipelines can use public [Docker images as build environments](https://confluence.atlassian.com/bitbucket/use-docker-images-as-build-environments-792298897.html). To run Playwright tests on Bitbucket, use our public Docker image ([see Dockerfile](./docker.md)).
 
 ```yml
-image: mcr.microsoft.com/playwright:focal
+image: mcr.microsoft.com/playwright:v1.21.0-focal
 ```
 
 While the Docker image supports sandboxing for Chromium, it does not work in the Bitbucket Pipelines environment. To launch Chromium on Bitbucket Pipelines, use the `chromiumSandbox: false` launch argument.
@@ -293,7 +303,7 @@ stages:
 
 tests:
   stage: test
-  image: mcr.microsoft.com/playwright:focal
+  image: mcr.microsoft.com/playwright:v1.21.0-focal
   script:
   ...
 ```
@@ -302,7 +312,7 @@ tests:
 
 By default, Playwright downloads browser binaries when the Playwright NPM package
 is installed. The NPM packages have a `postinstall` hook that downloads the browser
-binaries. This behavior can be [customized with environment variables](./installation.md).
+binaries. This behavior can be [customized with environment variables](./browsers.md#managing-browser-binaries).
 
 Caching browsers on CI is **strictly optional**: The `postinstall` hooks should
 execute and download the browser binaries on every run.
@@ -323,7 +333,7 @@ This behavior can be fixed with one of the following approaches:
    behavior in most CI providers.)
 1. Set `PLAYWRIGHT_BROWSERS_PATH=0` as the environment variable before running
    `npm install`. This will download the browser binaries in the `node_modules`
-   directory and cache them with the package code. See [installation docs](./installation.md).
+   directory and cache them with the package code. See [managing browser binaries](./browsers.md#managing-browser-binaries).
 1. Use `npm ci` (instead of `npm install`) which forces a clean install: by
    removing the existing `node_modules` directory. See [npm docs](https://docs.npmjs.com/cli/ci.html).
 1. Cache the browser binaries, with the steps below.

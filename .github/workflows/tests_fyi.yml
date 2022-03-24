@@ -3,7 +3,7 @@ name: "tests 3"
 on:
   push:
     branches:
-      - master
+      - main
       - release-*
 
 env:
@@ -24,11 +24,13 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: 12
+    - run: npm i -g npm@8.3
     - run: npm ci
       env:
         DEBUG: pw:install
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     - run: npm run build
-    - run: node lib/cli/cli install-deps ${{ matrix.browser }} chromium
+    - run: npx playwright install --with-deps ${{ matrix.browser }} chromium
     - run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" -- npm run test -- --project=${{ matrix.browser }}
       env:
         PWTEST_VIDEO: 1
@@ -46,17 +48,19 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2]
-    runs-on: macos-10.15
+    # use mac build for emulator hardware accelerator
+    runs-on: macos-11
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-node@v2
       with:
         node-version: 14
+    - run: npm i -g npm@8.3
     - run: npm ci
       env:
         DEBUG: pw:install
     - run: npm run build
-    - run: node lib/cli/cli install-deps
+    - run: npx playwright install-deps
     - name: Create Android Emulator
       run: utils/avd_recreate.sh
     - name: Start Android Emulator

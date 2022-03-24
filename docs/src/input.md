@@ -713,7 +713,7 @@ await page.SetInputFilesAsync("input#upload", new FilePayload
 {
     Name = "file.txt",
     MimeType = "text/plain",
-    Buffer = "this is a test".getBytes(StandardCharsets.UTF_8),
+    Buffer = System.Text.Encoding.UTF8.GetBytes("this is a test"),
 });
 ```
 
@@ -721,9 +721,12 @@ If you don't have input element in hand (it is created dynamically), you can han
 or use a corresponding waiting method upon your action:
 
 ```js
+// Note that Promise.all prevents a race condition
+// between clicking and waiting for the file chooser.
 const [fileChooser] = await Promise.all([
+  // It is important to call waitForEvent before click to set up waiting.
   page.waitForEvent('filechooser'),
-  page.click('upload')
+  page.locator('upload').click(),
 ]);
 await fileChooser.setFiles('myfile.pdf');
 ```

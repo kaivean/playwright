@@ -39,6 +39,32 @@ it('getAttribute should work', async ({ page, server }) => {
   expect(await page.getAttribute('#outer', 'foo')).toBe(null);
 });
 
+it('inputValue should work', async ({ page, server }) => {
+  await page.goto(`${server.PREFIX}/dom.html`);
+
+  await page.selectOption('#select', 'foo');
+  expect(await page.inputValue('#select')).toBe('foo');
+
+  await page.fill('#textarea', 'text value');
+  expect(await page.inputValue('#textarea')).toBe('text value');
+
+  await page.fill('#input', 'input value');
+  expect(await page.inputValue('#input')).toBe('input value');
+  const handle = await page.$('#input');
+  expect(await handle.inputValue()).toBe('input value');
+
+  expect(await page.inputValue('#inner').catch(e => e.message)).toContain('Node is not an <input>, <textarea> or <select> element');
+  const handle2 = await page.$('#inner');
+  expect(await handle2.inputValue().catch(e => e.message)).toContain('Node is not an <input>, <textarea> or <select> element');
+});
+
+it('inputValue should work on label', async ({ page, server }) => {
+  await page.setContent(`<label><input type=text></input></label>`);
+  await page.fill('input', 'foo');
+  const handle = await page.$('label');
+  expect(await handle.inputValue()).toBe('foo');
+});
+
 it('innerHTML should work', async ({ page, server }) => {
   await page.goto(`${server.PREFIX}/dom.html`);
   const handle = await page.$('#outer');
@@ -56,10 +82,10 @@ it('innerText should work', async ({ page, server }) => {
 it('innerText should throw', async ({ page, server }) => {
   await page.setContent(`<svg>text</svg>`);
   const error1 = await page.innerText('svg').catch(e => e);
-  expect(error1.message).toContain('Not an HTMLElement');
+  expect(error1.message).toContain('Node is not an HTMLElement');
   const handle = await page.$('svg');
   const error2 = await handle.innerText().catch(e => e);
-  expect(error2.message).toContain('Not an HTMLElement');
+  expect(error2.message).toContain('Node is not an HTMLElement');
 });
 
 it('textContent should work', async ({ page, server }) => {
@@ -176,7 +202,7 @@ it('isVisible and isHidden should work', async ({ page }) => {
   expect(await page.isHidden('no-such-element')).toBe(true);
 });
 
-it('element state checks should work for label with zero-sized input', async ({page, server}) => {
+it('element state checks should work for label with zero-sized input', async ({ page, server }) => {
   await page.setContent(`
     <label>
       Click me
@@ -190,6 +216,25 @@ it('element state checks should work for label with zero-sized input', async ({p
   // Enabled checks the input.
   expect(await page.isEnabled('text=Click me')).toBe(false);
   expect(await page.isDisabled('text=Click me')).toBe(true);
+});
+
+it('isVisible should not throw when the DOM element is not connected', async ({ page }) => {
+  await page.setContent(`<div id="root"></div>`);
+  await page.evaluate(() => {
+    function insert() {
+      document.getElementById('root').innerHTML = '<div id="problem">Problem</div>';
+      window.requestAnimationFrame(remove);
+    }
+    function remove() {
+      const node = document.getElementById('problem');
+      node?.parentNode?.removeChild(node);
+      window.requestAnimationFrame(insert);
+    }
+    window.requestAnimationFrame(insert);
+  });
+
+  for (let i = 0; i < 10; i++)
+    await page.isVisible('#problem');
 });
 
 it('isEnabled and isDisabled should work', async ({ page }) => {
@@ -215,6 +260,29 @@ it('isEnabled and isDisabled should work', async ({ page }) => {
   expect(await page.isDisabled(':text("button2")')).toBe(false);
 });
 
+it('isEnabled and isDisabled should work with <select/> option/optgroup correctly', async ({ page }) => {
+  await page.setContent(`
+    <select name="select">
+      <option id="enabled1" value="1">Enabled</option>
+      <option id="disabled1" value="2" disabled>Disabled</option>
+      <optgroup label="Foo1">
+        <option value="mercedes">Mercedes</option>
+      </optgroup>
+      <optgroup label="Foo2" disabled>
+        <option value="mercedes">Mercedes</option>
+      </optgroup>
+    </select>
+  `);
+  expect((await (await page.$('#enabled1')).isEnabled())).toBe(true);
+  expect((await (await page.$('#enabled1')).isDisabled())).toBe(false);
+  expect((await (await page.$('#disabled1')).isEnabled())).toBe(false);
+  expect((await (await page.$('#disabled1')).isDisabled())).toBe(true);
+  expect((await (await page.$('optgroup >> nth=0')).isEnabled())).toBe(true);
+  expect((await (await page.$('optgroup >> nth=0')).isDisabled())).toBe(false);
+  expect((await (await page.$('optgroup >> nth=1')).isEnabled())).toBe(false);
+  expect((await (await page.$('optgroup >> nth=1')).isDisabled())).toBe(true);
+});
+
 it('isEditable should work', async ({ page }) => {
   await page.setContent(`<input id=input1 disabled><textarea></textarea><input id=input2>`);
   await page.$eval('textarea', t => t.readOnly = true);
@@ -229,7 +297,7 @@ it('isEditable should work', async ({ page }) => {
   expect(await page.isEditable('textarea')).toBe(false);
 });
 
-it('isChecked should work', async ({page}) => {
+it('isChecked should work', async ({ page }) => {
   await page.setContent(`<input type='checkbox' checked><div>Not a checkbox</div>`);
   const handle = await page.$('input');
   expect(await handle.isChecked()).toBe(true);

@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 
+import { attachFrame, detachFrame } from '../config/utils';
 import { test as it, expect } from './pageTest';
 
-it('should work', async ({ page }) => {
+it('should work @smoke', async ({ page }) => {
   const result = await page.evaluate(() => 7 * 3);
   expect(result).toBe(21);
 });
@@ -506,7 +507,7 @@ it('should work with CSP', async ({ page, server }) => {
   expect(await page.evaluate(() => 2 + 2)).toBe(4);
 });
 
-it('should evaluate exception', async ({ page }) => {
+it('should evaluate exception with a function on the stack', async ({ page }) => {
   const error = await page.evaluate(() => {
     return (function functionOnStack() {
       return new Error('error message');
@@ -558,7 +559,7 @@ it('should not use Array.prototype.toJSON when evaluating', async ({ page }) => 
 
 it('should not add a toJSON property to newly created Arrays after evaluation', async ({ page, browserName }) => {
   await page.evaluate(() => []);
-  const hasToJSONProperty = await page.evaluate(() => "toJSON" in []);
+  const hasToJSONProperty = await page.evaluate(() => 'toJSON' in []);
   expect(hasToJSONProperty).toEqual(false);
 });
 
@@ -569,4 +570,14 @@ it('should not use toJSON in jsonValue', async ({ page }) => {
 
 it('should not expose the injected script export', async ({ page }) => {
   expect(await page.evaluate('typeof pwExport === "undefined"')).toBe(true);
+});
+
+it('should throw when frame is detached', async ({ page, server }) => {
+  await attachFrame(page, 'frame1', server.EMPTY_PAGE);
+  const frame = page.frames()[1];
+  const promise = frame.evaluate(() => new Promise<void>(() => {})).catch(e => e);
+  await detachFrame(page, 'frame1');
+  const error = await promise;
+  expect(error).toBeTruthy();
+  expect(error.message).toMatch(/frame.evaluate: (Frame was detached|Execution context was destroyed)/);
 });

@@ -58,10 +58,6 @@ const applySetting = {
     docShell.languageOverride = locale;
   },
 
-  javaScriptDisabled: (javaScriptDisabled) => {
-    docShell.allowJavascript = !javaScriptDisabled;
-  },
-
   scrollbarsHidden: (hidden) => {
     frameTree.setScrollbarsHidden(hidden);
   },
@@ -88,11 +84,10 @@ function initialize() {
   if (!response)
     return;
   const {
-    scriptsToEvaluateOnNewDocument = [],
+    initScripts = [],
     bindings = [],
     settings = {}
   } = response || {};
-
   // Enforce focused state for all top level documents.
   docShell.overrideHasFocus = true;
   docShell.forceActiveState = true;
@@ -103,14 +98,13 @@ function initialize() {
   }
   for (const { worldName, name, script } of bindings)
     frameTree.addBinding(worldName, name, script);
-  for (const script of scriptsToEvaluateOnNewDocument)
-    frameTree.addScriptToEvaluateOnNewDocument(script);
+  frameTree.setInitScripts(initScripts);
 
   pageAgent = new PageAgent(messageManager, channel, frameTree);
 
   channel.register('', {
-    addScriptToEvaluateOnNewDocument(script) {
-      frameTree.addScriptToEvaluateOnNewDocument(script);
+    setInitScripts(scripts) {
+      frameTree.setInitScripts(scripts);
     },
 
     addBinding({worldName, name, script}) {

@@ -17,7 +17,7 @@
 
 import { browserTest as it, expect } from './config/browserTest';
 
-it('should intercept', async ({browser, server}) => {
+it('should intercept', async ({ browser, server }) => {
   const context = await browser.newContext();
   let intercepted = false;
   await context.route('**/empty.html', route => {
@@ -40,16 +40,15 @@ it('should intercept', async ({browser, server}) => {
   await context.close();
 });
 
-it('should unroute', async ({browser, server}) => {
+it('should unroute', async ({ browser, server }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
 
   let intercepted = [];
-  const handler1 = route => {
+  await context.route('**/*', route => {
     intercepted.push(1);
     route.continue();
-  };
-  await context.route('**/empty.html', handler1);
+  });
   await context.route('**/empty.html', route => {
     intercepted.push(2);
     route.continue();
@@ -58,27 +57,28 @@ it('should unroute', async ({browser, server}) => {
     intercepted.push(3);
     route.continue();
   });
-  await context.route('**/*', route => {
+  const handler4 = route => {
     intercepted.push(4);
     route.continue();
-  });
+  };
+  await context.route('**/empty.html', handler4);
   await page.goto(server.EMPTY_PAGE);
-  expect(intercepted).toEqual([1]);
+  expect(intercepted).toEqual([4]);
 
   intercepted = [];
-  await context.unroute('**/empty.html', handler1);
+  await context.unroute('**/empty.html', handler4);
   await page.goto(server.EMPTY_PAGE);
-  expect(intercepted).toEqual([2]);
+  expect(intercepted).toEqual([3]);
 
   intercepted = [];
   await context.unroute('**/empty.html');
   await page.goto(server.EMPTY_PAGE);
-  expect(intercepted).toEqual([4]);
+  expect(intercepted).toEqual([1]);
 
   await context.close();
 });
 
-it('should yield to page.route', async ({browser, server}) => {
+it('should yield to page.route', async ({ browser, server }) => {
   const context = await browser.newContext();
   await context.route('**/empty.html', route => {
     route.fulfill({ status: 200, body: 'context' });
@@ -93,7 +93,7 @@ it('should yield to page.route', async ({browser, server}) => {
   await context.close();
 });
 
-it('should fall back to context.route', async ({browser, server}) => {
+it('should fall back to context.route', async ({ browser, server }) => {
   const context = await browser.newContext();
   await context.route('**/empty.html', route => {
     route.fulfill({ status: 200, body: 'context' });
@@ -108,7 +108,7 @@ it('should fall back to context.route', async ({browser, server}) => {
   await context.close();
 });
 
-it('should support Set-Cookie header', async ({contextFactory, server, browserName}) => {
+it('should support Set-Cookie header', async ({ contextFactory, server, browserName, defaultSameSiteCookieValue }) => {
   it.fixme(browserName === 'webkit');
 
   const context = await contextFactory();
@@ -124,7 +124,7 @@ it('should support Set-Cookie header', async ({contextFactory, server, browserNa
   });
   await page.goto('https://example.com');
   expect(await context.cookies()).toEqual([{
-    sameSite: 'None',
+    sameSite: defaultSameSiteCookieValue,
     name: 'name',
     value: 'value',
     domain: '.example.com',
@@ -135,7 +135,7 @@ it('should support Set-Cookie header', async ({contextFactory, server, browserNa
   }]);
 });
 
-it('should ignore secure Set-Cookie header for insecure requests', async ({contextFactory, server, browserName}) => {
+it('should ignore secure Set-Cookie header for insecure requests', async ({ contextFactory, server, browserName }) => {
   it.fixme(browserName === 'webkit');
 
   const context = await contextFactory();
@@ -153,7 +153,7 @@ it('should ignore secure Set-Cookie header for insecure requests', async ({conte
   expect(await context.cookies()).toEqual([]);
 });
 
-it('should use Set-Cookie header in future requests', async ({contextFactory, server, browserName}) => {
+it('should use Set-Cookie header in future requests', async ({ contextFactory, server, browserName, defaultSameSiteCookieValue }) => {
   it.fixme(browserName === 'webkit');
 
   const context = await contextFactory();
@@ -170,7 +170,7 @@ it('should use Set-Cookie header in future requests', async ({contextFactory, se
   });
   await page.goto(server.EMPTY_PAGE);
   expect(await context.cookies()).toEqual([{
-    sameSite: 'None',
+    sameSite: defaultSameSiteCookieValue,
     name: 'name',
     value: 'value',
     domain: 'localhost',
@@ -189,7 +189,7 @@ it('should use Set-Cookie header in future requests', async ({contextFactory, se
   expect(cookie).toBe('name=value');
 });
 
-it('should work with ignoreHTTPSErrors', async ({browser, httpsServer}) => {
+it('should work with ignoreHTTPSErrors', async ({ browser, httpsServer }) => {
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
 
@@ -197,4 +197,41 @@ it('should work with ignoreHTTPSErrors', async ({browser, httpsServer}) => {
   const response = await page.goto(httpsServer.EMPTY_PAGE);
   expect(response.status()).toBe(200);
   await context.close();
+});
+
+it('should support the times parameter with route matching', async ({ context, page, server }) => {
+  const intercepted = [];
+  await context.route('**/empty.html', route => {
+    intercepted.push(1);
+    route.continue();
+  }, { times: 1 });
+  await page.goto(server.EMPTY_PAGE);
+  await page.goto(server.EMPTY_PAGE);
+  await page.goto(server.EMPTY_PAGE);
+  expect(intercepted).toHaveLength(1);
+});
+
+it('should overwrite post body with empty string', async ({ context, server, page, browserName }) => {
+  await context.route('**/empty.html', route => {
+    route.continue({
+      postData: '',
+    });
+  });
+
+  const [req] = await Promise.all([
+    server.waitForRequest('/empty.html'),
+    page.setContent(`
+      <script>
+        (async () => {
+            await fetch('${server.EMPTY_PAGE}', {
+              method: 'POST',
+              body: 'original',
+            });
+        })()
+      </script>
+    `),
+  ]);
+
+  const body = (await req.postBody).toString();
+  expect(body).toBe('');
 });

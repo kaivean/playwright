@@ -17,20 +17,20 @@
 
 import { test as it, expect } from './pageTest';
 
-it('should work', async ({page, server}) => {
+it('should work', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.evaluate(url => window.location.href = url, server.PREFIX + '/grid.html');
   await page.waitForURL('**/grid.html');
 });
 
-it('should respect timeout', async ({page, server}) => {
+it('should respect timeout', async ({ page, server }) => {
   const promise = page.waitForURL('**/frame.html', { timeout: 2500 }).catch(e => e);
   await page.goto(server.EMPTY_PAGE);
   const error = await promise;
-  expect(error.message).toContain('page.waitForNavigation: Timeout 2500ms exceeded.');
+  expect(error.message).toContain('page.waitForURL: Timeout 2500ms exceeded.');
 });
 
-it('should work with both domcontentloaded and load', async ({page, server}) => {
+it('should work with both domcontentloaded and load', async ({ page, server }) => {
   let response = null;
   server.setRoute('/one-style.css', (req, res) => response = res);
   const navigationPromise = page.goto(server.PREFIX + '/one-style.html');
@@ -49,14 +49,33 @@ it('should work with both domcontentloaded and load', async ({page, server}) => 
   await navigationPromise;
 });
 
-it('should work with clicking on anchor links', async ({page, server}) => {
+it('should work with commit', async ({ page, server }) => {
+  server.setRoute('/empty.html', (req, res) => {
+    res.writeHead(200, {
+      'content-type': 'text/html',
+      'content-length': '8192'
+    });
+    // Write enought bytes of the body to trigge response received event.
+    res.write('<title>' + 'A'.repeat(4100));
+    res.uncork();
+  });
+
+  page.goto(server.EMPTY_PAGE).catch(e => {});
+  await page.waitForURL('**/empty.html', { waitUntil: 'commit' });
+});
+
+it('should work with commit and about:blank', async ({ page, server }) => {
+  await page.waitForURL('about:blank', { waitUntil: 'commit' });
+});
+
+it('should work with clicking on anchor links', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`<a href='#foobar'>foobar</a>`);
   await page.click('a');
   await page.waitForURL('**/*#foobar');
 });
 
-it('should work with history.pushState()', async ({page, server}) => {
+it('should work with history.pushState()', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
     <a onclick='javascript:pushState()'>SPA</a>
@@ -69,7 +88,7 @@ it('should work with history.pushState()', async ({page, server}) => {
   expect(page.url()).toBe(server.PREFIX + '/wow.html');
 });
 
-it('should work with history.replaceState()', async ({page, server}) => {
+it('should work with history.replaceState()', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
     <a onclick='javascript:replaceState()'>SPA</a>
@@ -82,7 +101,7 @@ it('should work with history.replaceState()', async ({page, server}) => {
   expect(page.url()).toBe(server.PREFIX + '/replaced.html');
 });
 
-it('should work with DOM history.back()/history.forward()', async ({page, server}) => {
+it('should work with DOM history.back()/history.forward()', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
     <a id=back onclick='javascript:goBack()'>back</a>
@@ -105,7 +124,7 @@ it('should work with DOM history.back()/history.forward()', async ({page, server
   expect(page.url()).toBe(server.PREFIX + '/second.html');
 });
 
-it('should work with url match for same document navigations', async ({page, server}) => {
+it('should work with url match for same document navigations', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   let resolved = false;
   const waitPromise = page.waitForURL(/third\.html/).then(() => resolved = true);
@@ -125,7 +144,7 @@ it('should work with url match for same document navigations', async ({page, ser
   expect(resolved).toBe(true);
 });
 
-it('should work on frame', async ({page, server}) => {
+it('should work on frame', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/frames/one-frame.html');
   const frame = page.frames()[1];
   await frame.evaluate(url => window.location.href = url, server.PREFIX + '/grid.html');

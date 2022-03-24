@@ -18,11 +18,10 @@
 #include "nsThreadManager.h"
 #include "nsView.h"
 #include "nsViewManager.h"
-#include "webrtc/modules/desktop_capture/desktop_capturer.h"
-#include "webrtc/modules/desktop_capture/desktop_capture_options.h"
-#include "webrtc/modules/desktop_capture/desktop_device_info.h"
-#include "webrtc/modules/desktop_capture/desktop_frame.h"
-#include "webrtc/modules/video_capture/video_capture.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/video_capture/video_capture.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "video_engine/desktop_capture_impl.h"
 extern "C" {
@@ -159,6 +158,9 @@ class nsScreencastService::Session : public rtc::VideoSinkInterface<webrtc::Vide
   void OnRawFrame(uint8_t* videoFrame, size_t videoFrameStride, const webrtc::VideoCaptureCapability& frameInfo) override {
     int pageWidth = frameInfo.width - mMargin.LeftRight();
     int pageHeight = frameInfo.height - mMargin.TopBottom();
+    // Frame size is 1x1 when browser window is minimized.
+    if (pageWidth <= 1 || pageHeight <= 1)
+      return;
     // Headed Firefox brings sizes in sync slowly.
     if (mViewportWidth && pageWidth > mViewportWidth)
       pageWidth = mViewportWidth;
@@ -267,7 +269,7 @@ class nsScreencastService::Session : public rtc::VideoSinkInterface<webrtc::Vide
   rtc::scoped_refptr<webrtc::VideoCaptureModuleEx> mCaptureModule;
   RefPtr<ScreencastEncoder> mEncoder;
   uint32_t mJpegQuality;
-  rtc::CriticalSection mCaptureCallbackCs;
+  rtc::RecursiveCriticalSection mCaptureCallbackCs;
   uint32_t mFramesInFlight = 0;
   int mWidth;
   int mHeight;
