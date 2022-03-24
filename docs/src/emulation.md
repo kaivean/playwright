@@ -17,6 +17,7 @@ can be changed for individual pages.
 <br/>
 
 ## Devices
+* langs: js, python, csharp
 
 Playwright comes with a registry of device parameters for selected mobile devices. It can be used to simulate browser
 behavior on a mobile device:
@@ -62,6 +63,25 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class Program
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless: False
+        });
+        var pixel2 = playwright.Devices["Pixel 2"];
+        await using var context = await browser.NewContextAsync(pixel2);
+    }
+}
+```
+
 All pages created in the context above will share the same device parameters.
 
 ### API reference
@@ -80,6 +100,11 @@ const context = await browser.newContext({
 });
 ```
 
+```java
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setUserAgent("My user agent"));
+```
+
 ```python async
 context = await browser.new_context(
   user_agent='My user agent'
@@ -90,6 +115,10 @@ context = await browser.new_context(
 context = browser.new_context(
   user_agent='My user agent'
 )
+```
+
+```csharp
+var context = await browser.NewContextAsync(new BrowserNewContextOptions { UserAgent = "My User Agent" });
 ```
 
 ### API reference
@@ -117,6 +146,20 @@ const context = await browser.newContext({
 });
 ```
 
+```java
+// Create context with given viewport
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setViewportSize(1280, 1024));
+
+// Resize viewport for individual page
+page.setViewportSize(1600, 1200);
+
+// Emulate high-DPI
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setViewportSize(2560, 1440)
+  .setDeviceScaleFactor(2);
+```
+
 ```python async
 # Create context with given viewport
 context = await browser.new_context(
@@ -124,7 +167,7 @@ context = await browser.new_context(
 )
 
 # Resize viewport for individual page
-await page.set_viewport_size(width=1600, height=1200)
+await page.set_viewport_size({"width": 1600, "height": 1200})
 
 # Emulate high-DPI
 context = await browser.new_context(
@@ -140,12 +183,30 @@ context = browser.new_context(
 )
 
 # Resize viewport for individual page
-page.set_viewport_size(width=1600, height=1200)
+await page.set_viewport_size({"width": 1600, "height": 1200})
 
 # Emulate high-DPI
 context = browser.new_context(
   viewport={ 'width': 2560, 'height': 1440 },
   device_scale_factor=2,
+```
+
+```csharp
+// Create context with given viewport
+await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    ViewportSize = new ViewportSize() { Width = 1280, Height = 1024 }
+});
+
+// Resize viewport for individual page
+await page.SetViewportSizeAsync(1600, 1200);
+
+// Emulate high-DPI
+await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    ViewportSize = new ViewportSize() { Width = 2560, Height = 1440 },
+    DeviceScaleFactor = 2
+});
 ```
 
 ### API reference
@@ -164,6 +225,13 @@ const context = await browser.newContext({
 });
 ```
 
+```java
+// Emulate locale and time
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setLocale("de-DE")
+  .setTimezoneId("Europe/Berlin"));
+```
+
 ```python async
 # Emulate locale and time
 context = await browser.new_context(
@@ -180,6 +248,14 @@ context = browser.new_context(
 )
 ```
 
+```csharp
+await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    Locale = "de-DE",
+    TimezoneId = "Europe/Berlin"
+});
+```
+
 ### API reference
 - [`method: Browser.newContext`]
 
@@ -193,6 +269,11 @@ Allow all pages in the context to show system notifications:
 const context = await browser.newContext({
   permissions: ['notifications'],
 });
+```
+
+```java
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setPermissions(Arrays.asList("notifications"));
 ```
 
 ```python async
@@ -213,6 +294,10 @@ Grant all pages in the existing context access to current location:
 await context.grantPermissions(['geolocation']);
 ```
 
+```java
+context.grantPermissions(Arrays.asList("geolocation"));
+```
+
 ```python async
 await context.grant_permissions(['geolocation'])
 ```
@@ -221,10 +306,19 @@ await context.grant_permissions(['geolocation'])
 context.grant_permissions(['geolocation'])
 ```
 
+```csharp
+await context.GrantPermissionsAsync(new[] { "geolocation" });
+```
+
 Grant notifications access from a specific domain:
 
 ```js
 await context.grantPermissions(['notifications'], {origin: 'https://skype.com'} );
+```
+
+```java
+context.grantPermissions(Arrays.asList("notifications"),
+  new BrowserContext.GrantPermissionsOptions().setOrigin("https://skype.com"));
 ```
 
 ```python async
@@ -235,10 +329,18 @@ await context.grant_permissions(['notifications'], origin='https://skype.com')
 context.grant_permissions(['notifications'], origin='https://skype.com')
 ```
 
+```csharp
+await context.GrantPermissionsAsync(new[] { "notifications" }, origin: "https://skype.com");
+```
+
 Revoke all permissions:
 
 ```js
 await context.clearPermissions();
+```
+
+```java
+context.clearPermissions();
 ```
 
 ```python async
@@ -247,6 +349,10 @@ await context.clear_permissions()
 
 ```python sync
 context.clear_permissions()
+```
+
+```csharp
+await context.ClearPermissionsAsync();
 ```
 
 ### API reference
@@ -267,6 +373,12 @@ const context = await browser.newContext({
 });
 ```
 
+```java
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setGeolocation(48.858455, 2.294474)
+  .setPermissions(Arrays.asList("geolocation")));
+```
+
 ```python async
 context = await browser.new_context(
   geolocation={"longitude": 48.858455, "latitude": 2.294474},
@@ -281,10 +393,22 @@ context = browser.new_context(
 )
 ```
 
+```csharp
+await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    Permissions = new[] { "geolocation" },
+    Geolocation = new Geolocation() { Longitude = 48.858455f, Latitude = 2.294474f }
+});
+```
+
 Change the location later:
 
 ```js
 await context.setGeolocation({ longitude: 29.979097, latitude: 31.134256 });
+```
+
+```java
+context.setGeolocation(new Geolocation(29.979097, 31.134256));
 ```
 
 ```python async
@@ -293,6 +417,10 @@ await context.set_geolocation({"longitude": 29.979097, "latitude": 31.134256})
 
 ```python sync
 context.set_geolocation({"longitude": 29.979097, "latitude": 31.134256})
+```
+
+```csharp
+await context.SetGeolocationAsync(new Geolocation() { Longitude = 48.858455f, Latitude = 2.294474f });
 ```
 
 **Note** you can only change geolocation for all pages in the context.
@@ -323,6 +451,22 @@ await page.emulateMedia({ colorScheme: 'dark' });
 
 // Change media for page
 await page.emulateMedia({ media: 'print' });
+```
+
+```java
+// Create context with dark mode
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setColorScheme(ColorScheme.DARK)); // or "light"
+
+// Create page with dark mode
+Page page = browser.newPage(new Browser.NewPageOptions()
+  .setColorScheme(ColorScheme.DARK)); // or "light"
+
+// Change color scheme for the page
+page.emulateMedia(new Page.EmulateMediaOptions().setColorScheme(ColorScheme.DARK));
+
+// Change media for page
+page.emulateMedia(new Page.EmulateMediaOptions().setMedia(Media.PRINT));
 ```
 
 ```python async
@@ -359,6 +503,32 @@ page.emulate_media(color_scheme='dark')
 
 # Change media for page
 page.emulate_media(media='print')
+```
+
+```csharp
+// Create context with dark mode
+await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    ColorScheme = ColorScheme.Dark
+});
+
+// Create page with dark mode
+var page = await browser.NewPageAsync(new BrowserNewPageOptions
+{
+    ColorScheme = ColorScheme.Dark
+});
+
+// Change color scheme for the page
+await page.EmulateMediaAsync(new PageEmulateMediaOptions
+{
+    ColorScheme = ColorScheme.Dark
+});
+
+// Change media for page
+await page.EmulateMediaAsync(new PageEmulateMediaOptions
+{
+    Media = Media.Print
+});
 ```
 
 ### API reference

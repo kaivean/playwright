@@ -1,42 +1,42 @@
 ---
 id: test-runners
-title: "Test Runners"
+title: "Pytest plugin"
 ---
 
-You can use our [Pytest integration](https://github.com/microsoft/playwright-pytest) to write end-to-end tests
-in Python.
+Write end-to-end tests for your web apps with [Pytest](https://docs.pytest.org/en/stable/).
 
 <!-- TOC -->
 
 ## Usage
 
-```sh
-$ pip install pytest-playwright
+```bash
+pip install pytest-playwright
 ```
 
 Use the `page` fixture to write a basic test. See [more examples](#examples).
 
 ```py
+# test_my_application.py
 def test_example_is_working(page):
     page.goto("https://example.com")
-    assert page.innerText('h1') == 'Example Domain'
+    assert page.inner_text('h1') == 'Example Domain'
     page.click("text=More information")
 ```
 
 To run your tests, use pytest CLI.
 
-```sh
+```bash
 # Run tests (Chromium and headless by default)
-$ pytest
+pytest
 
-# Run tests in headful mode
-$ pytest --headful
+# Run tests in headed mode
+pytest --headed
 
 # Run tests in a different browser (chromium, firefox, webkit)
-$ pytest --browser firefox
+pytest --browser firefox
 
 # Run tests in multiple browsers
-$ pytest --browser chromium --browser webkit
+pytest --browser chromium --browser webkit
 ```
 
 If you want to add the CLI arguments automatically without specifying them, you can use the [pytest.ini](https://docs.pytest.org/en/stable/reference.html#ini-options-ref) file:
@@ -45,9 +45,20 @@ If you want to add the CLI arguments automatically without specifying them, you 
 # content of pytest.ini
 [pytest]
 # Run firefox with UI
-addopts = --headful --browser firefox
-
+addopts = --headed --browser firefox
 ```
+
+## CLI arguments
+
+- `--headed`: Run tests in headed mode (default: headless).
+- `--browser`: Run tests in a different browser `chromium`, `firefox`, or `webkit`. It can be specified multiple times (default: all browsers).
+- `--browser-channel` [Browser channel](./browsers.md) to be used.
+- `--slowmo` Run tests with slow mo.
+- `--device` [Device](./emulation.md) to be emulated.
+- `--output` Directory for artifacts produced by tests (default: `test-results`).
+- `--tracing` Whether to record a [trace](./trace-viewer.md) for each test. `on`, `off`, or `retain-on-failure` (default: `off`).
+- `--video` Whether to record video for each test. `on`, `off`, or `retain-on-failure` (default: `off`).
+- `--screenshot` Whether to automatically capture a screenshot after each test. `on`, `off`, or `only-on-failure` (default: `off`).
 
 ## Fixtures
 
@@ -61,13 +72,16 @@ def test_my_app_is_working(fixture_name):
 
 **Function scope**: These fixtures are created when requested in a test function and destroyed when the test ends.
 
-- `context`: New [browser context](https://playwright.dev/#path=docs%2Fcore-concepts.md&q=browser-contexts) for a test.
-- `page`: New [browser page](https://playwright.dev/#path=docs%2Fcore-concepts.md&q=pages-and-frames) for a test.
+- `context`: New [browser context](https://playwright.dev/python/docs/browser-contexts) for a test.
+- `page`: New [browser page](https://playwright.dev/python/docs/pages) for a test.
 
 **Session scope**: These fixtures are created when requested in a test function and destroyed when all tests end.
 
-- `browser`: Browser instance launched by Playwright.
+- `playwright`: [Playwright](https://playwright.dev/python/docs/api/class-playwright) instance.
+- `browser_type`: [BrowserType](https://playwright.dev/python/docs/api/class-browsertype) instance of the current browser.
+- `browser`: [Browser](https://playwright.dev/python/docs/api/class-browser) instance launched by Playwright.
 - `browser_name`: Browser name as string.
+- `browser_channel`: Browser channel as string.
 - `is_chromium`, `is_webkit`, `is_firefox`: Booleans for the respective browser types.
 
 **Customizing fixture options**: For `browser` and `context` fixtures, use the the following fixtures to define custom launch options.
@@ -80,6 +94,7 @@ def test_my_app_is_working(fixture_name):
 ### Configure Mypy typings for auto-completion
 
 ```py
+# test_my_application.py
 from playwright.sync_api import Page
 
 def test_visit_admin_dashboard(page: Page):
@@ -87,9 +102,18 @@ def test_visit_admin_dashboard(page: Page):
     # ...
 ```
 
+### Configure slow mo
+
+Run tests with slow mo with the `--slowmo` argument.
+
+```bash
+pytest --slowmo 100
+```
+
 ### Skip test by browser
 
 ```py
+# test_my_application.py
 import pytest
 
 @pytest.mark.skip_browser("firefox")
@@ -101,6 +125,7 @@ def test_visit_example(page):
 ### Run on a specific browser
 
 ```py
+# conftest.py
 import pytest
 
 @pytest.mark.only_browser("chromium")
@@ -109,15 +134,28 @@ def test_visit_example(page):
     # ...
 ```
 
+### Run with a custom browser channel like Google Chrome or Microsoft Edge
+
+```bash
+pytest --browser-channel chrome
+```
+
+```python
+# test_my_application.py
+def test_example(page):
+    page.goto("https://example.com")
+```
+
 ### Configure base-url
 
 Start Pytest with the `base-url` argument.
 
-```sh
-$ pytest --base-url http://localhost:8080
+```bash
+pytest --base-url http://localhost:8080
 ```
 
 ```py
+# test_my_application.py
 def test_visit_example(page):
     page.goto("/admin")
     # -> Will result in http://localhost:8080/admin
@@ -125,24 +163,22 @@ def test_visit_example(page):
 
 ### Ignore HTTPS errors
 
-conftest.py
-
 ```py
+# conftest.py
 import pytest
 
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     return {
         **browser_context_args,
-        "ignoreHTTPSErrors": True
+        "ignore_https_errors": True
     }
 ```
 
 ### Use custom viewport size
 
-conftest.py
-
 ```py
+# conftest.py
 import pytest
 
 @pytest.fixture(scope="session")
@@ -158,9 +194,8 @@ def browser_context_args(browser_context_args):
 
 ### Device emulation
 
-conftest.py
-
 ```py
+# conftest.py
 import pytest
 
 @pytest.fixture(scope="session")
@@ -170,6 +205,57 @@ def browser_context_args(browser_context_args, playwright):
         **browser_context_args,
         **iphone_11,
     }
+```
+
+Or via the CLI `--device="iPhone 11 Pro"`
+
+### Persistent context
+
+```py
+# conftest.py
+import pytest
+from playwright.sync_api import BrowserType
+from typing import Dict
+
+@pytest.fixture(scope="session")
+def context(
+    browser_type: BrowserType,
+    browser_type_launch_args: Dict,
+    browser_context_args: Dict
+):
+    context = browser_type.launch_persistent_context("./foobar", **{
+        **browser_type_launch_args,
+        **browser_context_args,
+        "locale": "de-DE",
+    })
+    yield context
+    context.close()
+```
+
+When using that all pages inside your test are created from the persistent context.
+
+### Using with `unittest.TestCase`
+
+See the following example for using it with `unittest.TestCase`. This has a limitation,
+that only a single browser can be specified and no matrix of multiple browsers gets
+generated when specifying multiple.
+
+```py
+import pytest
+import unittest
+
+from playwright.sync_api import Page
+
+
+class MyTest(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def setup(self, page: Page):
+        self.page = page
+
+    def test_foobar(self):
+        self.page.goto("https://microsoft.com")
+        self.page.click("#foobar")
+        assert self.page.evaluate("1 + 1") == 2
 ```
 
 ## Debugging
@@ -185,26 +271,6 @@ def test_bing_is_working(page):
     # ...
 ```
 
-### Screenshot on test failure
-
-You can capture screenshots for failed tests with a [pytest runtest hook](https://docs.pytest.org/en/6.1.0/reference.html?highlight=pytest_runtest_makereport#test-running-runtest-hooks). Add this to your `conftest.py` file.
-
-Note that this snippet uses `slugify` to convert test names to file paths, which can be installed with `pip install python-slugify`.
-
-```py
-# In conftest.py
-from slugify import slugify
-from pathlib import Path
-
-def pytest_runtest_makereport(item, call) -> None:
-    if call.when == "call":
-        if call.excinfo is not None and "page" in item.funcargs:
-            page = item.funcargs["page"]
-            screenshot_dir = Path(".playwright-screenshots")
-            screenshot_dir.mkdir(exist_ok=True)
-            page.screenshot(path=str(screenshot_dir / f"{slugify(item.nodeid)}.png"))
-```
-
 ## Deploy to CI
 
-Use the [Playwright GitHub Action](https://github.com/microsoft/playwright-github-action) or [guides for other CI providers](https://playwright.dev/#path=docs%2Fci.md&q=) to deploy your tests to CI/CD
+See the [guides for CI providers](./ci.md) to deploy your tests to CI/CD.

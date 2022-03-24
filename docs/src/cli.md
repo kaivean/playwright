@@ -1,20 +1,29 @@
 ---
 id: cli
-title: "Command Line Interface"
+title: "Command line tools"
 ---
 
-Playwright comes with the command line tools that run via `npx` or as a part of the `npm` scripts.
+Playwright comes with the command line tools.
 
 <!-- TOC -->
 
 ## Usage
 
-```sh js
-$ npx playwright --help
+```bash js
+npx playwright --help
 ```
 
-```sh python
-$ playwright
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI
+```
+
+```bash python
+playwright
+```
+
+```bash csharp
+# Use the tools.
+pwsh bin\Debug\netX\playwright.ps1 --help
 ```
 
 ```json js
@@ -26,14 +35,86 @@ $ playwright
 }
 ```
 
-## Generate code
+## Install browsers
 
-```sh js
-$ npx playwright codegen wikipedia.org
+Playwright can install supported browsers.
+
+```bash js
+# Running without arguments will install default browsers
+npx playwright install
 ```
 
-```sh python
-$ playwright codegen wikipedia.org
+```bash java
+# Running without arguments will install default browsers
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
+```
+
+```bash python
+# Running without arguments will install default browsers
+playwright install
+```
+
+```bash csharp
+# Running without arguments will install default browsers
+pwsh bin\Debug\netX\playwright.ps1 install
+```
+
+You can also install specific browsers by providing an argument:
+
+```bash js
+# Install WebKit
+npx playwright install webkit
+```
+
+```bash java
+# Install WebKit
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install webkit"
+```
+
+```bash python
+# Install WebKit
+playwright install webkit
+```
+
+```bash csharp
+# Install WebKit
+pwsh bin\Debug\netX\playwright.ps1 install webkit
+```
+
+See all supported browsers:
+
+```bash js
+npx playwright install --help
+```
+
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --help"
+```
+
+```bash python
+playwright install --help
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 install --help
+```
+
+## Generate code
+
+```bash js
+npx playwright codegen wikipedia.org
+```
+
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="codegen wikipedia.org"
+```
+
+```bash python
+playwright codegen wikipedia.org
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 codegen wikipedia.org
 ```
 
 Run `codegen` and perform actions in the browser. Playwright CLI will generate JavaScript code for the user interactions. `codegen` will attempt to generate resilient text-based selectors.
@@ -44,29 +125,54 @@ Run `codegen` and perform actions in the browser. Playwright CLI will generate J
 
 Run `codegen` with `--save-storage` to save [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies) and [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage) at the end. This is useful to separately record authentication step and reuse it later.
 
-```sh js
-$ npx playwright --save-storage=auth.json codegen
+```bash js
+npx playwright codegen --save-storage=auth.json
 # Perform authentication and exit.
 # auth.json will contain the storage state.
 ```
 
-```sh python
-$ playwright --save-storage=auth.json codegen
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="codegen  --save-storage=auth.json"
+# Perform authentication and exit.
+# auth.json will contain the storage state.
+```
+
+```bash python
+playwright codegen --save-storage=auth.json
+# Perform authentication and exit.
+# auth.json will contain the storage state.
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 codegen --save-storage=auth.json
 # Perform authentication and exit.
 # auth.json will contain the storage state.
 ```
 
 Run with `--load-storage` to consume previously loaded storage. This way, all [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies) and [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage) will be restored, bringing most web apps to the authenticated state.
 
-```sh js
-$ npx playwright --load-storage=auth.json open my.web.app
-$ npx playwright --load-storage=auth.json codegen my.web.app
+```bash js
+npx playwright open --load-storage=auth.json my.web.app
+npx playwright codegen --load-storage=auth.json my.web.app
 # Perform actions in authenticated state.
 ```
 
-```sh python
-$ playwright --load-storage=auth.json open my.web.app
-$ playwright --load-storage=auth.json codegen my.web.app
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="open --load-storage=auth.json my.web.app"
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="codegen --load-storage=auth.json my.web.app"
+# Perform authentication and exit.
+# auth.json will contain the storage state.
+```
+
+```bash python
+playwright open --load-storage=auth.json my.web.app
+playwright codegen --load-storage=auth.json my.web.app
+# Perform actions in authenticated state.
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 open --load-storage=auth.json my.web.app
+pwsh bin\Debug\netX\playwright.ps1 codegen --load-storage=auth.json my.web.app
 # Perform actions in authenticated state.
 ```
 
@@ -89,6 +195,26 @@ const { chromium } = require('playwright');
   const page = await context.newPage();
   await page.pause();
 })();
+```
+
+```java
+import com.microsoft.playwright.*;
+
+public class Example {
+  public static void main(String[] args) {
+    try (Playwright playwright = Playwright.create()) {
+      BrowserType chromium = playwright.chromium();
+      // Make sure to run headed.
+      Browser browser = chromium.launch(new BrowserType.LaunchOptions().setHeadless(false));
+      // Setup context however you like.
+      BrowserContext context = browser.newContext(/* pass any options */);
+      context.route("**/*", route -> route.resume());
+      // Pause the page, and start recording manually.
+      Page page = context.newPage();
+      page.pause();
+    }
+  }
+}
 ```
 
 ```python async
@@ -127,63 +253,143 @@ with sync_playwright() as p:
     page.pause()
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class Program
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        var chromium = playwright.Chromium;
+        // Make sure to run headed.
+        var browser = await chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = false });
+
+        // Setup context however you like.
+        var context = await browser.NewContextAsync(); // Pass any options
+        await context.RouteAsync('**/*', route => route.ContinueAsync());
+
+        // Pause the page, and start recording manually.
+        var page = await context.NewPageAsync();
+        await page.PauseAsync();
+    }
+}
+```
+
 ## Open pages
 
 With `open`, you can use Playwright bundled browsers to browse web pages. Playwright provides cross-platform WebKit builds that can be used to reproduce Safari rendering across Windows, Linux and macOS.
 
-```sh js
+```bash js
 # Open page in Chromium
-$ npx playwright open example.com
+npx playwright open example.com
 ```
 
-```sh python
+```bash java
 # Open page in Chromium
-$ playwright open example.com
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="open example.com"
 ```
 
-```sh js
-# Open page in WebKit
-$ npx playwright wk example.com
+```bash python
+# Open page in Chromium
+playwright open example.com
 ```
 
-```sh python
+```bash csharp
+# Open page in Chromium
+pwsh bin\Debug\netX\playwright.ps1 open example.com
+```
+
+```bash js
 # Open page in WebKit
-$ playwright wk example.com
+npx playwright wk example.com
+```
+
+```bash java
+# Open page in WebKit
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="wk example.com"
+```
+
+```bash python
+# Open page in WebKit
+playwright wk example.com
+```
+
+```bash csharp
+# Open page in WebKit
+pwsh bin\Debug\netX\playwright.ps1 wk example.com
 ```
 
 ### Emulate devices
 `open` can emulate mobile and tablet devices from the [`playwright.devices`](https://playwright.dev/docs/api/class-playwright#playwrightdevices) list.
 
-```sh js
+```bash js
 # Emulate iPhone 11.
-$ npx playwright --device="iPhone 11" open wikipedia.org
+npx playwright open --device="iPhone 11" wikipedia.org
 ```
 
-```sh python
+```bash java
 # Emulate iPhone 11.
-$ playwright --device="iPhone 11" open wikipedia.org
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args='open --device="iPhone 11" wikipedia.org'
+```
+
+```bash python
+# Emulate iPhone 11.
+playwright open --device="iPhone 11" wikipedia.org
+```
+
+```bash csharp
+# Emulate iPhone 11.
+pwsh bin\Debug\netX\playwright.ps1 open --device="iPhone 11" wikipedia.org
 ```
 
 ### Emulate color scheme and viewport size
-```sh js
+
+```bash js
 # Emulate screen size and color scheme.
-$ npx playwright --viewport-size=800,600 --color-scheme=dark open twitter.com
+npx playwright open --viewport-size=800,600 --color-scheme=dark twitter.com
 ```
-```sh python
+
+```bash java
 # Emulate screen size and color scheme.
-$ playwright --viewport-size=800,600 --color-scheme=dark open twitter.com
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="open --viewport-size=800,600 --color-scheme=dark twitter.com"
+```
+
+```bash python
+# Emulate screen size and color scheme.
+playwright open --viewport-size=800,600 --color-scheme=dark twitter.com
+```
+
+```bash csharp
+# Emulate screen size and color scheme.
+pwsh bin\Debug\netX\playwright.ps1 open --viewport-size=800,600 --color-scheme=dark twitter.com
 ```
 
 ### Emulate geolocation, language and timezone
-```sh js
+
+```bash js
 # Emulate timezone, language & location
 # Once page opens, click the "my location" button to see geolocation in action
-$ npx playwright --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" open maps.google.com
+npx playwright open --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" maps.google.com
 ```
-```sh python
+
+```bash java
 # Emulate timezone, language & location
 # Once page opens, click the "my location" button to see geolocation in action
-$ playwright --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" open maps.google.com
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args='open --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" maps.google.com'
+```
+
+```bash python
+# Emulate timezone, language & location
+# Once page opens, click the "my location" button to see geolocation in action
+playwright open --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" maps.google.com
+```
+
+```bash csharp
+# Emulate timezone, language & location
+# Once page opens, click the "my location" button to see geolocation in action
+pwsh bin\Debug\netX\playwright.ps1 open --timezone="Europe/Rome" --geolocation="41.890221,12.492348" --lang="it-IT" maps.google.com
 ```
 
 ## Inspect selectors
@@ -219,6 +425,18 @@ Reveal element in the Elements panel (if DevTools of the respective browser supp
 > playwright.inspect('text=Log in')
 ```
 
+#### playwright.locator(selector)
+
+Query Playwright element using the actual Playwright query engine, for example:
+
+```js
+> playwright.locator('.auth-form', { hasText: 'Log in' });
+
+> Locator ()
+>   - element: button
+>   - elements: [button]
+```
+
 #### playwright.selector(element)
 
 Generates selector for the given element.
@@ -231,59 +449,153 @@ Generates selector for the given element.
 
 ## Take screenshot
 
-```sh js
+```bash js
 # See command help
-$ npx playwright screenshot --help
+npx playwright screenshot --help
 ```
 
-```sh python
+```bash java
 # See command help
-$ playwright screenshot --help
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="screenshot --help"
 ```
 
-```sh js
+```bash python
+# See command help
+playwright screenshot --help
+```
+
+```bash js
 # Wait 3 seconds before capturing a screenshot after page loads ('load' event fires)
-$ npx playwright \
-  --device="iPhone 11" \
-  --color-scheme=dark \
-  screenshot \
+npx playwright screenshot \
+    --device="iPhone 11" \
+    --color-scheme=dark \
     --wait-for-timeout=3000 \
     twitter.com twitter-iphone.png
 ```
 
-```sh python
+```bash java
 # Wait 3 seconds before capturing a screenshot after page loads ('load' event fires)
-$ playwright \
-  --device="iPhone 11" \
-  --color-scheme=dark \
-  screenshot \
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args='screenshot --device="iPhone 11" --color-scheme=dark --wait-for-timeout=3000 twitter.com twitter-iphone.png'
+```
+
+```bash python
+# Wait 3 seconds before capturing a screenshot after page loads ('load' event fires)
+playwright screenshot \
+    --device="iPhone 11" \
+    --color-scheme=dark \
     --wait-for-timeout=3000 \
     twitter.com twitter-iphone.png
 ```
 
-```sh js
-# Capture a full page screenshot
-$ npx playwright screenshot --full-page en.wikipedia.org wiki-full.png
+```bash csharp
+# Wait 3 seconds before capturing a screenshot after page loads ('load' event fires)
+pwsh bin\Debug\netX\playwright.ps1 screenshot \
+    --device="iPhone 11" \
+    --color-scheme=dark \
+    --wait-for-timeout=3000 \
+    twitter.com twitter-iphone.png
 ```
 
-```sh python
+```bash js
 # Capture a full page screenshot
-$ playwright screenshot --full-page en.wikipedia.org wiki-full.png
+npx playwright screenshot --full-page en.wikipedia.org wiki-full.png
+```
+
+```bash java
+# Capture a full page screenshot
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args='screenshot --full-page en.wikipedia.org wiki-full.png'
+```
+
+```bash python
+# Capture a full page screenshot
+playwright screenshot --full-page en.wikipedia.org wiki-full.png
+```
+
+```bash csharp
+# Capture a full page screenshot
+pwsh bin\Debug\netX\playwright.ps1 screenshot --full-page en.wikipedia.org wiki-full.png
 ```
 
 ## Generate PDF
 
 PDF generation only works in Headless Chromium.
 
-```sh js
+```bash js
 # See command help
-$ npx playwright pdf https://en.wikipedia.org/wiki/PDF wiki.pdf
+npx playwright pdf https://en.wikipedia.org/wiki/PDF wiki.pdf
 ```
 
-```sh python
+```bash java
 # See command help
-$ playwright pdf https://en.wikipedia.org/wiki/PDF wiki.pdf
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="pdf https://en.wikipedia.org/wiki/PDF wiki.pdf"
 ```
 
-## Known limitations
-Opening WebKit Web Inspector will disconnect Playwright from the browser. In such cases, code generation will stop.
+```bash python
+# See command help
+playwright pdf https://en.wikipedia.org/wiki/PDF wiki.pdf
+```
+
+```bash csharp
+# See command help
+pwsh bin\Debug\netX\playwright.ps1 pdf https://en.wikipedia.org/wiki/PDF wiki.pdf
+```
+
+## Install system dependencies
+
+Ubuntu 18.04 and Ubuntu 20.04 system dependencies can get installed automatically. This is useful for CI environments.
+
+```bash js
+# See command help
+npx playwright install-deps
+```
+
+```bash java
+# See command help
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install-deps"
+```
+
+```bash python
+# See command help
+playwright install-deps
+```
+
+```bash csharp
+# See command help
+pwsh bin\Debug\netX\playwright.ps1 install-deps
+```
+
+You can also install the dependencies for a single browser only by passing it as an argument:
+
+```bash js
+npx playwright install-deps chromium
+```
+
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install-deps chromium"
+```
+
+```bash python
+playwright install-deps chromium
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 install-deps chromium
+```
+
+It's also possible to combine `install-deps` with `install` and install by that the browsers and OS dependencies with a single command. This would do both for Chromium, but you can also leave it out.
+
+```bash js
+npx playwright install --with-deps chromium
+```
+
+```bash java
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
+```
+
+```bash python
+playwright install --with-deps chromium
+```
+
+```bash csharp
+pwsh bin\Debug\netX\playwright.ps1 install --with-deps chromium
+```

@@ -28,6 +28,7 @@
 #include "MainWindow.h"
 #include "PlaywrightLibResource.h"
 #include "WebKitBrowserWindow.h"
+#include <WebKit/WKPreferencesRefPrivate.h>
 #include <sstream>
 
 namespace WebCore {
@@ -48,11 +49,13 @@ std::wstring MainWindow::s_windowClass;
 size_t MainWindow::s_numInstances;
 
 bool MainWindow::s_headless = false;
-bool MainWindow::s_noStartupWindow = false;
+bool MainWindow::s_controlledRemotely = false;
+bool MainWindow::s_disableAcceleratedCompositing = false;
 
-void MainWindow::configure(bool headless, bool noStartupWindow) {
+void MainWindow::configure(bool headless, bool controlledRemotely, bool disableAcceleratedCompositing) {
     s_headless = headless;
-    s_noStartupWindow = noStartupWindow;
+    s_controlledRemotely = controlledRemotely;
+    s_disableAcceleratedCompositing = disableAcceleratedCompositing;
 }
 
 static std::wstring loadString(int id)
@@ -180,6 +183,8 @@ bool MainWindow::init(HINSTANCE hInstance, WKPageConfigurationRef conf)
     WKPageConfigurationSetPreferences(conf, prefs.get());
     WKPreferencesSetMediaCapabilitiesEnabled(prefs.get(), false);
     WKPreferencesSetDeveloperExtrasEnabled(prefs.get(), true);
+    if (s_disableAcceleratedCompositing)
+      WKPreferencesSetAcceleratedCompositingEnabled(prefs.get(), false);
 
     m_configuration = conf;
 
@@ -324,7 +329,7 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPA
     case WM_NCDESTROY:
         SetWindowLongPtr(hWnd, GWLP_USERDATA, 0);
         delete thisWindow;
-        if (s_noStartupWindow || s_numInstances > 0)
+        if (s_controlledRemotely || s_numInstances > 0)
             return 0;
         PostQuitMessage(0);
         break;

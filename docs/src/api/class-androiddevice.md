@@ -4,7 +4,7 @@
 [AndroidDevice] represents a connected device, either real hardware or emulated. Devices can be obtained using [`method: Android.devices`].
 
 ## event: AndroidDevice.webView
-- type: <[AndroidWebView]>
+- argument: <[AndroidWebView]>
 
 Emitted when a new WebView instance is detected.
 
@@ -100,7 +100,7 @@ Either a path to the apk file, or apk file content.
 Optional arguments to pass to the `shell:cmd package install` call. Defaults to `-r -t -S`.
 
 ## async method: AndroidDevice.launchBrowser
-- returns: <[ChromiumBrowserContext]>
+- returns: <[BrowserContext]>
 
 Launches Chrome browser on the device, and returns its persistent context.
 
@@ -328,7 +328,7 @@ Waits for the specific [`param: selector`] to either appear or disappear, depend
 Selector to wait for.
 
 ### option: AndroidDevice.wait.state
-- `state` <"gone">
+- `state` <[AndroidDeviceState]<"gone">>
 
 Optional state. Can be either:
 * default - wait for element to be present.

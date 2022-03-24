@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": false,
+        "noEmit": true,
+        "moduleResolution": "node",
+        "target": "ESNext",
+        "strictNullChecks": false,
+        "strictBindCallApply": true,
+        "allowSyntheticDefaultImports": true,
+        "useUnknownInCatchVariables": false,
+    },
+    "include": ["**/*.spec.js", "**/*.ts", "index.d.ts"],
+    "exclude": ["playwright-test/"]
+}

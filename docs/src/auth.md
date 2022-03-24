@@ -6,7 +6,7 @@ title: "Authentication"
 Playwright can be used to automate scenarios that require authentication.
 
 Tests written with Playwright execute in isolated clean-slate environments called
-[browser contexts](./core-concepts.md#browser-contexts). This isolation model
+[browser contexts](./browser-contexts.md). This isolation model
 improves reproducibility and prevents cascading test failures. New browser
 contexts can load existing authentication state. This eliminates the need to
 login in every context and speeds up test execution.
@@ -36,6 +36,17 @@ await page.click('text=Submit');
 // Verify app is logged in
 ```
 
+```java
+Page page = context.newPage();
+page.navigate("https://github.com/login");
+// Interact with login form
+page.click("text=Login");
+page.fill("input[name='login']", USERNAME);
+page.fill("input[name='password']", PASSWORD);
+page.click("text=Submit");
+// Verify app is logged in
+```
+
 ```python async
 page = await context.new_page()
 await page.goto('https://github.com/login')
@@ -60,6 +71,17 @@ page.click('text=Submit')
 # Verify app is logged in
 ```
 
+```csharp
+var page = await context.NewPageAsync();
+await page.NavigateAsync("https://github.com/login");
+// Interact with login form
+await page.ClickAsync("text=Login");
+await page.FillAsync("input[name='login']", USERNAME);
+await page.FillAsync("input[name='password']", PASSWORD);
+await page.ClickAsync("text=Submit");
+// Verify app is logged in
+```
+
 These steps can be executed for every browser context. However, redoing login
 for every test can slow down test execution. To prevent that, we will reuse
 existing authentication state in new browser contexts.
@@ -79,38 +101,53 @@ The following code snippet retrieves state from an authenticated context and
 creates a new context with that state.
 
 ```js
-// Save storage state and store as an env variable
-const storage = await context.storageState();
-process.env.STORAGE = JSON.stringify(storage);
+// Save storage state into the file.
+await context.storageState({ path: 'state.json' });
 
-// Create a new context with the saved storage state
-const storageState = JSON.parse(process.env.STORAGE);
-const context = await browser.newContext({ storageState });
+// Create a new context with the saved storage state.
+const context = await browser.newContext({ storageState: 'state.json' });
+```
+
+```java
+// Save storage state into the file.
+context.storageState(new BrowserContext.StorageStateOptions().setPath(Paths.get("state.json")));
+
+// Create a new context with the saved storage state.
+BrowserContext context = browser.newContext(
+  new Browser.NewContextOptions().setStorageStatePath(Paths.get("state.json")));
 ```
 
 ```python async
-import json
-import os
-# Save storage state and store as an env variable
-storage = await context.storage_state()
-os.environ["STORAGE"] = json.dumps(storage)
+# Save storage state into the file.
+storage = await context.storage_state(path="state.json")
 
-# Create a new context with the saved storage state
-storage_state = json.loads(os.environ["STORAGE"])
-context = await browser.new_context(storage_state=storage_state)
+# Create a new context with the saved storage state.
+context = await browser.new_context(storage_state="state.json")
 ```
 
 ```python sync
-import json
-import os
-# Save storage state and store as an env variable
-storage = context.storage_state()
-os.environ["STORAGE"] = json.dumps(storage)
+# Save storage state into the file.
+storage = context.storage_state(path="state.json")
 
-# Create a new context with the saved storage state
-storage_state = json.loads(os.environ["STORAGE"])
-context = browser.new_context(storage_state=storage_state)
+# Create a new context with the saved storage state.
+context = browser.new_context(storage_state="state.json")
 ```
+
+```csharp
+// Save storage state into the file.
+await context.StorageStateAsync(new BrowserContextStorageStateOptions
+{
+    Path = "state.json"
+});
+
+// Create a new context with the saved storage state.
+var context = await browser.NewContextAsync(new BrowserNewContextOptions
+{
+    StorageStatePath = "state.json"
+});
+```
+
+### Code generation
 
 Logging in via the UI and then reusing authentication state can be combined to
 implement **login once and run multiple scenarios**. The lifecycle looks like:
@@ -143,11 +180,28 @@ const sessionStorage = process.env.SESSION_STORAGE;
 await context.addInitScript(storage => {
   if (window.location.hostname === 'example.com') {
     const entries = JSON.parse(storage);
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key]);
-    });
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, value);
+    }
   }
 }, sessionStorage);
+```
+
+```java
+// Get session storage and store as env variable
+String sessionStorage = (String) page.evaluate("JSON.stringify(sessionStorage)");
+System.getenv().put("SESSION_STORAGE", sessionStorage);
+
+// Set session storage in a new context
+String sessionStorage = System.getenv("SESSION_STORAGE");
+context.addInitScript("(storage => {\n" +
+  "  if (window.location.hostname === 'example.com') {\n" +
+  "    const entries = JSON.parse(storage);\n" +
+  "     for (const [key, value] of Object.entries(entries)) {\n" +
+  "      window.sessionStorage.setItem(key, value);\n" +
+  "    };\n" +
+  "  }\n" +
+  "})('" + sessionStorage + "')");
 ```
 
 ```python async
@@ -158,14 +212,14 @@ os.environ["SESSION_STORAGE"] = session_storage
 
 # Set session storage in a new context
 session_storage = os.environ["SESSION_STORAGE"]
-await context.add_init_script(storage => {
-  if (window.location.hostname == 'example.com') {
-    entries = JSON.parse(storage)
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key])
-    })
+await context.add_init_script("""(storage => {
+  if (window.location.hostname === 'example.com') {
+    const entries = JSON.parse(storage)
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, key)
+    }
   }
-}, session_storage)
+})('""" + session_storage + "')")
 ```
 
 ```python sync
@@ -176,14 +230,31 @@ os.environ["SESSION_STORAGE"] = session_storage
 
 # Set session storage in a new context
 session_storage = os.environ["SESSION_STORAGE"]
-context.add_init_script(storage => {
-  if (window.location.hostname == 'example.com') {
-    entries = JSON.parse(storage)
-    Object.keys(entries).forEach(key => {
-      window.sessionStorage.setItem(key, entries[key])
-    })
+context.add_init_script("""(storage => {
+  if (window.location.hostname === 'example.com') {
+    const entries = JSON.parse(storage)
+    for (const [key, value] of Object.entries(entries)) {
+      window.sessionStorage.setItem(key, key)
+    }
   }
-}, session_storage)
+})('""" + session_storage + "')")
+```
+
+```csharp
+// Get session storage and store as env variable
+var sessionStorage = await page.EvaluateAsync<string>("() => JSON.stringify(sessionStorage)");
+Environment.SetEnvironmentVariable("SESSION_STORAGE", sessionStorage);
+
+// Set session storage in a new context
+var loadedSessionStorage = Environment.GetEnvironmentVariable("SESSION_STORAGE");
+await context.AddInitScriptAsync(@"(storage => {
+    if (window.location.hostname === 'example.com') {
+      const entries = JSON.parse(storage);
+      for (const [key, value] of Object.entries(entries)) {
+        window.sessionStorage.setItem(key, value);
+      }
+    }
+  })('" + loadedSessionStorage + "')");
 ```
 
 ### API reference
@@ -199,8 +270,6 @@ manual intervention. Persistent authentication can be used to partially automate
 MFA scenarios.
 
 ### Persistent authentication
-Web browsers use a directory on disk to store user history, cookies, IndexedDB
-and other local state. This disk location is called the [User data directory](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md).
 
 Note that persistent authentication is not suited for CI environments since it
 relies on a disk location. User data directories are specific to browser types
@@ -216,6 +285,22 @@ const context = await chromium.launchPersistentContext(userDataDir, { headless: 
 // Execute login steps manually in the browser window
 ```
 
+```java
+import com.microsoft.playwright.*;
+
+public class Example {
+  public static void main(String[] args) {
+    try (Playwright playwright = Playwright.create()) {
+      BrowserType chromium = playwright.chromium();
+      Path userDataDir = Paths.get("/path/to/directory");
+      BrowserContext context = chromium.launchPersistentContext(userDataDir,
+        new BrowserType.LaunchPersistentContextOptions().setHeadless(false));
+      // Execute login steps manually in the browser window
+    }
+  }
+}
+```
+
 ```python async
 import asyncio
 from playwright.async_api import async_playwright
@@ -223,7 +308,7 @@ from playwright.async_api import async_playwright
 async def main():
     async with async_playwright() as p:
         user_data_dir = '/path/to/directory'
-        browser = await p.chromium.launch_persistent_context(userDataDir, headless=False)
+        browser = await p.chromium.launch_persistent_context(user_data_dir, headless=False)
         # Execute login steps manually in the browser window
 
 asyncio.run(main())
@@ -238,11 +323,28 @@ with sync_playwright() as p:
     # Execute login steps manually in the browser window
 ```
 
+```csharp
+using Microsoft.Playwright;
+
+class Program
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        var chromium = playwright.Chromium;
+        var context = chromium.LaunchPersistentContextAsync(@"C:\path\to\directory\", new BrowserTypeLaunchPersistentContextOptions
+        {
+            Headless = false
+        });
+    }
+}
+```
+
 ### Lifecycle
 
-1. Create a user data directory on disk
-2. Launch a persistent context with the user data directory and login the MFA account.
-3. Reuse user data directory to run automation scenarios.
+1. Create a user data directory on disk.
+1. Launch a persistent context with the user data directory and login the MFA account.
+1. Reuse user data directory to run automation scenarios.
 
 ### API reference
 - [BrowserContext]

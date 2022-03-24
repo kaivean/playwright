@@ -62,13 +62,21 @@ class Documentation {
   }
 
   /**
+   * @param {!Documentation} documentation
+   * @return {!Documentation}
+   */
+  mergeWith(documentation) {
+    return new Documentation([...this.classesArray, ...documentation.classesArray]);
+  }
+
+  /**
    * @param {string[]} errors
    */
   copyDocsFromSuperclasses(errors) {
     for (const [name, clazz] of this.classes.entries()) {
       clazz.validateOrder(errors, clazz);
 
-      if (!clazz.extends || clazz.extends === 'EventEmitter' || clazz.extends === 'Error')
+      if (!clazz.extends || ['EventEmitter', 'Error', 'Exception', 'RuntimeException'].includes(clazz.extends))
         continue;
       const superClass = this.classes.get(clazz.extends);
       if (!superClass) {
@@ -159,7 +167,7 @@ Documentation.Class = class {
     this.extends = extendsName;
     this.comment =  '';
     this.index();
-    const match = name.match(/(JS|CDP|[A-Z])(.*)/);
+    const match = name.match(/(API|JS|CDP|[A-Z])(.*)/);
     this.varName = match[1].toLowerCase() + match[2];
   }
 
@@ -304,6 +312,17 @@ Documentation.Member = class {
     };
     this.async = false;
     this.alias = name;
+    this.overloadIndex = 0;
+    if (name.includes('#')) {
+      const match = name.match(/(.*)#(.*)/);
+      this.alias = match[1];
+      this.overloadIndex = (+match[2]) - 1;
+    }
+    /**
+     * Param is true and option false
+     * @type {Boolean}
+     */
+    this.paramOrOption = null;
   }
 
   index() {
@@ -345,6 +364,7 @@ Documentation.Member = class {
   clone() {
     const result = new Documentation.Member(this.kind, this.langs, this.name, this.type, this.argsArray, this.spec, this.required);
     result.async = this.async;
+    result.paramOrOption = this.paramOrOption;
     return result;
   }
 
@@ -428,7 +448,11 @@ Documentation.Type = class {
    * @return {Documentation.Type}
    */
   static fromParsedType(parsedType, inUnion = false) {
-    if (!inUnion && parsedType.union) {
+    if (!inUnion && !parsedType.unionName && isStringUnion(parsedType) ) {
+      throw new Error('Enum must have a name:\n' + JSON.stringify(parsedType, null, 2));
+    }
+
+    if (!inUnion && (parsedType.union || parsedType.unionName)) {
       const type = new Documentation.Type(parsedType.unionName || '');
       type.union = [];
       for (let t = parsedType; t; t = t.union) {
@@ -501,6 +525,17 @@ Documentation.Type = class {
   }
 
   /**
+    * @returns {Documentation.Member[]}
+  */
+  sortedProperties() {
+    if (!this.properties)
+      return this.properties;
+    const sortedProperties = [...this.properties];
+    sortedProperties.sort((p1, p2) => p1.name.localeCompare(p2.name));
+    return sortedProperties;
+  }
+
+  /**
    * @param {string} lang
    */
   filterForLanguage(lang) {
@@ -537,8 +572,6 @@ Documentation.Type = class {
  * @returns {boolean}
  */
 function isStringUnion(type) {
-  if (!type.union)
-    return false;
   while (type) {
     if (!type.name.startsWith('"') || !type.name.endsWith('"'))
       return false;

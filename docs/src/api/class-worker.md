@@ -15,6 +15,16 @@ for (const worker of page.workers())
   console.log('  ' + worker.url());
 ```
 
+```java
+page.onWorker(worker -> {
+  System.out.println("Worker created: " + worker.url());
+  worker.onClose(worker1 -> System.out.println("Worker destroyed: " + worker1.url()));
+});
+System.out.println("Current workers:");
+for (Worker worker : page.workers())
+  System.out.println("  " + worker.url());
+```
+
 ```py
 def handle_worker(worker):
     print("worker created: " + worker.url)
@@ -27,8 +37,22 @@ for worker in page.workers:
     print("    " + worker.url)
 ```
 
+```csharp
+page.Worker += (_, worker) =>
+{
+    Console.WriteLine($"Worker created: {worker.Url}");
+    worker.Close += (_, _) => Console.WriteLine($"Worker closed {worker.Url}");
+};
+
+Console.WriteLine("Current Workers:");
+foreach(var pageWorker in page.Workers)
+{
+    Console.WriteLine($"\tWorker: {pageWorker.Url}");
+}
+```
+
 ## event: Worker.close
-- type: <[Worker]>
+- argument: <[Worker]>
 
 Emitted when this dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is terminated.
 
@@ -40,7 +64,7 @@ Returns the return value of [`param: expression`].
 If the function passed to the [`method: Worker.evaluate`] returns a [Promise], then [`method: Worker.evaluate`] would wait for the promise
 to resolve and return its value.
 
-If the function passed to the [`method: Worker.evaluate`] returns a non-[Serializable] value, then [`method: Worker.evaluate`] returns `undefined`. Playwright also supports transferring some 
+If the function passed to the [`method: Worker.evaluate`] returns a non-[Serializable] value, then [`method: Worker.evaluate`] returns `undefined`. Playwright also supports transferring some
 additional values that are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`.
 
 ### param: Worker.evaluate.expression = %%-evaluate-expression-%%
@@ -56,7 +80,7 @@ Optional argument to pass to [`param: expression`].
 Returns the return value of [`param: expression`] as a [JSHandle].
 
 The only difference between [`method: Worker.evaluate`] and
-[`method: Worker.evaluateHandle`] is that [`method: Worker.evaluateHandle`] 
+[`method: Worker.evaluateHandle`] is that [`method: Worker.evaluateHandle`]
 returns [JSHandle].
 
 If the function passed to the [`method: Worker.evaluateHandle`] returns a [Promise], then [`method: Worker.evaluateHandle`] would wait for
@@ -72,8 +96,8 @@ Optional argument to pass to [`param: expression`].
 ## method: Worker.url
 - returns: <[string]>
 
-## method: Worker.waitForClose
-* langs: csharp, java
+## async method: Worker.waitForClose
+* langs: java
 - returns: <[Worker]>
 
 Performs action and waits for the Worker to close.

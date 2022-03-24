@@ -30,6 +30,12 @@ tall screen and the page could fit it entirely.
 await page.screenshot({ path: 'screenshot.png', fullPage: true });
 ```
 
+```java
+page.screenshot(new Page.ScreenshotOptions()
+  .setPath(Paths.get("screenshot.png"))
+  .setFullPage(true));
+```
+
 ```python async
 await page.screenshot(path="screenshot.png", full_page=True)
 ```
@@ -47,6 +53,11 @@ const buffer = await page.screenshot();
 console.log(buffer.toString('base64'));
 ```
 
+```java
+byte[] buffer = page.screenshot();
+System.out.println(Base64.getEncoder().encode(buffer));
+```
+
 ```python async
 # Capture into Image
 screenshot_bytes = await page.screenshot()
@@ -58,25 +69,31 @@ screenshot_bytes = page.screenshot()
 image = Image.open(io.BytesIO(screenshot_bytes))
 ```
 
+```csharp
+var bytes = await page.ScreenshotAsync();
+```
+
+
 ## Element screenshot
 
 Sometimes it is useful to take a screenshot of a single element.
 
 ```js
-const elementHandle = await page.$('.header');
-await elementHandle.screenshot({ path: 'screenshot.png' });
+await page.locator('.header').screenshot({ path: 'screenshot.png' });
+```
+
+```java
+page.locator(".header").screenshot(new Locator.ScreenshotOptions().setPath(Paths.get("screenshot.png")));
 ```
 
 ```python async
-element_handle = await page.query_selector(".header")
-await element_handle.screenshot(path="screenshot.png")
+await page.locator(".header").screenshot(path="screenshot.png")
 ```
 
 ```python sync
-element_handle = page.query_selector(".header")
-element_handle.screenshot(path="screenshot.png")
+page.locator(".header").screenshot(path="screenshot.png")
 ```
 
-### API reference
-- [`method: Page.screenshot`]
-- [`method: ElementHandle.screenshot`]
+```csharp
+await page.Locator(".header").ScreenshotAsync(new LocatorScreenshotOptions { Path = "screenshot.png" });
+```

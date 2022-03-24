@@ -31,7 +31,7 @@ async function installFirefoxPreferences(distpath) {
   if (os.platform() === 'linux')
     executablePath = path.join(distpath, 'firefox');
   else if (os.platform() === 'darwin')
-    executablePath = path.join(distpath, 'Nightly.app', 'Contents', 'MacOS', 'firefox');
+    executablePath = path.join(distpath, (process.env.FF_DEBUG_BUILD ? 'NightlyDebug.app' : 'Nightly.app'), 'Contents', 'MacOS', 'firefox');
   else if (os.platform() === 'win32')
     executablePath = path.join(distpath, 'firefox.exe');
 
@@ -83,14 +83,18 @@ function copyFile({from, to}) {
   });
 }
 
-if (process.argv.length !== 3) {
-  console.log('ERROR: expected a path to the directory with browser build');
-  process.exit(1);
-  return;
-}
+module.exports = { installFirefoxPreferences };
 
-installFirefoxPreferences(process.argv[2]).catch(error => {
-  console.error('ERROR: failed to put preferences!');
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  if (process.argv.length !== 3) {
+    console.log('ERROR: expected a path to the directory with browser build');
+    process.exit(1);
+    return;
+  }
+
+  installFirefoxPreferences(process.argv[2]).catch(error => {
+    console.error('ERROR: failed to put preferences!');
+    console.error(error);
+    process.exit(1);
+  });
+}

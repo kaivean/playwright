@@ -15,6 +15,23 @@ const { chromium, firefox, webkit } = require('playwright');
 })();
 ```
 
+```java
+import com.microsoft.playwright.*;
+
+public class Example {
+  public static void main(String[] args) {
+    try (Playwright playwright = Playwright.create()) {
+      BrowserType chromium = playwright.chromium();
+      Browser browser = chromium.launch();
+      Page page = browser.newPage();
+      page.navigate("http://example.com");
+      // other actions...
+      browser.close();
+    }
+  }
+}
+```
+
 ```python async
 import asyncio
 from playwright.async_api import async_playwright
@@ -48,10 +65,28 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class PlaywrightExample
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await browser.NewPageAsync();
+
+        await page.GotoAsync("https://www.microsoft.com");
+        // other actions...
+    }
+}
+```
+
 ## property: Playwright.chromium
 - type: <[BrowserType]>
 
-This object can be used to launch or connect to Chromium, returning instances of [ChromiumBrowser].
+This object can be used to launch or connect to Chromium, returning instances of [Browser].
 
 ## property: Playwright.devices
 * langs: js, python
@@ -112,13 +147,38 @@ with sync_playwright() as playwright:
     run(playwright)
 ```
 
+## property: Playwright.devices
+* langs: csharp
+- type: <[IReadOnlyDictionary<string, BrowserNewContextOptions>]>
+
+Returns a dictionary of devices to be used with [`method: Browser.newContext`] or [`method: Browser.newPage`].
+
+```csharp
+using Microsoft.Playwright;
+using System.Threading.Tasks;
+
+class PlaywrightExample
+{
+    public static async Task Main()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Webkit.LaunchAsync();
+        await using var context = await browser.NewContextAsync(playwright.Devices["iPhone 6"]);
+
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("https://www.theverge.com");
+        // other actions...
+    }
+}
+```
+
 ## property: Playwright.errors
 * langs: js
 - type: <[Object]>
   - `TimeoutError` <[function]> A class of [TimeoutError].
 
 Playwright methods might throw errors if they are unable to fulfill a request. For example,
-[`method: Page.waitForSelector`] might fail if the selector doesn't match any nodes during the given timeframe.
+[`method: Locator.waitFor`] might fail if the selector doesn't match any nodes during the given timeframe.
 
 For certain types of errors Playwright uses specific error classes. These classes are available via
 [`playwright.errors`](#playwrighterrors).
@@ -127,7 +187,7 @@ An example of handling a timeout error:
 
 ```js
 try {
-  await page.waitForSelector('.foo');
+  await page.locator('.foo').waitFor();
 } catch (e) {
   if (e instanceof playwright.errors.TimeoutError) {
     // Do something if this is a timeout.
@@ -152,7 +212,13 @@ except TimeoutError as e:
 ## property: Playwright.firefox
 - type: <[BrowserType]>
 
-This object can be used to launch or connect to Firefox, returning instances of [FirefoxBrowser].
+This object can be used to launch or connect to Firefox, returning instances of [Browser].
+
+## property: Playwright.request
+* langs: js, java, python
+- type: <[APIRequest]>
+
+Exposes API that can be used for the Web API testing.
 
 ## property: Playwright.selectors
 - type: <[Selectors]>
@@ -163,4 +229,4 @@ Selectors can be used to install custom selector engines. See
 ## property: Playwright.webkit
 - type: <[BrowserType]>
 
-This object can be used to launch or connect to WebKit, returning instances of [WebKitBrowser].
+This object can be used to launch or connect to WebKit, returning instances of [Browser].

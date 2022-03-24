@@ -1,9 +1,12 @@
 {
   "BrowserTypeLaunchOptions": "LaunchOptions",
-  "BrowserTypeConnectParams": "ConnectOptions",
+  "BrowserTypeConnectOptions": "ConnectOptions",
+  "BrowserTypeConnectOverCDPOptions": "ConnectOverCDPOptions",
   "BrowserContextCookies": "Cookie",
   "BrowserNewContextOptions": "BrowserContextOptions",
   "BrowserNewContextOptionsViewport": "ViewportSize",
   "BrowserNewContextOptionsGeolocation": "Geolocation",
-  "BrowserNewContextOptionsHttpCredentials": "HTTPCredentials"
+  "BrowserNewContextOptionsHttpCredentials": "HTTPCredentials",
+  "PageScreenshotOptions": "PageScreenshotOptions",
+  "LocatorScreenshotOptions": "LocatorScreenshotOptions"
 }

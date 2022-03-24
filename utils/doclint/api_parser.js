@@ -26,11 +26,13 @@ const Documentation = require('./documentation');
 class ApiParser {
   /**
    * @param {string} apiDir
+   * @param {string=} paramsPath
    */
-  constructor(apiDir) {
+  constructor(apiDir, paramsPath) {
     let bodyParts = [];
-    let paramsPath;
     for (const name of fs.readdirSync(apiDir)) {
+      if (!name.endsWith('.md'))
+        continue;
       if (name === 'params.md')
         paramsPath = path.join(apiDir, name);
       else
@@ -38,6 +40,7 @@ class ApiParser {
     }
     const body = md.parse(bodyParts.join('\n'));
     const params = paramsPath ? md.parse(fs.readFileSync(paramsPath).toString()) : null;
+    checkNoDuplicateParamEntries(params);
     const api = params ? applyTemplates(body, params) : body;
     /** @type {Map<string, Documentation.Class>} */
     this.classes = new Map();
@@ -118,16 +121,25 @@ class ApiParser {
    * @param {MarkdownNode} spec
    */
   parseArgument(spec) {
-    const match = spec.text.match(/(param|option): ([^.]+)\.([^.]+)\.(.*)/);
-    if(!match)
+    const match = spec.text.match(/(param|option): (.*)/);
+    if (!match)
       throw `Something went wrong with matching ${spec.text}`;
-    const clazz = this.classes.get(match[2]);
+
+    // For "test.describe.only.title":
+    // - className is "test"
+    // - methodName is "describe.only"
+    // - argument name is "title"
+    const parts = match[2].split('.');
+    const className = parts[0];
+    const name = parts[parts.length - 1];
+    const methodName = parts.slice(1, parts.length - 1).join('.');
+
+    const clazz = this.classes.get(className);
     if (!clazz)
-      throw new Error('Invalid class ' + match[2]);
-    const method = clazz.membersArray.find(m => m.kind === 'method' && m.alias === match[3]);
+      throw new Error('Invalid class ' + className);
+    const method = clazz.membersArray.find(m => m.kind === 'method' && m.name === methodName);
     if (!method)
-      throw new Error('Invalid method ' + match[2] + '.' + match[3]);
-    const name = match[4];
+      throw new Error(`Invalid method ${className}.${methodName} when parsing: ${match[0]}`);
     if (!name)
       throw new Error('Invalid member name ' + spec.text);
     if (match[1] === 'param') {
@@ -185,7 +197,7 @@ class ApiParser {
 }
 
 /**
- * @param {string} line 
+ * @param {string} line
  * @returns {{ name: string, type: string, text: string }}
  */
 function parseVariable(line) {
@@ -195,11 +207,13 @@ function parseVariable(line) {
   if (!match)
     match = line.match(/^(type): (.*)/);
   if (!match)
+    match = line.match(/^(argument): (.*)/);
+  if (!match)
     throw new Error('Invalid argument: ' + line);
   const name = match[1];
   const remainder = match[2];
   if (!remainder.startsWith('<'))
-    throw new Error('Bad argument: ' + remainder);
+    throw new Error(`Bad argument: "${name}" in "${line}"`);
   let depth = 0;
   for (let i = 0; i < remainder.length; ++i) {
     const c = remainder.charAt(i);
@@ -226,6 +240,7 @@ function applyTemplates(body, params) {
     if (node.text && node.text.includes('-inline- = %%')) {
       const [name, key] = node.text.split('-inline- = ');
       const list = paramsMap.get(key);
+      const newChildren = [];
       if (!list)
         throw new Error('Bad template: ' + key);
       for (const prop of list.children) {
@@ -234,12 +249,14 @@ function applyTemplates(body, params) {
           throw new Error('Bad template: ' + prop.text);
         const children = childrenWithoutProperties(template);
         const { name: argName } = parseVariable(children[0].text);
-        parent.children.push({
+        newChildren.push({
           type: node.type,
           text: name + argName,
           children: template.children.map(c => md.clone(c))
         });
       }
+      const nodeIndex = parent.children.indexOf(node);
+      parent.children = [...parent.children.slice(0, nodeIndex), ...newChildren, ...parent.children.slice(nodeIndex + 1)];
     } else if (node.text && node.text.includes(' = %%')) {
       const [name, key] = node.text.split(' = ');
       node.text = name;
@@ -298,9 +315,10 @@ function guessRequired(comment) {
 
 /**
  * @param {string} apiDir
+ * @param {string=} paramsPath
  */
-function parseApi(apiDir) {
-  return new ApiParser(apiDir).documentation;
+function parseApi(apiDir, paramsPath) {
+  return new ApiParser(apiDir, paramsPath).documentation;
 }
 
 /**
@@ -352,6 +370,20 @@ function isTypeOverride(existingMember, member) {
     throw new Error(`Ambiguous language override for: ${member.name}`);
   }
   return false;
+}
+
+/**
+ * @param {MarkdownNode[]=} params
+ */
+function checkNoDuplicateParamEntries(params) {
+  if (!params)
+    return;
+  const entries = new Set();
+  for (const node of params) {
+    if (entries.has(node.text))
+      throw new Error('Duplicate param entry, for language-specific params use prefix (e.g. js-...): ' + node.text);
+    entries.add(node.text);
+  }
 }
 
 module.exports = { parseApi };

@@ -26,6 +26,7 @@
 #import "BrowserWindowController.h"
 
 #import "AppDelegate.h"
+#import <SecurityInterface/SFCertificateTrustPanel.h>
 #import <WebKit/WKFrameInfo.h>
 #import <WebKit/WKNavigationActionPrivate.h>
 #import <WebKit/WKNavigationDelegatePrivate.h>
@@ -68,6 +69,7 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 @implementation BrowserWindowController {
     IBOutlet NSProgressIndicator *progressIndicator;
     IBOutlet NSButton *reloadButton;
+    IBOutlet NSButton *lockButton;
     IBOutlet NSButton *backButton;
     IBOutlet NSButton *forwardButton;
     IBOutlet NSButton *share;
@@ -97,6 +99,18 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 
 - (void)windowDidLoad
 {
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000
+    // FIXME: We should probably adopt the default unified style, but we'd need
+    // somewhere to put the window/page title.
+    self.window.toolbarStyle = NSWindowToolbarStyleExpanded;
+
+    reloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.clockwise" accessibilityDescription:@"Reload"];
+    // FIXME: Should these be localized?
+    backButton.image = [NSImage imageWithSystemSymbolName:@"chevron.left" accessibilityDescription:@"Go back"];
+    forwardButton.image = [NSImage imageWithSystemSymbolName:@"chevron.right" accessibilityDescription:@"Go forward"];
+    share.image = [NSImage imageWithSystemSymbolName:@"square.and.arrow.up" accessibilityDescription:@"Share"];
+    toggleUseShrinkToFitButton.image = [NSImage imageWithSystemSymbolName:@"arrow.up.left.and.arrow.down.right" accessibilityDescription:@"Use Shrink to fit"];
+#endif
     [share sendActionOn:NSEventMaskLeftMouseDown];
     [super windowDidLoad];
 }
@@ -162,6 +176,7 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 
     [_webView addObserver:self forKeyPath:@"title" options:0 context:keyValueObservingContext];
     [_webView addObserver:self forKeyPath:@"URL" options:0 context:keyValueObservingContext];
+    [_webView addObserver:self forKeyPath:@"hasOnlySecureContent" options:0 context:keyValueObservingContext];
 
     _webView.navigationDelegate = self;
     _webView.UIDelegate = self;
@@ -202,6 +217,9 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [_webView removeObserver:self forKeyPath:@"title"];
+    [_webView removeObserver:self forKeyPath:@"URL"];
+    [_webView removeObserver:self forKeyPath:@"hasOnlySecureContent"];
 
     [progressIndicator unbind:NSHiddenBinding];
     [progressIndicator unbind:NSValueBinding];
@@ -282,7 +300,9 @@ static BOOL areEssentiallyEqual(double a, double b)
     if (action == @selector(resetZoom:))
         return [self canResetZoom];
 
-    if (action == @selector(toggleZoomMode:))
+    if (action == @selector(toggleFullWindowWebView:))
+        [menuItem setTitle:[self webViewFillsWindow] ? @"Inset Web View" : @"Fit Web View to Window"];
+    else if (action == @selector(toggleZoomMode:))
         [menuItem setState:_zoomTextOnly ? NSControlStateValueOn : NSControlStateValueOff];
     else if (action == @selector(showHideWebInspector:))
         [menuItem setTitle:_webView._inspector.isVisible ? @"Close Web Inspector" : @"Show Web Inspector"];
@@ -301,6 +321,12 @@ static BOOL areEssentiallyEqual(double a, double b)
     [_webView reload];
 }
 
+- (IBAction)showCertificate:(id)sender
+{
+    if (_webView.serverTrust)
+        [[SFCertificateTrustPanel sharedCertificateTrustPanel] beginSheetForWindow:self.window modalDelegate:nil didEndSelector:nil contextInfo:NULL trust:_webView.serverTrust message:@"TLS Certificate Details"];
+}
+
 - (IBAction)goBack:(id)sender
 {
     [_webView goBack];
@@ -309,6 +335,30 @@ static BOOL areEssentiallyEqual(double a, double b)
 - (IBAction)goForward:(id)sender
 {
     [_webView goForward];
+}
+
+- (IBAction)toggleFullWindowWebView:(id)sender
+{
+    BOOL newFillWindow = ![self webViewFillsWindow];
+    [self setWebViewFillsWindow:newFillWindow];
+}
+
+- (BOOL)webViewFillsWindow
+{
+    return NSEqualRects(containerView.bounds, self.mainContentView.frame);
+}
+
+- (void)setWebViewFillsWindow:(BOOL)fillWindow
+{
+    if (fillWindow)
+        [self.mainContentView setFrame:containerView.bounds];
+    else {
+        const CGFloat viewInset = 100.0f;
+        NSRect viewRect = NSInsetRect(containerView.bounds, viewInset, viewInset);
+        // Make it not vertically centered, to reveal y-flipping bugs.
+        viewRect = NSOffsetRect(viewRect, 0, -25);
+        [self.mainContentView setFrame:viewRect];
+    }
 }
 
 - (IBAction)toggleZoomMode:(id)sender
@@ -340,6 +390,13 @@ static BOOL areEssentiallyEqual(double a, double b)
 - (BOOL)canResetZoom
 {
     return _zoomTextOnly ? (_webView._textZoomFactor != 1) : (_webView.pageZoom != 1);
+}
+
+- (IBAction)toggleShrinkToFit:(id)sender
+{
+    _useShrinkToFit = !_useShrinkToFit;
+    toggleUseShrinkToFitButton.image = _useShrinkToFit ? [NSImage imageNamed:@"NSExitFullScreenTemplate"] : [NSImage imageNamed:@"NSEnterFullScreenTemplate"];
+    [_webView _setLayoutMode:_useShrinkToFit ? _WKLayoutModeDynamicSizeComputedFromMinimumDocumentSize : _WKLayoutModeViewSize];
 }
 
 - (IBAction)showHideWebInspector:(id)sender
@@ -383,8 +440,6 @@ static BOOL areEssentiallyEqual(double a, double b)
 
 - (void)windowWillClose:(NSNotification *)notification
 {
-    [_webView removeObserver:self forKeyPath:@"title"];
-    [_webView removeObserver:self forKeyPath:@"URL"];
     [_webView removeFromSuperview];
     _textFinder.hideInterfaceCallback = nil;
     [self release];
@@ -477,7 +532,7 @@ static BOOL areEssentiallyEqual(double a, double b)
         title = url.lastPathComponent ?: url._web_userVisibleString;
     }
 
-    self.window.title = title;
+    self.window.title = [NSString stringWithFormat:@"🎭 Playwright: %@", title];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
@@ -489,6 +544,8 @@ static BOOL areEssentiallyEqual(double a, double b)
         [self updateTitle:_webView.title];
     else if ([keyPath isEqualToString:@"URL"])
         [self updateTextFieldFromURL:_webView.URL];
+    else if ([keyPath isEqualToString:@"hasOnlySecureContent"])
+        [self updateLockButtonIcon:_webView.hasOnlySecureContent];
 }
 
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures
@@ -617,6 +674,14 @@ static BOOL areEssentiallyEqual(double a, double b)
     urlText.stringValue = [URL _web_userVisibleString];
 }
 
+- (void)updateLockButtonIcon:(BOOL)hasOnlySecureContent
+{
+    if (hasOnlySecureContent)
+        [lockButton setImage:[NSImage imageNamed:NSImageNameLockLockedTemplate]];
+    else
+        [lockButton setImage:[NSImage imageNamed:NSImageNameLockUnlockedTemplate]];
+}
+
 - (void)loadURLString:(NSString *)urlString
 {
     // FIXME: We shouldn't have to set the url text here.
@@ -672,6 +737,15 @@ static NSSet *dataTypes()
 
     if (navigationAction.shouldPerformDownload) {
         decisionHandler(WKNavigationActionPolicyDownload);
+        return;
+    }
+
+    if (navigationAction.buttonNumber == 1 &&
+        (navigationAction.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) != 0) {
+        WKWindowFeatures* windowFeatures = [[[WKWindowFeatures alloc] init] autorelease];
+        WKWebView* newView = [self webView:webView createWebViewWithConfiguration:webView.configuration forNavigationAction:navigationAction windowFeatures:windowFeatures];
+        [newView loadRequest:navigationAction.request];
+        decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
 
@@ -846,7 +920,10 @@ static NSSet *dataTypes()
 - (IBAction)saveAsPDF:(id)sender
 {
     NSSavePanel *panel = [NSSavePanel savePanel];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     panel.allowedFileTypes = @[ @"pdf" ];
+#pragma clang diagnostic pop
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSInteger result) {
         if (result == NSModalResponseOK) {
             [_webView createPDFWithConfiguration:nil completionHandler:^(NSData *pdfSnapshotData, NSError *error) {
@@ -859,7 +936,10 @@ static NSSet *dataTypes()
 - (IBAction)saveAsWebArchive:(id)sender
 {
     NSSavePanel *panel = [NSSavePanel savePanel];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     panel.allowedFileTypes = @[ @"webarchive" ];
+#pragma clang diagnostic pop
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSInteger result) {
         if (result == NSModalResponseOK) {
             [_webView createWebArchiveDataWithCompletionHandler:^(NSData *archiveData, NSError *error) {

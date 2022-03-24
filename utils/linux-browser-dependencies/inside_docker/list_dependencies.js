@@ -4,7 +4,7 @@ const fs = require('fs');
 const util = require('util');
 const path = require('path');
 const {spawn} = require('child_process');
-const {registryDirectory} = require('playwright/lib/utils/registry.js');
+const {registryDirectory} = require('playwright-core/lib/utils/registry');
 
 const readdirAsync = util.promisify(fs.readdir.bind(fs));
 const readFileAsync = util.promisify(fs.readFile.bind(fs));
@@ -47,7 +47,7 @@ const DL_OPEN_LIBRARIES = {
   for (const descriptor of browserDescriptors) {
     // Browser vendor, can be `webkit`, `firefox` or `chromium`
     const vendor = descriptor.name.split('-')[0];
-    for (const library of DL_OPEN_LIBRARIES[vendor]) {
+    for (const library of (DL_OPEN_LIBRARIES[vendor] || [])) {
       descriptor.missingLibraries.add(library);
       allMissingLibraries.add(library);
     }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import * as playwright from '../../../index';
+import * as playwright from 'playwright';
 
 type AssertType<T, S> = S extends T ? AssertNotAny<S> : false;
 type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
@@ -387,6 +387,36 @@ playwright.chromium.launch().then(async browser => {
   await browser.close();
 })();
 
+// test locator.evaluate
+(async () => {
+  const browser = await playwright.firefox.launch();
+  const page = await browser.newPage();
+  const locator = page.locator('.foo');
+  {
+    const result = await locator.evaluate((sel: HTMLSelectElement) => sel.options[sel.selectedIndex].textContent)
+    const assertion: AssertType<string, typeof result> = true;
+  }
+  {
+    const result = await locator.evaluate((media: HTMLMediaElement, dummy) => media.duration, 10);
+    const assertion: AssertType<number, typeof result> = true;
+  }
+  {
+    await locator.evaluate((input: HTMLInputElement) => {})
+  }
+  {
+    const list = await locator.evaluateAll((i: HTMLInputElement[]) => i.length);
+    const assertion: AssertType<number, typeof list> = true;
+  }
+  {
+    const list = await locator.evaluateAll((i: HTMLInputElement[], dummy) => i.length, 10);
+    const assertion: AssertType<number, typeof list> = true;
+  }
+  {
+    await locator.evaluateAll((sel: HTMLSelectElement[]) => {})
+  }
+  await browser.close();
+})();
+
 // waitForEvent
 (async () => {
   const browser = await playwright.webkit.launch();
@@ -572,15 +602,6 @@ playwright.chromium.launch().then(async browser => {
   await browser.close();
 })();
 
-(async () => {
-  const browser = await playwright.firefox.launch();
-  const page = await browser.newPage();
-  const context = page.context();
-  const oneTwoThree = ('pageTarget' in context) ? context['pageTarget'] : 123;
-  const assertion: AssertType<123, typeof oneTwoThree> = true;
-  await browser.close();
-})();
-
 // $eval
 
 (async () => {
@@ -675,47 +696,58 @@ playwright.chromium.launch().then(async browser => {
     }
   }
 
+  type AssertCanBeNull<T> = null extends T ? true : false
+
   const frameLikes = [page, frame];
   for (const frameLike of frameLikes) {
     {
       const handle = await frameLike.waitForSelector('body');
       const bodyAssertion: AssertType<playwright.ElementHandle<HTMLBodyElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = false;
+      const canBeNull: AssertCanBeNull<typeof handle> = false
+    }
+    {
+      const handle = await frameLike.waitForSelector('body', {timeout: 0});
+      const bodyAssertion: AssertType<playwright.ElementHandle<HTMLBodyElement>, typeof handle> = true;
+      const canBeNull: AssertCanBeNull<typeof handle> = false;
     }
     {
       const state = Math.random() > .5 ? 'attached' : 'visible';
       const handle = await frameLike.waitForSelector('body', {state});
       const bodyAssertion: AssertType<playwright.ElementHandle<HTMLBodyElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = false;
+      const canBeNull: AssertCanBeNull<typeof handle> = false;
     }
     {
       const handle = await frameLike.waitForSelector('body', {state: 'hidden'});
       const bodyAssertion: AssertType<playwright.ElementHandle<HTMLBodyElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = true;
+      const canBeNull: AssertCanBeNull<typeof handle> = true;
     }
     {
       const state = Math.random() > .5 ? 'hidden' : 'visible';
       const handle = await frameLike.waitForSelector('body', {state});
       const bodyAssertion: AssertType<playwright.ElementHandle<HTMLBodyElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = true;
+      const canBeNull: AssertCanBeNull<typeof handle> = true;
     }
-
     {
       const handle = await frameLike.waitForSelector('something-strange');
       const elementAssertion: AssertType<playwright.ElementHandle<HTMLElement|SVGElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = false;
+      const canBeNull: AssertCanBeNull<typeof handle> = false;
+    }
+    {
+      const handle = await frameLike.waitForSelector('something-strange', {timeout: 0});
+      const elementAssertion: AssertType<playwright.ElementHandle<HTMLElement|SVGElement>, typeof handle> = true;
+      const canBeNull: AssertCanBeNull<typeof handle> = false;
     }
     {
       const state = Math.random() > .5 ? 'attached' : 'visible';
       const handle = await frameLike.waitForSelector('something-strange', {state});
       const elementAssertion: AssertType<playwright.ElementHandle<HTMLElement|SVGElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = false;
+      const canBeNull: AssertCanBeNull<typeof handle> = false;
     }
     {
       const state = Math.random() > .5 ? 'hidden' : 'visible';
       const handle = await frameLike.waitForSelector('something-strange', {state});
       const elementAssertion: AssertType<playwright.ElementHandle<HTMLElement|SVGElement>, typeof handle> = true;
-      const canBeNull: AssertType<null, typeof handle> = true;
+      const canBeNull: AssertCanBeNull<typeof handle> = true;
     }
   }
 
@@ -791,13 +823,22 @@ playwright.chromium.launch().then(async browser => {
 (async () => {
   const browser = await playwright.chromium.launch();
   const page = await browser.newPage();
-  await Promise.all([
+  const [response] = await Promise.all([
     page.waitForResponse(response => response.url().includes('example.com')),
     page.goto('https://example.com')
   ]);
+  console.log((await response!.json()).foobar); // JSON return value should be any
 
   await browser.close();
 })();
+
+// for backwards compat, BrowserType is templated
+
+(async () => {
+  const browserType = {} as playwright.BrowserType<playwright.Browser & {foo: 'string'}>;
+  const browser = await browserType.launch();
+  await browser.close();
+})
 
 // exported types
 import {
@@ -808,4 +849,4 @@ import {
   ViewportSize,
   Geolocation,
   HTTPCredentials,
-} from '../../../';
+} from 'playwright';

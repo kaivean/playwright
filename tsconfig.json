@@ -1,19 +1,24 @@
 {
   "compilerOptions": {
-    "target": "es2018",
+    "target": "ES2019",
     "module": "commonjs",
     "lib": ["esnext", "dom", "DOM.Iterable"],
-    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "playwright-core/lib/*": ["./packages/playwright-core/src/*"]
+    },
     "esModuleInterop": true,
-    "rootDir": "./src",
-    "outDir": "./lib",
     "strict": true,
     "allowJs": true,
-    "declaration": false,
     "jsx": "react",
-    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "noImplicitOverride": true,
+    "useUnknownInCatchVariables": false,
   },
   "compileOnSave": true,
-  "include": ["src/**/*.ts", "src/**/*.js"],
-  "exclude": ["node_modules", "src/.eslintrc.js", "src/web/**", "src/**/*webpack.config.js"]
+  "include": ["packages"],
+  "exclude": [
+    "packages/*/lib",
+  ],
 }

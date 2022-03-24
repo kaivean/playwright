@@ -3,13 +3,13 @@ name: "Internal Tests"
 on:
   push:
     branches:
-      - master
+      - main
       - release-*
 
 jobs:
   trigger:
     name: "trigger"
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
     - run: |
         curl -X POST \

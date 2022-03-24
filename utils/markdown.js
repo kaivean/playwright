@@ -33,7 +33,8 @@ function flattenWrappedLines(content) {
   let outLineTokens = [];
   for (const line of inLines) {
     const trimmedLine = line.trim();
-    let singleLineExpression = line.startsWith('#');
+    const singleLineExpression = line.startsWith('#');
+    const codeBlockBoundary = trimmedLine.startsWith('```') || trimmedLine.startsWith('---') || trimmedLine.startsWith(':::');
     let flushLastParagraph = !trimmedLine
       || trimmedLine.startsWith('1.')
       || trimmedLine.startsWith('<')
@@ -43,7 +44,7 @@ function flattenWrappedLines(content) {
       || trimmedLine.startsWith('*')
       || line.match(/\[[^\]]+\]:.*/)
       || singleLineExpression;
-    if (trimmedLine.startsWith('```') || trimmedLine.startsWith('---') || trimmedLine.startsWith(':::')) {
+    if (codeBlockBoundary) {
       inCodeBlock = !inCodeBlock;
       flushLastParagraph = true;
     }
@@ -51,7 +52,7 @@ function flattenWrappedLines(content) {
       outLines.push(outLineTokens.join(' '));
       outLineTokens = [];
     }
-    if (inCodeBlock || singleLineExpression)
+    if (inCodeBlock || singleLineExpression || codeBlockBoundary)
       outLines.push(line);
     else if (trimmedLine)
       outLineTokens.push(outLineTokens.length ? line.trim() : line);
@@ -191,6 +192,11 @@ function buildTree(lines) {
         node.liType = 'bullet';
       else
         node.liType = 'default';
+    }
+    const match = node.text.match(/\*\*langs: (.*)\*\*(.*)/);
+    if (match) {
+      node.codeLang = match[1];
+      node.text = match[2];
     }
     appendNode(indent, node);
   }
@@ -370,12 +376,13 @@ function visit(node, visitor, depth = 0) {
 
 /**
  * @param {MarkdownNode[]} nodes
+ * @param {boolean=} h3
  * @returns {string}
  */
-function generateToc(nodes) {
+function generateToc(nodes, h3) {
   const result = [];
   visitAll(nodes, (node, depth) => {
-    if (node.type === 'h1' || node.type === 'h2') {
+    if (node.type === 'h1' || node.type === 'h2' || (h3 && node.type === 'h3')) {
       let link = node.text.toLowerCase();
       link = link.replace(/[ ]+/g, '-');
       link = link.replace(/[^\w-_]/g, '');
@@ -385,4 +392,31 @@ function generateToc(nodes) {
   return result.join('\n');
 }
 
-module.exports = { parse, render, clone, visitAll, visit, generateToc };
+/**
+ * @param {MarkdownNode[]} nodes
+ * @param {string} language
+ * @return {MarkdownNode[]}
+ */
+function filterNodesForLanguage(nodes, language) {
+  const result = nodes.filter(node => {
+    if (!node.children)
+      return true;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      if (child.type !== 'li' || child.liType !== 'bullet' || !child.text.startsWith('langs:'))
+        continue;
+      const only = child.text.substring('langs:'.length).split(',').map(l => l.trim());
+      node.children.splice(i, 1);
+      return only.includes(language);
+    }
+    return true;
+  });
+  result.forEach(n => {
+    if (!n.children)
+      return;
+    n.children = filterNodesForLanguage(n.children, language);
+  });
+  return result;
+}
+
+module.exports = { parse, render, clone, visitAll, visit, generateToc, filterNodesForLanguage };

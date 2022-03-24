@@ -51,7 +51,7 @@ information on using pull requests.
 
 ### Code Style
 
-- Coding style is fully defined in [.eslintrc](https://github.com/microsoft/playwright/blob/master/.eslintrc.js)
+- Coding style is fully defined in [.eslintrc](https://github.com/microsoft/playwright/blob/main/.eslintrc.js)
 - Comments should be generally avoided. If the code would not be understood without comments, consider re-writing the code to make it self-explanatory.
 
 To run code linter, use:
@@ -67,7 +67,7 @@ When authoring new API methods, consider the following:
 - Expose as little information as needed. When in doubt, don’t expose new information.
 - Methods are used in favor of getters/setters.
   - The only exception is namespaces, e.g. `page.keyboard` and `page.coverage`
-- All string literals must be small case. This includes event names and option values.
+- All string literals must be lowercase. This includes event names and option values.
 - Avoid adding "sugar" API (API that is trivially implementable in user-space) unless they're **very** common.
 
 ### Commit Messages
@@ -99,14 +99,14 @@ Example:
 ```
 fix(firefox): make sure session cookies work
 
-This patch fixes session cookies in firefox browser.
+This patch fixes session cookies in the firefox browser.
 
 Fixes #123, fixes #234
 ```
 
 ### Writing Documentation
 
-All API classes, methods and events should have description in [`docs/src`](https://github.com/microsoft/playwright/blob/master/docs/src). There's a [documentation linter](https://github.com/microsoft/playwright/tree/master/utils/doclint) which makes sure documentation is aligned with the codebase.
+All API classes, methods, and events should have a description in [`docs/src`](https://github.com/microsoft/playwright/blob/main/docs/src). There's a [documentation linter](https://github.com/microsoft/playwright/tree/main/utils/doclint) which makes sure documentation is aligned with the codebase.
 
 To run the documentation linter, use:
 
@@ -130,7 +130,7 @@ A barrier for introducing new installation dependencies is especially high:
 - Tests should be *hermetic*. Tests should not depend on external services.
 - Tests should work on all three platforms: Mac, Linux and Win. This is especially important for screenshot tests.
 
-Playwright tests are located in [`test`](https://github.com/microsoft/playwright/blob/master/test) and use [Folio](https://github.com/microsoft/folio) test runner.
+Playwright tests are located in [`tests`](https://github.com/microsoft/playwright/blob/main/tests) and use `@playwright/test` test runner.
 These are integration tests, making sure public API methods and events work as expected.
 
 - To run all tests:
@@ -144,7 +144,7 @@ npm run test
 npm run ctest # also `ftest` for firefox and `wtest` for WebKit
 ```
 
-- To run a specific test, substitute `it` with `it.only`:
+- To run a specific test, substitute `it` with `it.only`, or use the `--grep 'My test'` CLI parameter:
 
 ```js
 ...
@@ -153,6 +153,8 @@ it.only('should work', async ({server, page}) => {
   const response = await page.goto(server.EMPTY_PAGE);
   expect(response.ok).toBe(true);
 });
+// or
+playwright test --config=xxx --grep 'should work'
 ```
 
 - To disable a specific test, substitute `it` with `it.skip`:
@@ -166,10 +168,10 @@ it.skip('should work', async ({server, page}) => {
 });
 ```
 
-- To run tests in non-headless (headful) mode:
+- To run tests in non-headless (headed) mode:
 
 ```bash
-HEADLESS=false npm run ctest
+HEADFUL=1 npm run ctest
 ```
 
 - To run tests with custom browser executable, specify `CRPATH`, `WKPATH` or `FFPATH` env variable that points to browser executable:
@@ -181,7 +183,7 @@ CRPATH=<path-to-executable> npm run ctest
 - To run tests in slow-mode:
 
 ```bash
-HEADLESS=false SLOW_MO=500 npm run wtest
+HEADFUL=1 SLOW_MO=500 npm run wtest
 ```
 
 - When should a test be marked with `skip` or `fail`?

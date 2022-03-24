@@ -16,13 +16,14 @@
 
 const path = require('path');
 const ts = require('typescript');
+
 /**
- * @param {(className: string) => string} commentForClass 
- * @param {(className: string, methodName: string) => string} commentForMethod 
- * @param {(className: string) => string} extraForClass 
+ * @param {string} filePath
+ * @param {(className: string) => string} commentForClass
+ * @param {(className: string, methodName: string, overloadIndex: number) => string} commentForMethod
+ * @param {(className: string) => string} extraForClass
  */
-async function parseOverrides(commentForClass, commentForMethod, extraForClass) {
-  const filePath = path.join(__dirname, 'overrides.d.ts');
+async function parseOverrides(filePath, commentForClass, commentForMethod, extraForClass) {
   const program = ts.createProgram({
     rootNames: [filePath],
     options: {
@@ -75,16 +76,50 @@ async function parseOverrides(commentForClass, commentForMethod, extraForClass) 
     for (const [name, member] of symbol.members || []) {
       if (member.flags & ts.SymbolFlags.TypeParameter)
         continue;
-      const pos = member.valueDeclaration.getStart(file, false)
-      replacers.push({
-        pos,
-        text: commentForMethod(className, name),
-      });
+      if (!member.declarations)
+        continue;
+      for (let index = 0; index < member.declarations.length; index++) {
+        const declaration = member.declarations[index];
+        const pos = declaration.getStart(file, false);
+        replacers.push({
+          pos,
+          text: commentForMethod(className, name, index),
+        });
+        if (ts.isPropertySignature(declaration))
+          ts.forEachChild(declaration, child => visitProperties(className, name, child));
+      }
     }
     replacers.push({
       pos: node.getEnd(file) - 1,
       text: extraForClass(className),
     });
+  }
+
+  /**
+   * @param {string} className
+   * @param {string} prefix
+   * @param {ts.Node} node
+   */
+  function visitProperties(className, prefix, node) {
+    // This function supports structs like "a: { b: string; c: number, (): void }"
+    // and inserts comments for "a.b", "a.c", a.
+    if (ts.isPropertySignature(node)) {
+      const name = checker.getSymbolAtLocation(node.name).getName();
+      const pos = node.getStart(file, false);
+      replacers.push({
+        pos,
+        text: commentForMethod(className, `${prefix}.${name}`, 0),
+      });
+      ts.forEachChild(node, child => visitProperties(className, `${prefix}.${name}`, child));
+    } else if (ts.isCallSignatureDeclaration(node)) {
+      const pos = node.getStart(file, false);
+      replacers.push({
+        pos,
+        text: commentForMethod(className, `${prefix}`, 0),
+      });
+    } else if (!ts.isMethodSignature(node)) {
+      ts.forEachChild(node, child => visitProperties(className, prefix, child));
+    }
   }
 
 }

@@ -2,18 +2,38 @@
 
 [Download] objects are dispatched by page via the [`event: Page.download`] event.
 
-All the downloaded files belonging to the browser context are deleted when the browser context is closed. All downloaded
-files are deleted when the browser closes.
+All the downloaded files belonging to the browser context are deleted when the
+browser context is closed.
 
 Download event is emitted once the download starts. Download path becomes available once download completes:
 
 ```js
+// Note that Promise.all prevents a race condition
+// between clicking and waiting for the download.
 const [ download ] = await Promise.all([
-  page.waitForEvent('download'), // wait for download to start
-  page.click('a')
+  // It is important to call waitForEvent before click to set up waiting.
+  page.waitForEvent('download'),
+  // Triggers the download.
+  page.locator('text=Download file').click(),
 ]);
 // wait for download to complete
 const path = await download.path();
+```
+
+```java
+// wait for download to start
+Download download  = page.waitForDownload(() -> page.click("a"));
+// wait for download to complete
+Path path = download.path();
+```
+
+```java
+// wait for download to start
+Download download = page.waitForDownload(() -> {
+  page.click("a");
+});
+// wait for download to complete
+Path path = download.path();
 ```
 
 ```python async
@@ -32,40 +52,57 @@ download = download_info.value
 path = download.path()
 ```
 
-:::note
-Browser context **must** be created with the [`option: acceptDownloads`] set to `true` when user needs access to the
-downloaded content. If [`option: acceptDownloads`] is not set, download events are emitted, but the actual download is
-not performed and user has no access to the downloaded files.
-:::
+```csharp
+var download = await page.RunAndWaitForDownloadAsync(async () =>
+{
+    await page.ClickAsync("#downloadButton");
+});
+Console.WriteLine(await download.PathAsync());
+```
+
+## async method: Download.cancel
+
+Cancels a download. Will not fail if the download is already finished or canceled.
+Upon successful cancellations, `download.failure()` would resolve to `'canceled'`.
 
 ## async method: Download.createReadStream
-* langs: java, js
+* langs: java, js, csharp
 - returns: <[null]|[Readable]>
 
 Returns readable stream for current download or `null` if download failed.
 
 ## async method: Download.delete
 
-Deletes the downloaded file.
+Deletes the downloaded file. Will wait for the download to finish if necessary.
 
 ## async method: Download.failure
 - returns: <[null]|[string]>
 
-Returns download error if any.
+Returns download error if any. Will wait for the download to finish if necessary.
+
+## method: Download.page
+- returns: <[Page]>
+
+Get the page that the download belongs to.
 
 ## async method: Download.path
 - returns: <[null]|[path]>
 
-Returns path to the downloaded file in case of successful download.
+Returns path to the downloaded file in case of successful download. The method will
+wait for the download to finish if necessary. The method throws when connected remotely.
+
+Note that the download's file name is a random GUID, use [`method: Download.suggestedFilename`]
+to get suggested file name.
 
 ## async method: Download.saveAs
 
-Saves the download to a user-specified path.
+Copy the download to a user-specified path. It is safe to call this method while the download
+is still in progress. Will wait for the download to finish if necessary.
 
 ### param: Download.saveAs.path
 - `path` <[path]>
 
-Path where the download should be saved.
+Path where the download should be copied.
 
 ## method: Download.suggestedFilename
 - returns: <[string]>
