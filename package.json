@@ -1,6 +1,6 @@
 {
-  "name": "@baidu/playwright-expand",
-  "version": "1.21.0-next-beta1",
+  "name": "playwright-internal",
+  "version": "1.21.0-next-beta2",
   "description": "A high-level API to automate web browsers",
   "repository": "github:Microsoft/playwright",
   "homepage": "https://playwright.dev",
@@ -45,6 +45,7 @@
     "@babel/cli": "^7.16.8",
     "@babel/plugin-transform-typescript": "^7.16.8",
     "@babel/preset-react": "^7.16.7",
+    "@playwright/test": "^1.20.2",
     "@types/babel__code-frame": "^7.0.3",
     "@types/babel__core": "^7.1.18",
     "@types/babel__helper-plugin-utils": "^7.10.0",
@@ -103,5 +104,15 @@
     "webpack-cli": "^4.9.2",
     "xml2js": "^0.4.23",
     "yaml": "^1.10.2"
+  },
+  "dependencies": {
+    "@babel/plugin-proposal-class-properties": "^7.16.7",
+    "@babel/plugin-proposal-export-namespace-from": "^7.16.7",
+    "@babel/plugin-proposal-logical-assignment-operators": "^7.16.7",
+    "@babel/plugin-proposal-nullish-coalescing-operator": "^7.16.7",
+    "@babel/plugin-proposal-optional-chaining": "^7.16.7",
+    "@babel/plugin-transform-modules-commonjs": "^7.17.9",
+    "@babel/preset-typescript": "^7.16.7",
+    "@playwright/experimental-ct-react": "0.0.1"
   }
 }
