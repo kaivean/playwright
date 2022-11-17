@@ -13,7 +13,7 @@ isolated between the tests.
 
 ## JUnit
 
-In JUnit you can initialize [Playwright] and [Browser] in [@BeforeAll](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/BeforeAll.html) method and
+In [JUnit](https://junit.org/junit5/) you can initialize [Playwright] and [Browser] in [@BeforeAll](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/BeforeAll.html) method and
 destroy them in [@AfterAll](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/AfterAll.html). In the example below all three test methods use the same
 [Browser]. Each test uses its own [BrowserContext] and [Page].
 
@@ -63,23 +63,23 @@ public class TestExample {
   @Test
   void shouldClickButton() {
     page.navigate("data:text/html,<script>var result;</script><button onclick='result=\"Clicked\"'>Go</button>");
-    page.click("button");
+    page.locator("button").click();
     assertEquals("Clicked", page.evaluate("result"));
   }
 
   @Test
   void shouldCheckTheBox() {
     page.setContent("<input id='checkbox' type='checkbox'></input>");
-    page.check("input");
+    page.locator("input").check();
     assertTrue((Boolean) page.evaluate("() => window['checkbox'].checked"));
   }
 
   @Test
   void shouldSearchWiki() {
     page.navigate("https://www.wikipedia.org/");
-    page.click("input[name=\"search\"]");
-    page.fill("input[name=\"search\"]", "playwright");
-    page.press("input[name=\"search\"]", "Enter");
+    page.locator("input[name=\"search\"]").click();
+    page.locator("input[name=\"search\"]").fill("playwright");
+    page.locator("input[name=\"search\"]").press("Enter");
     assertEquals("https://en.wikipedia.org/wiki/Playwright", page.url());
   }
 }
@@ -94,7 +94,7 @@ instance per thread and use it on that thread exclusively. Here is an example ho
 
 Use [`@TestInstance(TestInstance.Lifecycle.PER_CLASS)`](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/TestInstance.html)
 annotation to make JUnit create one instance of a class for all test methods within that class (by default each JUnit will create a new instance of the class
-for each test method). Store [Playwright] and [Browser] objects in instance fields. They will be shared between tests. Each instace of the class will use its
+for each test method). Store [Playwright] and [Browser] objects in instance fields. They will be shared between tests. Each instance of the class will use its
 own copy of Playwright.
 
 
@@ -137,23 +137,23 @@ class Test1 extends TestFixtures {
   @Test
   void shouldClickButton() {
     page.navigate("data:text/html,<script>var result;</script><button onclick='result=\"Clicked\"'>Go</button>");
-    page.click("button");
+    page.locator("button").click();
     assertEquals("Clicked", page.evaluate("result"));
   }
 
   @Test
   void shouldCheckTheBox() {
     page.setContent("<input id='checkbox' type='checkbox'></input>");
-    page.check("input");
+    page.locator("input").check();
     assertTrue((Boolean) page.evaluate("() => window['checkbox'].checked"));
   }
 
   @Test
   void shouldSearchWiki() {
     page.navigate("https://www.wikipedia.org/");
-    page.click("input[name=\"search\"]");
-    page.fill("input[name=\"search\"]", "playwright");
-    page.press("input[name=\"search\"]", "Enter");
+    page.locator("input[name=\"search\"]").click();
+    page.locator("input[name=\"search\"]").fill("playwright");
+    page.locator("input[name=\"search\"]").press("Enter");
     assertEquals("https://en.wikipedia.org/wiki/Playwright", page.url());
   }
 }

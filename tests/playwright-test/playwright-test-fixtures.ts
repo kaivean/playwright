@@ -14,26 +14,30 @@
  * limitations under the License.
  */
 
-import type { JSONReport, JSONReportSuite } from '@playwright/test/src/reporters/json';
+import type { JSONReport, JSONReportSuite, JSONReportTest, JSONReportTestResult } from '@playwright/test/reporter';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PNG } from 'pngjs';
-import rimraf from 'rimraf';
+import { rimraf, PNG } from 'playwright-core/lib/utilsBundle';
 import { promisify } from 'util';
-import { CommonFixtures, commonFixtures } from '../config/commonFixtures';
-import { serverFixtures, ServerFixtures, ServerWorkerOptions } from '../config/serverFixtures';
-import { test as base, TestInfo } from './stable-test-runner';
+import type { CommonFixtures } from '../config/commonFixtures';
+import { commonFixtures } from '../config/commonFixtures';
+import type { ServerFixtures, ServerWorkerOptions } from '../config/serverFixtures';
+import { serverFixtures } from '../config/serverFixtures';
+import type { TestInfo } from './stable-test-runner';
+import { expect } from './stable-test-runner';
+import { test as base } from './stable-test-runner';
 
 const removeFolderAsync = promisify(rimraf);
 
-type RunResult = {
+export type RunResult = {
   exitCode: number,
   output: string,
   passed: number,
   failed: number,
   flaky: number,
   skipped: number,
+  interrupted: number,
   report: JSONReport,
   results: any[],
 };
@@ -84,7 +88,7 @@ async function writeFiles(testInfo: TestInfo, files: Files) {
     const header = isTypeScriptSourceFile ? headerTS : (isJSModule ? headerESM : headerJS);
     if (typeof files[name] === 'string' && files[name].includes('//@no-header')) {
       await fs.promises.writeFile(fullName, files[name]);
-    } else if (/(spec|test)\.(js|ts|mjs)$/.test(name)) {
+    } else if (/(spec|test)\.(js|ts|jsx|tsx|mjs)$/.test(name)) {
       const fileHeader = header + 'const { expect } = pwt;\n';
       await fs.promises.writeFile(fullName, fileHeader + files[name]);
     } else if (/\.(js|ts)$/.test(name) && !name.endsWith('d.ts')) {
@@ -100,7 +104,7 @@ async function writeFiles(testInfo: TestInfo, files: Files) {
 const cliEntrypoint = path.join(__dirname, '../../packages/playwright-core/cli.js');
 
 async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], baseDir: string, params: any, env: Env, options: RunOptions): Promise<RunResult> {
-  const paramList = [];
+  const paramList: string[] = [];
   for (const key of Object.keys(params)) {
     for (const value of Array.isArray(params[key]) ? params[key] : [params[key]]) {
       const k = key.startsWith('-') ? key : '--' + key;
@@ -112,8 +116,9 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
   const args = ['node', cliEntrypoint, 'test'];
   if (!options.usesCustomOutputDir)
     args.push('--output=' + outputDir);
+  if (!options.usesCustomReporters)
+    args.push('--reporter=dot,json');
   args.push(
-      '--reporter=dot,json',
       '--workers=2',
       ...paramList
   );
@@ -138,8 +143,6 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
       GITHUB_SHA: undefined,
       // END: Reserved CI
       PW_TEST_HTML_REPORT_OPEN: undefined,
-      PLAYWRIGHT_DOCKER: undefined,
-      PW_GRID: undefined,
       PW_TEST_REPORTER: undefined,
       PW_TEST_REPORTER_WS_ENDPOINT: undefined,
       PW_TEST_SOURCE_TRANSFORM: undefined,
@@ -154,7 +157,7 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
   testProcess.onOutput = () => {
     if (options.sendSIGINTAfter && !didSendSigint && countTimes(testProcess.output, '%%SEND-SIGINT%%') >= options.sendSIGINTAfter) {
       didSendSigint = true;
-      process.kill(testProcess.process.pid, 'SIGINT');
+      process.kill(testProcess.process.pid!, 'SIGINT');
     }
   };
   const { exitCode } = await testProcess.exited;
@@ -174,6 +177,7 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
   const failed = summary(/(\d+) failed/g);
   const flaky = summary(/(\d+) flaky/g);
   const skipped = summary(/(\d+) skipped/g);
+  const interrupted = summary(/(\d+) interrupted/g);
   let report;
   try {
     report = JSON.parse(fs.readFileSync(reportFile).toString());
@@ -181,7 +185,7 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
     testProcess.output += '\n' + e.toString();
   }
 
-  const results = [];
+  const results: JSONReportTestResult[] = [];
   function visitSuites(suites?: JSONReportSuite[]) {
     if (!suites)
       return;
@@ -203,6 +207,7 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
     failed,
     flaky,
     skipped,
+    interrupted,
     report,
     results,
   };
@@ -211,6 +216,7 @@ async function runPlaywrightTest(childProcess: CommonFixtures['childProcess'], b
 type RunOptions = {
   sendSIGINTAfter?: number;
   usesCustomOutputDir?: boolean;
+  usesCustomReporters?: boolean;
   additionalArgs?: string[];
   cwd?: string,
 };
@@ -218,6 +224,8 @@ type Fixtures = {
   writeFiles: (files: Files) => Promise<string>;
   runInlineTest: (files: Files, params?: Params, env?: Env, options?: RunOptions, beforeRunPlaywrightTest?: ({ baseDir }: { baseDir: string }) => Promise<void>) => Promise<RunResult>;
   runTSC: (files: Files) => Promise<TSCResult>;
+  nodeVersion: { major: number, minor: number, patch: number };
+  runGroups: (files: Files, params?: Params, env?: Env, options?: RunOptions) => Promise<{ timeline: { titlePath: string[], event: 'begin' | 'end' }[] } & RunResult>;
 };
 
 export const test = base
@@ -247,6 +255,48 @@ export const test = base
           });
           const { exitCode } = await tsc.exited;
           return { exitCode, output: tsc.output };
+        });
+      },
+
+      nodeVersion: async ({}, use) => {
+        const [major, minor, patch] = process.versions.node.split('.');
+        await use({ major: +major, minor: +minor, patch: +patch });
+      },
+
+      runGroups: async ({ runInlineTest }, use, testInfo) => {
+        const timelinePath = testInfo.outputPath('timeline.json');
+        await use(async (files, params, env, options) => {
+          const result = await runInlineTest({
+            ...files,
+            'reporter.ts': `
+              import { Reporter, TestCase } from '@playwright/test/reporter';
+              import fs from 'fs';
+              import path from 'path';
+              class TimelineReporter implements Reporter {
+                private _timeline: {titlePath: string, event: 'begin' | 'end'}[] = [];
+                onTestBegin(test: TestCase) {
+                  this._timeline.push({ titlePath: test.titlePath(), event: 'begin' });
+                }
+                onTestEnd(test: TestCase) {
+                  this._timeline.push({ titlePath: test.titlePath(), event: 'end' });
+                }
+                onEnd() {
+                  fs.writeFileSync(path.join(${JSON.stringify(timelinePath)}), JSON.stringify(this._timeline, null, 2));
+                }
+              }
+              export default TimelineReporter;
+            `
+          }, { ...params, reporter: 'list,json,./reporter.ts', workers: 2 }, env, options);
+
+          let timeline;
+          try {
+            timeline = JSON.parse((await fs.promises.readFile(timelinePath, 'utf8')).toString('utf8'));
+          } catch (e) {
+          }
+          return {
+            ...result,
+            timeline
+          };
         });
       },
     });
@@ -310,4 +360,26 @@ export function paintBlackPixels(image: Buffer, blackPixelsCount: number): Buffe
       png.data[i * 4 + j] = 0;
   }
   return PNG.sync.write(png);
+}
+
+export function allTests(result: RunResult) {
+  const tests: { title: string; expectedStatus: JSONReportTest['expectedStatus'], actualStatus: JSONReportTest['status'], annotations: string[] }[] = [];
+  const visit = (suite: JSONReportSuite) => {
+    for (const spec of suite.specs)
+      spec.tests.forEach(t => tests.push({ title: spec.title, expectedStatus: t.expectedStatus, actualStatus: t.status, annotations: t.annotations.map(a => a.type)  }));
+    suite.suites?.forEach(s => visit(s));
+  };
+  visit(result.report.suites[0]);
+  return tests;
+}
+
+export function expectTestHelper(result: RunResult) {
+  return (title: string, expectedStatus: string, status: string, annotations: any) => {
+    const tests = allTests(result).filter(t => t.title === title);
+    for (const test of tests) {
+      expect(test.expectedStatus, `title: ${title}`).toBe(expectedStatus);
+      expect(test.actualStatus, `title: ${title}`).toBe(status);
+      expect(test.annotations, `title: ${title}`).toEqual(annotations);
+    }
+  };
 }

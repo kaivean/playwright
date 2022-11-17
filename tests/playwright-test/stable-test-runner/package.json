@@ -1,6 +1,6 @@
 {
   "private": true,
   "dependencies": {
-    "@playwright/test": "1.20.0-alpha-1646242424000"
+    "@playwright/test": "1.27.0-alpha-sep-15-2022"
   }
 }

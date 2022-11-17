@@ -576,6 +576,17 @@ playwright.chromium.launch().then(async browser => {
     });
   }
 
+  {
+    await page.addInitScript((args) => {
+      args.foo === args.hello.world
+    }, {
+      foo: 'bar',
+      hello: {
+        world: 'bar'
+      }
+    });
+  }
+
   await browser.close();
 })();
 
@@ -775,7 +786,7 @@ playwright.chromium.launch().then(async browser => {
     const isMobileAssertion: AssertType<boolean, typeof iPhone.isMobile> = true;
   }
   {
-    const agents = playwright.devices.map(x => x.userAgent);
+    const agents = Object.entries(playwright.devices).map(([name, descriptor]) => descriptor.userAgent);
     const assertion: AssertType<string[], typeof agents> = true;
   }
 

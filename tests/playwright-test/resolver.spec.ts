@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { test, expect } from './playwright-test-fixtures';
+import { test, expect, stripAnsi } from './playwright-test-fixtures';
 
 test('should respect path resolver', async ({ runInlineTest }) => {
   test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/11656' });
@@ -164,11 +164,8 @@ test('should respect baseurl w/o paths', async ({ runInlineTest }) => {
   expect(result.output).not.toContain(`Could not`);
 });
 
-test('should respect path resolver in experimental mode @esm', async ({ runInlineTest }) => {
-  // We only support experimental esm mode on Node 16+
-  test.skip(parseInt(process.version.slice(1), 10) < 16);
+test('should respect complex path resolver', async ({ runInlineTest }) => {
   const result = await runInlineTest({
-    'package.json': JSON.stringify({ type: 'module' }),
     'playwright.config.ts': `
       export default {
         projects: [{name: 'foo'}],
@@ -181,21 +178,223 @@ test('should respect path resolver in experimental mode @esm', async ({ runInlin
         "lib": ["esnext", "dom", "DOM.Iterable"],
         "baseUrl": ".",
         "paths": {
+          "prefix-*": ["./prefix-*/bar"],
+          "prefix-*-suffix": ["./prefix-*-suffix/bar"],
+          "*-suffix": ["./*-suffix/bar"],
+          "no-star": ["./no-star-foo"],
+          "longest-*": ["./this-is-not-the-longest-prefix"],
+          "longest-pre*": ["./this-is-the-longest-prefix"],
+          "*bar": ["./*bar"],
+          "*[bar]": ["*foo"],
+        },
+      },
+    }`,
+    'a.spec.ts': `
+      import { foo } from 'prefix-matchedstar';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'prefix-matchedstar/bar/index.ts': `
+      export const foo: string = 'foo';
+    `,
+    'b.spec.ts': `
+      import { foo } from 'prefix-matchedstar-suffix';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'prefix-matchedstar-suffix/bar.ts': `
+      export const foo: string = 'foo';
+    `,
+    'c.spec.ts': `
+      import { foo } from 'matchedstar-suffix';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'matchedstar-suffix/bar.ts': `
+      export const foo: string = 'foo';
+    `,
+    'd.spec.ts': `
+      import { foo } from 'no-star';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    './no-star-foo.ts': `
+      export const foo: string = 'foo';
+    `,
+    'e.spec.ts': `
+      import { foo } from 'longest-prefix';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    './this-is-the-longest-prefix.ts': `
+      // this module should be resolved as it matches by a longer prefix
+      export const foo: string = 'foo';
+    `,
+    './this-is-not-the-longest-prefix.ts': `
+      // This module should't be resolved as it matches by a shorter prefix
+      export const bar: string = 'bar';
+    `,
+    'f.spec.ts': `
+      import { foo } from 'barfoobar';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'barfoobar.ts': `
+      export const foo: string = 'foo';
+    `,
+    'g.spec.ts': `
+      import { foo } from 'foo/[bar]';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'foo/foo.ts': `
+      export const foo: string = 'foo';
+    `,
+  });
+
+  expect(result.passed).toBe(7);
+  expect(result.exitCode).toBe(0);
+  expect(result.output).not.toContain(`Could not`);
+});
+
+test('should not use baseurl for relative imports', async ({ runInlineTest }) => {
+  test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15891' });
+  const result = await runInlineTest({
+    'frontend/tsconfig.json': `{
+      "compilerOptions": {
+        "baseUrl": "src",
+      },
+    }`,
+    'frontend/playwright/utils.ts': `
+      export const foo = 42;
+    `,
+    'frontend/playwright/tests/forms_cms_standard.spec.ts': `
+      // This relative import should not use baseUrl
+      import { foo } from '../utils';
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(foo).toBe(42);
+      });
+    `,
+  });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+  expect(result.output).not.toContain(`Could not`);
+});
+
+test('should not use baseurl for relative imports when dir with same name exists', async ({ runInlineTest }) => {
+  test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15891' });
+
+  const result = await runInlineTest({
+    'frontend/tsconfig.json': `{
+      "compilerOptions": {
+        "baseUrl": "src",
+      },
+    }`,
+    'frontend/src/utils/foo.js': `
+      export const foo = -1;
+    `,
+    'frontend/src/index.js': `
+      export const index = -1;
+    `,
+    'frontend/src/.bar.js': `
+      export const bar = 42;
+    `,
+    'frontend/playwright/tests/utils.ts': `
+      export const foo = 42;
+    `,
+    'frontend/playwright/tests/index.js': `
+      export const index = 42;
+    `,
+    'frontend/playwright/tests/forms_cms_standard.spec.ts': `
+      // These relative imports should not use baseUrl
+      import { foo } from './utils';
+      import { index } from '.';
+
+      // This absolute import should use baseUrl
+      import { bar } from '.bar';
+
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(foo).toBe(42);
+        expect(index).toBe(42);
+        expect(bar).toBe(42);
+      });
+    `,
+  });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+  expect(result.output).not.toContain(`Could not`);
+  expect(result.output).not.toContain(`Cannot`);
+});
+
+test('should respect path resolver for JS files when allowJs', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `export default { projects: [{name: 'foo'}], };`,
+    'tsconfig.json': `{
+      "compilerOptions": {
+        "allowJs": true,
+        "baseUrl": ".",
+        "paths": {
           "util/*": ["./foo/bar/util/*"],
         },
       },
     }`,
-    'a.test.ts': `
-      import { foo } from 'util/b.ts';
+    'a.test.js': `
+      const { foo } = require('util/b');
       const { test } = pwt;
-      test('check project name', ({}, testInfo) => {
+      test('test', ({}, testInfo) => {
         expect(testInfo.project.name).toBe(foo);
       });
     `,
     'foo/bar/util/b.ts': `
-      export const foo: string = 'foo';
+      module.exports = { foo: 'foo' };
     `,
-  }, {});
+  });
 
+  expect(result.passed).toBe(1);
   expect(result.exitCode).toBe(0);
+});
+
+test('should not respect path resolver for JS files w/o allowJS', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `export default { projects: [{name: 'foo'}], };`,
+    'tsconfig.json': `{
+      "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+          "util/*": ["./foo/bar/util/*"],
+        },
+      },
+    }`,
+    'a.test.js': `
+      const { foo } = require('util/b');
+      const { test } = pwt;
+      test('test', ({}, testInfo) => {
+        expect(testInfo.project.name).toBe(foo);
+      });
+    `,
+    'foo/bar/util/b.ts': `
+      module.exports = { foo: 'foo' };
+    `,
+  });
+
+  expect(stripAnsi(result.output)).toContain('Cannot find module \'util/b\'');
+  expect(result.exitCode).toBe(1);
 });

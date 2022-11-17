@@ -7,8 +7,6 @@ Each version of Playwright needs specific versions of browser binaries to operat
 
 With every release, Playwright updates the versions of the browsers it supports, so that the latest Playwright would support the latest browsers at any moment. It means that every time you update playwright, you might need to re-run the `install` CLI command.
 
-<!-- TOC -->
-
 ## Chromium
 
 For Google Chrome, Microsoft Edge and other Chromium-based browsers, by default, Playwright uses open source Chromium builds.
@@ -34,7 +32,7 @@ While Playwright can download and use the recent Chromium build, it can operate 
 Chrome and Microsoft Edge browsers available on the machine. In particular, current Playwright version will
 support Stable and Beta channels of these browsers. Here is how you can opt into using the stock browser:
 
-```js js-flavor=js
+```js tab=js-js
 // @ts-check
 
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
@@ -47,8 +45,8 @@ const config = {
 module.exports = config;
 ```
 
-```js js-flavor=ts
-import { PlaywrightTestConfig } from '@playwright/test';
+```js tab=js-ts
+import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
   use: {
     channel: 'chrome',
@@ -57,7 +55,7 @@ const config: PlaywrightTestConfig = {
 export default config;
 ```
 
-```js js-flavor=library
+```js tab=js-library
 const { chromium } = require('playwright');
 const browser = await chromium.launch({
   channel: 'chrome' // or 'msedge', 'chrome-beta', 'msedge-beta', 'msedge-dev', etc.
@@ -90,18 +88,11 @@ browser = playwright.chromium.launch(channel="chrome")
 
 ```csharp
 using Microsoft.Playwright;
-using System.Threading.Tasks;
 
-class Program
-{
-    public static async Task Main()
-    {
-        using var playwright = await Playwright.CreateAsync();
-        var chromium = playwright.Chromium;
-        // Can be "msedge", "chrome-beta", "msedge-beta", "msedge-dev", etc.
-        var browser = await chromium.LaunchAsync(new BrowserTypeLaunchOptions { Channel = "chrome" });
-    }
-}
+using var playwright = await Playwright.CreateAsync();
+var chromium = playwright.Chromium;
+// Can be "msedge", "chrome-beta", "msedge-beta", "msedge-dev", etc.
+var browser = await chromium.LaunchAsync(new BrowserTypeLaunchOptions { Channel = "chrome" });
 ```
 
 ### When to use Google Chrome & Microsoft Edge and when not to?
@@ -134,34 +125,45 @@ organization that uses such policies, it is the easiest to use bundled Chromium 
 you can still opt into stable channels on the bots that are typically free of such restrictions.
 
 ## Installing browsers
-
-### Prerequisites for .NET
 * langs: csharp
 
 To invoke Playwright CLI commands, you need to invoke a PowerShell script:
 
 ```bash
-pwsh bin\Debug\netX\playwright.ps1 --help
+pwsh bin/Debug/netX/playwright.ps1 --help
 ```
 
 Playwright can install supported browsers by means of the CLI tool.
 
 ```bash csharp
 # Running without arguments will install all browsers
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 You can also install specific browsers by providing an argument:
 
 ```bash csharp
 # Install WebKit
-pwsh bin\Debug\netX\playwright.ps1 install webkit
+pwsh bin/Debug/netX/playwright.ps1 install webkit
 ```
 
 See all supported browsers:
 
 ```bash csharp
-pwsh bin\Debug\netX\playwright.ps1 install --help
+pwsh bin/Debug/netX/playwright.ps1 install --help
+```
+
+## Install browsers via API
+* langs: csharp
+
+It's possible to run [Command line tools](./cli.md) commands via the .NET API:
+
+```csharp
+var exitCode = Microsoft.Playwright.Program.Main(new[] {"install"});
+if (exitCode != 0)
+{
+    throw new Exception($"Playwright exited with code {exitCode}");
+}
 ```
 
 ## Managing browser binaries
@@ -183,122 +185,122 @@ du -hs ~/Library/Caches/ms-playwright/*
 
 You can override default behavior using environment variables. When installing Playwright, ask it to download browsers into a specific location:
 
-```bash bash-flavor=bash lang=js
+```bash tab=bash-bash lang=js
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers npx playwright install
 ```
 
-```bash bash-flavor=batch lang=js
+```batch tab=bash-batch lang=js
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 npx playwright install
 ```
 
-```bash bash-flavor=powershell lang=js
+```powershell tab=bash-powershell lang=js
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 npx playwright install
 ```
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 pip install playwright
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers python -m playwright install
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=bash lang=java
-PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers mvn test
+```bash tab=bash-bash lang=java
+PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=bash lang=csharp
-PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers 
-pwsh bin\Debug\netX\playwright.ps1 install
+```bash tab=bash-bash lang=csharp
+PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 When running Playwright scripts, ask it to search for browsers in a shared location.
 
-```bash bash-flavor=bash lang=js
+```bash tab=bash-bash lang=js
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers npx playwright test
 ```
 
-```bash bash-flavor=batch lang=js
+```batch tab=bash-batch lang=js
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 npx playwright test
 ```
 
-```bash bash-flavor=powershell lang=js
+```powershell tab=bash-powershell lang=js
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 npx playwright test
 ```
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 # Linux/macOS
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers python playwright_script.py
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 python playwright_script.py
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 python playwright_script.py
 ```
 
-```bash bash-flavor=bash lang=java
+```bash tab=bash-bash lang=java
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers mvn test
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 mvn test
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 mvn test
 ```
 
-```bash bash-flavor=bash lang=csharp
+```bash tab=bash-bash lang=csharp
 PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers dotnet test
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\pw-browsers
 dotnet test
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:PLAYWRIGHT_BROWSERS_PATH="$env:USERPROFILE\pw-browsers"
 dotnet test
 ```
@@ -309,24 +311,25 @@ Playwright keeps track of packages that need those browsers and will garbage col
 Developers can opt-in in this mode via exporting `PLAYWRIGHT_BROWSERS_PATH=$HOME/pw-browsers` in their `.bashrc`.
 :::
 
-### Managing browser binaries
+### Hermetic install
 * langs: js
 
 You can opt into the hermetic install and place binaries in the local folder:
 
-```bash bash-flavor=bash
-# Places binaries to node_modules/@playwright/test
+
+```bash tab=bash-bash
+# Places binaries to node_modules/playwright-core/.local-browsers
 PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install
 ```
 
-```bash bash-flavor=batch
-# Places binaries to node_modules\@playwright\test
+```batch tab=bash-batch
+# Places binaries to node_modules\playwright-core\.local-browsers
 set PLAYWRIGHT_BROWSERS_PATH=0
 npx playwright install
 ```
 
-```bash bash-flavor=powershell
-# Places binaries to node_modules\@playwright\test
+```powershell tab=bash-powershell
+# Places binaries to node_modules\playwright-core\.local-browsers
 $env:PLAYWRIGHT_BROWSERS_PATH=0
 npx playwright install
 ```
@@ -338,7 +341,7 @@ By default, Playwright downloads browsers from Microsoft CDN.
 Sometimes companies maintain an internal proxy that blocks direct access to the public
 resources. In this case, Playwright can be configured to download browsers via a proxy server.
 
-```bash bash-flavor=bash lang=js
+```bash tab=bash-bash lang=js
 # For Playwright Test
 HTTPS_PROXY=https://192.0.2.1 npx playwright install
 
@@ -346,7 +349,7 @@ HTTPS_PROXY=https://192.0.2.1 npx playwright install
 HTTPS_PROXY=https://192.0.2.1 npm install playwright
 ```
 
-```bash bash-flavor=batch lang=js
+```batch tab=bash-batch lang=js
 # For Playwright Test
 set HTTPS_PROXY=https://192.0.2.1
 npx playwright install
@@ -356,7 +359,7 @@ set HTTPS_PROXY=https://192.0.2.1
 npm install playwright
 ```
 
-```bash bash-flavor=powershell lang=js
+```powershell tab=bash-powershell lang=js
 # For Playwright Test
 $env:HTTPS_PROXY="https://192.0.2.1"
 npx playwright install
@@ -366,49 +369,124 @@ $env:HTTPS_PROXY="https://192.0.2.1"
 npm install playwright
 ```
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 pip install playwright
 HTTPS_PROXY=https://192.0.2.1 playwright install
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set HTTPS_PROXY=https://192.0.2.1
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 $env:HTTPS_PROXY="https://192.0.2.1"
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=bash lang=java
-HTTPS_PROXY=https://192.0.2.1 mvn test
+```bash tab=bash-bash lang=java
+HTTPS_PROXY=https://192.0.2.1 mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set HTTPS_PROXY=https://192.0.2.1
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:HTTPS_PROXY="https://192.0.2.1"
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=bash lang=csharp
-HTTPS_PROXY=https://192.0.2.1 pwsh bin\Debug\netX\playwright.ps1 install
+```bash tab=bash-bash lang=csharp
+HTTPS_PROXY=https://192.0.2.1 pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set HTTPS_PROXY=https://192.0.2.1
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:HTTPS_PROXY="https://192.0.2.1"
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
+```
+
+If the requests of the proxy get intercepted with a custom untrusted certificate authority (CA) and it yields to `Error: self signed certificate in certificate chain` while downloading the browsers, you must set your custom root certificates via the [`NODE_EXTRA_CA_CERTS`](https://nodejs.org/api/cli.html#node_extra_ca_certsfile) environment variable before installing the browsers:
+
+```bash tab=bash-bash
+export NODE_EXTRA_CA_CERTS="/path/to/cert.pem"
+```
+
+```batch tab=bash-batch
+set NODE_EXTRA_CA_CERTS="C:\certs\root.crt"
+```
+
+```powershell tab=bash-powershell
+$env:NODE_EXTRA_CA_CERTS="C:\certs\root.crt"
+```
+
+If your network is slow to connect to Playwright browser archive, you can increase the connection timeout in milliseconds with `PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT` environment variable:
+
+```bash tab=bash-bash lang=js
+PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 npx playwright install
+```
+
+```batch tab=bash-batch lang=js
+set PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
+npx playwright install
+```
+
+```powershell tab=bash-powershell lang=js
+$env:PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="120000"
+npx playwright install
+```
+
+```bash tab=bash-bash lang=python
+pip install playwright
+PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 playwright install
+```
+
+```batch tab=bash-batch lang=python
+set PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
+pip install playwright
+playwright install
+```
+
+```powershell tab=bash-powershell lang=python
+$env:PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="120000"
+pip install playwright
+playwright install
+```
+
+```bash tab=bash-bash lang=java
+PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
+```
+
+```batch tab=bash-batch lang=java
+set PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
+```
+
+```powershell tab=bash-powershell lang=java
+$env:PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="120000"
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
+```
+
+```bash tab=bash-bash lang=csharp
+PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 pwsh bin/Debug/netX/playwright.ps1 install
+```
+
+```batch tab=bash-batch lang=csharp
+set PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
+pwsh bin/Debug/netX/playwright.ps1 install
+```
+
+```powershell tab=bash-powershell lang=csharp
+$env:PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="120000"
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 ## Download from artifact repository
@@ -419,7 +497,7 @@ Sometimes companies maintain an internal artifact repository to host browser
 binaries. In this case, Playwright can be configured to download from a custom
 location using the `PLAYWRIGHT_DOWNLOAD_HOST` env variable.
 
-```bash bash-flavor=bash lang=js
+```bash tab=bash-bash lang=js
 # For Playwright Test
 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 npx playwright install
 
@@ -427,7 +505,7 @@ PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 npx playwright install
 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 npm install playwright
 ```
 
-```bash bash-flavor=batch lang=js
+```batch tab=bash-batch lang=js
 # For Playwright Test
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
 npx playwright install
@@ -437,7 +515,7 @@ set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
 npm install playwright
 ```
 
-```bash bash-flavor=powershell lang=js
+```powershell tab=bash-powershell lang=js
 # For Playwright Test
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 npx playwright install
@@ -447,55 +525,55 @@ $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 npm install playwright
 ```
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 pip install playwright
 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 playwright install
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=bash lang=java
-PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 mvn test
+```bash tab=bash-bash lang=java
+PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=bash lang=csharp
-PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 pwsh bin\Debug\netX\playwright.ps1 install
+```bash tab=bash-bash lang=csharp
+PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 It is also possible to use a per-browser download hosts using `PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST`, `PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST` and `PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST` env variables that
 take precedence over `PLAYWRIGHT_DOWNLOAD_HOST`.
 
-```bash bash-flavor=bash lang=js
+```bash tab=bash-bash lang=js
 # For Playwright Test
 PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 npx playwright install
 
@@ -503,7 +581,7 @@ PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 
 PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 npm install playwright
 ```
 
-```bash bash-flavor=batch lang=js
+```batch tab=bash-batch lang=js
 # For Playwright Test
 set PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
@@ -515,7 +593,7 @@ set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
 npm install playwright
 ```
 
-```bash bash-flavor=powershell lang=js
+```powershell tab=bash-powershell lang=js
 # For Playwright Test
 $env:PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST="203.0.113.3"
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
@@ -527,55 +605,55 @@ $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 npm install playwright
 ```
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 pip install playwright
 PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 playwright install
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 $env:PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST="203.0.113.3"
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=bash lang=java
-PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 mvn test
+```bash tab=bash-bash lang=java
+PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST="203.0.113.3"
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
-mvn test
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
 ```
 
-```bash bash-flavor=bash lang=csharp
-PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 pwsh bin\Debug\netX\playwright.ps1 install
+```bash tab=bash-bash lang=csharp
+PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3 PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1 pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST=203.0.113.3
 set PLAYWRIGHT_DOWNLOAD_HOST=192.0.2.1
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:PLAYWRIGHT_DOWNLOAD_HOST="192.0.2.1"
 $env:PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST="203.0.113.3"
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 ## Skip browser downloads
@@ -585,49 +663,49 @@ browser binaries are managed separately.
 
 This can be done by setting `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` variable before installation.
 
-```bash bash-flavor=bash lang=python
+```bash tab=bash-bash lang=python
 pip install playwright
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 python -m playwright install
 ```
 
-```bash bash-flavor=batch lang=python
+```batch tab=bash-batch lang=python
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=powershell lang=python
+```powershell tab=bash-powershell lang=python
 $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 pip install playwright
 playwright install
 ```
 
-```bash bash-flavor=bash lang=java
+```bash tab=bash-bash lang=java
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 mvn test
 ```
 
-```bash bash-flavor=batch lang=java
+```batch tab=bash-batch lang=java
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 mvn test
 ```
 
-```bash bash-flavor=powershell lang=java
+```powershell tab=bash-powershell lang=java
 $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 mvn test
 ```
 
-```bash bash-flavor=bash lang=csharp
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pwsh bin\Debug\netX\playwright.ps1 install
+```bash tab=bash-bash lang=csharp
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=batch lang=csharp
+```batch tab=bash-batch lang=csharp
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
-```bash bash-flavor=powershell lang=csharp
+```powershell tab=bash-powershell lang=csharp
 $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-pwsh bin\Debug\netX\playwright.ps1 install
+pwsh bin/Debug/netX/playwright.ps1 install
 ```
 
 ## Download single browser binary

@@ -8,6 +8,7 @@ const {EventEmitter} = ChromeUtils.import('resource://gre/modules/EventEmitter.j
 const {Helper} = ChromeUtils.import('chrome://juggler/content/Helper.js');
 const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
+const { ChannelEventSinkFactory } = ChromeUtils.import("chrome://remote/content/cdp/observers/ChannelEventSink.jsm");
 
 
 const Cc = Components.classes;
@@ -26,14 +27,6 @@ const StorageStream = CC('@mozilla.org/storagestream;1', 'nsIStorageStream', 'in
 
 // Cap response storage with 100Mb per tracked tab.
 const MAX_RESPONSE_STORAGE_SIZE = 100 * 1024 * 1024;
-
-/**
- * This is a nsIChannelEventSink implementation that monitors channel redirects.
- */
-const SINK_CLASS_DESCRIPTION = "Juggler NetworkMonitor Channel Event Sink";
-const SINK_CLASS_ID = Components.ID("{c2b4c83e-607a-405a-beab-0ef5dbfb7617}");
-const SINK_CONTRACT_ID = "@mozilla.org/network/monitor/channeleventsink;1";
-const SINK_CATEGORY_NAME = "net-channel-event-sinks";
 
 const pageNetworkSymbol = Symbol('PageNetwork');
 
@@ -533,6 +526,9 @@ class NetworkRequest {
       // remoteAddress is not defined for cached requests.
     }
 
+    const fromServiceWorker = this._networkObserver._channelIdsFulfilledByServiceWorker.has(this.requestId);
+    this._networkObserver._channelIdsFulfilledByServiceWorker.delete(this.requestId);
+
     pageNetwork.emit(PageNetwork.Events.Response, {
       requestId: this.requestId,
       securityDetails: getSecurityDetails(this.httpChannel),
@@ -543,6 +539,7 @@ class NetworkRequest {
       status,
       statusText,
       timing,
+      fromServiceWorker,
     }, this._frameId);
   }
 
@@ -591,6 +588,7 @@ class NetworkObserver {
 
     this._channelToRequest = new Map();  // http channel -> network request
     this._expectedRedirect = new Map();  // expected redirect channel id (string) -> network request
+    this._channelIdsFulfilledByServiceWorker = new Set();  // http channel ids that were fulfilled by service worker
 
     const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
     this._channelProxyFilter = {
@@ -615,27 +613,17 @@ class NetworkObserver {
     };
     protocolProxyService.registerChannelFilter(this._channelProxyFilter, 0 /* position */);
 
-    this._channelSink = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIChannelEventSink]),
-      asyncOnChannelRedirect: (oldChannel, newChannel, flags, callback) => {
-        this._onRedirect(oldChannel, newChannel, flags);
-        callback.onRedirectVerifyCallback(Cr.NS_OK);
-      },
-    };
-    this._channelSinkFactory = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
-      createInstance: (aOuter, aIID) => this._channelSink.QueryInterface(aIID),
-    };
     // Register self as ChannelEventSink to track redirects.
-    const registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
-    registrar.registerFactory(SINK_CLASS_ID, SINK_CLASS_DESCRIPTION, SINK_CONTRACT_ID, this._channelSinkFactory);
-    Services.catMan.addCategoryEntry(SINK_CATEGORY_NAME, SINK_CONTRACT_ID, SINK_CONTRACT_ID, false, true);
+    ChannelEventSinkFactory.getService().registerCollector({
+      _onChannelRedirect: this._onRedirect.bind(this),
+    });
 
     this._eventListeners = [
       helper.addObserver(this._onRequest.bind(this), 'http-on-modify-request'),
       helper.addObserver(this._onResponse.bind(this, false /* fromCache */), 'http-on-examine-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-cached-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-merged-response'),
+      helper.addObserver(this._onServiceWorkerResponse.bind(this), 'service-worker-synthesized-response'),
     ];
   }
 
@@ -700,11 +688,17 @@ class NetworkObserver {
       request._sendOnResponse(fromCache);
   }
 
+  _onServiceWorkerResponse(channel, topic) {
+    if (!(channel instanceof Ci.nsIHttpChannel))
+      return;
+    const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+    const channelId = httpChannel.channelId + '';
+    this._channelIdsFulfilledByServiceWorker.add(channelId);
+  }
+
   dispose() {
     this._activityDistributor.removeObserver(this);
-    const registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
-    registrar.unregisterFactory(SINK_CLASS_ID, this._channelSinkFactory);
-    Services.catMan.deleteCategoryEntry(SINK_CATEGORY_NAME, SINK_CONTRACT_ID, false);
+    ChannelEventSinkFactory.unregister();
     helper.removeListeners(this._eventListeners);
   }
 }
@@ -869,7 +863,7 @@ function setPostData(httpChannel, postData, headers) {
   const body = atob(postData);
   synthesized.setData(body, body.length);
 
-  const overriddenHeader = (lowerCaseName, defaultValue) => {
+  const overriddenHeader = (lowerCaseName) => {
     if (headers) {
       for (const header of headers) {
         if (header.name.toLowerCase() === lowerCaseName) {
@@ -877,11 +871,22 @@ function setPostData(httpChannel, postData, headers) {
         }
       }
     }
-    return defaultValue;
+    return undefined;
   }
   // Clear content-length, so that upload stream resets it.
-  httpChannel.setRequestHeader('content-length', overriddenHeader('content-length', ''), false /* merge */);
-  httpChannel.explicitSetUploadStream(synthesized, overriddenHeader('content-type', 'application/octet-stream'), -1, httpChannel.requestMethod, false);
+  httpChannel.setRequestHeader('content-length', '', false /* merge */);
+  let contentType = overriddenHeader('content-type');
+  if (contentType === undefined) {
+    try {
+      contentType = httpChannel.getRequestHeader('content-type');
+    } catch (e) {
+      if (e.result == Cr.NS_ERROR_NOT_AVAILABLE)
+        contentType =  'application/octet-stream';
+      else
+        throw e;
+    }
+  }
+  httpChannel.explicitSetUploadStream(synthesized, contentType, -1, httpChannel.requestMethod, false);
 }
 
 function convertString(s, source, dest) {

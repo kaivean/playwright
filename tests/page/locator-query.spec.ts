@@ -90,6 +90,24 @@ it('should filter by regex and regexp flags', async ({ page }) => {
   await expect(page.locator('div', { hasText: /hElLo "world"/i })).toHaveText('Hello "world"');
 });
 
+it('should filter by case-insensitive regex in a child', async ({ page }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15348' });
+  await page.setContent(`<div class="test"><h5>Title Text</h5></div>`);
+  await expect(page.locator('div', { hasText: /^title text$/i })).toHaveText('Title Text');
+});
+
+it('should filter by case-insensitive regex in multiple children', async ({ page }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15348' });
+  await page.setContent(`<div class="test"><h5>Title</h5> <h2><i>Text</i></h2></div>`);
+  await expect(page.locator('div', { hasText: /^title text$/i })).toHaveClass('test');
+});
+
+it('should filter by regex with special symbols', async ({ page }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15348' });
+  await page.setContent(`<div class="test"><h5>First/"and"</h5><h2><i>Second\\</i></h2></div>`);
+  await expect(page.locator('div', { hasText: /^first\/".*"second\\$/si })).toHaveClass('test');
+});
+
 it('should support has:locator', async ({ page, trace }) => {
   it.skip(trace === 'on');
 
@@ -124,14 +142,41 @@ it('should support has:locator', async ({ page, trace }) => {
   })).toHaveCount(1);
 });
 
-it('should enforce same frame for has:locator', async ({ page, server }) => {
+it('should support locator.filter', async ({ page, trace }) => {
+  it.skip(trace === 'on');
+
+  await page.setContent(`<section><div><span>hello</span></div><div><span>world</span></div></section>`);
+  await expect(page.locator(`div`).filter({ hasText: 'hello' })).toHaveCount(1);
+  await expect(page.locator(`div`, { hasText: 'hello' }).filter({ hasText: 'hello' })).toHaveCount(1);
+  await expect(page.locator(`div`, { hasText: 'hello' }).filter({ hasText: 'world' })).toHaveCount(0);
+  await expect(page.locator(`section`, { hasText: 'hello' }).filter({ hasText: 'world' })).toHaveCount(1);
+  await expect(page.locator(`div`).filter({ hasText: 'hello' }).locator('span')).toHaveCount(1);
+  await expect(page.locator(`div`).filter({ has: page.locator('span', { hasText: 'world' }) })).toHaveCount(1);
+  await expect(page.locator(`div`).filter({ has: page.locator('span') })).toHaveCount(2);
+  await expect(page.locator(`div`).filter({
+    has: page.locator('span'),
+    hasText: 'world',
+  })).toHaveCount(1);
+});
+
+it('should enforce same frame for has/leftOf/rightOf/above/below/near', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/frames/two-frames.html');
   const child = page.frames()[1];
-  let error;
-  try {
-    page.locator('div', { has: child.locator('span') });
-  } catch (e) {
-    error = e;
+  for (const option of ['has']) {
+    let error;
+    try {
+      page.locator('div', { [option]: child.locator('span') });
+    } catch (e) {
+      error = e;
+    }
+    expect(error.message).toContain(`Inner "${option}" locator must belong to the same frame.`);
   }
-  expect(error.message).toContain('Inner "has" locator must belong to the same frame.');
+});
+
+it('alias methods coverage', async ({ page }) => {
+  await page.setContent(`<div><button>Submit</button></div>`);
+  await expect(page.locator('button')).toHaveCount(1);
+  await expect(page.locator('div').locator('button')).toHaveCount(1);
+  await expect(page.locator('div').getByRole('button')).toHaveCount(1);
+  await expect(page.mainFrame().locator('button')).toHaveCount(1);
 });

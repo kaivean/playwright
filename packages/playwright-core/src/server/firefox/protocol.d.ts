@@ -57,6 +57,7 @@ export module Protocol {
       uuid: string;
       browserContextId?: string;
       pageTargetId: string;
+      frameId: string;
       url: string;
       suggestedFileName: string;
     }
@@ -569,7 +570,7 @@ export module Protocol {
     export type reloadReturnValue = void;
     export type adoptNodeParameters = {
       frameId: string;
-      objectId: string;
+      objectId?: string;
       executionContextId: string;
     };
     export type adoptNodeReturnValue = {
@@ -583,7 +584,7 @@ export module Protocol {
     };
     export type screenshotParameters = {
       mimeType: ("image/png"|"image/jpeg");
-      clip?: {
+      clip: {
         x: number;
         y: number;
         width: number;
@@ -753,6 +754,8 @@ export module Protocol {
     export type executionContextDestroyedPayload = {
       executionContextId: string;
     }
+    export type executionContextsClearedPayload = {
+    }
     export type consolePayload = {
       executionContextId: string;
       args: {
@@ -904,6 +907,7 @@ export module Protocol {
         requestStart: number;
         responseStart: number;
       };
+      fromServiceWorker: boolean;
     }
     export type requestFinishedPayload = {
       requestId: string;
@@ -971,7 +975,7 @@ export module Protocol {
       focused?: boolean;
       pressed?: boolean;
       focusable?: boolean;
-      haspopup?: boolean;
+      haspopup?: string;
       required?: boolean;
       invalid?: boolean;
       modal?: boolean;
@@ -1006,7 +1010,7 @@ export module Protocol {
         focused?: boolean;
         pressed?: boolean;
         focusable?: boolean;
-        haspopup?: boolean;
+        haspopup?: string;
         required?: boolean;
         invalid?: boolean;
         modal?: boolean;
@@ -1065,6 +1069,7 @@ export module Protocol {
     "Page.screencastFrame": Page.screencastFramePayload;
     "Runtime.executionContextCreated": Runtime.executionContextCreatedPayload;
     "Runtime.executionContextDestroyed": Runtime.executionContextDestroyedPayload;
+    "Runtime.executionContextsCleared": Runtime.executionContextsClearedPayload;
     "Runtime.console": Runtime.consolePayload;
     "Network.requestWillBeSent": Network.requestWillBeSentPayload;
     "Network.responseReceived": Network.responseReceivedPayload;

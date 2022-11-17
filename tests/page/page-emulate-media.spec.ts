@@ -17,8 +17,6 @@
 
 import { test as it, expect } from './pageTest';
 
-it.skip(({ isAndroid }) => isAndroid);
-
 it('should emulate type @smoke', async ({ page }) => {
   expect(await page.evaluate(() => matchMedia('screen').matches)).toBe(true);
   expect(await page.evaluate(() => matchMedia('print').matches)).toBe(false);
@@ -37,7 +35,7 @@ it('should throw in case of bad media argument', async ({ page }) => {
   let error = null;
   // @ts-expect-error 'bad' is not a valid media type
   await page.emulateMedia({ media: 'bad' }).catch(e => error = e);
-  expect(error.message).toContain('media: expected one of (screen|print|null)');
+  expect(error.message).toContain('media: expected one of (screen|print|no-override)');
 });
 
 it('should emulate colorScheme should work @smoke', async ({ page }) => {
@@ -66,7 +64,7 @@ it('should throw in case of bad colorScheme argument', async ({ page }) => {
   let error = null;
   // @ts-expect-error 'bad' is not a valid media type
   await page.emulateMedia({ colorScheme: 'bad' }).catch(e => error = e);
-  expect(error.message).toContain('colorScheme: expected one of (dark|light|no-preference|null)');
+  expect(error.message).toContain('colorScheme: expected one of (dark|light|no-preference|no-override)');
 });
 
 it('should work during navigation', async ({ page, server }) => {
@@ -126,9 +124,7 @@ it('should emulate reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: null });
 });
 
-it('should emulate forcedColors ', async ({ page, browserName, isElectron }) => {
-  it.skip(browserName === 'webkit', 'https://bugs.webkit.org/show_bug.cgi?id=225281');
-  it.fixme(isElectron);
+it('should emulate forcedColors ', async ({ page, browserName }) => {
   expect(await page.evaluate(() => matchMedia('(forced-colors: none)').matches)).toBe(true);
   await page.emulateMedia({ forcedColors: 'none' });
   expect(await page.evaluate(() => matchMedia('(forced-colors: none)').matches)).toBe(true);

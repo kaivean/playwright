@@ -155,18 +155,19 @@ it('should work with DOM history.back()/history.forward()', async ({ page, serve
   expect(page.url()).toBe(server.PREFIX + '/second.html');
 });
 
-it('should work when subframe issues window.stop()', async ({ page, server }) => {
+it('should work when subframe issues window.stop()', async ({ browserName, page, server }) => {
+  it.fixme(browserName === 'webkit', 'WebKit issues load event in some cases, but not always');
+
   server.setRoute('/frames/style.css', (req, res) => {});
-  const navigationPromise = page.goto(server.PREFIX + '/frames/one-frame.html');
+  let done = false;
+  page.goto(server.PREFIX + '/frames/one-frame.html').then(() => done = true).catch(() => {});
   const frame = await new Promise<Frame>(f => page.once('frameattached', f));
   await new Promise<void>(fulfill => page.on('framenavigated', f => {
     if (f === frame)
       fulfill();
   }));
-  await Promise.all([
-    frame.evaluate(() => window.stop()),
-    navigationPromise
-  ]);
+  await frame.evaluate(() => window.stop());
+  expect(done).toBe(true);
 });
 
 it('should work with url match', async ({ page, server }) => {

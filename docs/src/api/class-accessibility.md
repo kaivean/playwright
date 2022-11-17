@@ -1,5 +1,8 @@
 # class: Accessibility
+* since: v1.8
 * langs: csharp, js, python
+
+**DEPRECATED** This class is deprecated. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to test page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration with Axe.
 
 The Accessibility class provides methods for inspecting Chromium's accessibility tree. The accessibility tree is used by
 assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Screen_reader) or
@@ -16,6 +19,7 @@ assistive technologies themselves. By default, Playwright tries to approximate t
 "interesting" nodes of the tree.
 
 ## async method: Accessibility.snapshot
+* since: v1.8
 - returns: <[null]|[Object]>
   - `role` <[string]> The [role](https://www.w3.org/TR/wai-aria/#usage_intro).
   - `name` <[string]> A human readable name for the node.
@@ -43,6 +47,8 @@ assistive technologies themselves. By default, Playwright tries to approximate t
   - `invalid` <[string]> Whether and in what way this node's value is invalid, if applicable.
   - `orientation` <[string]> Whether the node is oriented horizontally or vertically, if applicable.
   - `children` <[Array]<[Object]>> Child nodes, if any, if applicable.
+
+**DEPRECATED** This method is deprecated. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to test page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration with Axe.
 
 Captures the current state of the accessibility tree. The returned object represents the root accessible node of the
 page.
@@ -141,19 +147,23 @@ if node:
 ```
 
 ## async method: Accessibility.snapshot
+* since: v1.8
 * langs: java
 - returns: <[null]|[string]>
 
 ## async method: Accessibility.snapshot
+* since: v1.8
 * langs: csharp
 - returns: <[null]|[JsonElement]>
 
 ### option: Accessibility.snapshot.interestingOnly
+* since: v1.8
 - `interestingOnly` <[boolean]>
 
 Prune uninteresting nodes from the tree. Defaults to `true`.
 
 ### option: Accessibility.snapshot.root
+* since: v1.8
 - `root` <[ElementHandle]>
 
 The root DOM element for the snapshot. Defaults to the whole page.

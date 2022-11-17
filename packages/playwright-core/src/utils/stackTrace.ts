@@ -15,11 +15,8 @@
  */
 
 import path from 'path';
-import { StackFrame } from '../protocol/channels';
-import StackUtils from 'stack-utils';
-import { isUnderTest } from './utils';
-
-const stackUtils = new StackUtils();
+import { parseStackTraceLine } from '../utilsBundle';
+import { isUnderTest } from './';
 
 export function rewriteErrorMessage<E extends Error>(e: E, newMessage: string): E {
   const lines: string[] = (e.stack?.split('\n') || []).filter(l => l.startsWith('    at '));
@@ -36,7 +33,13 @@ const CORE_SRC = path.join(CORE_DIR, 'src');
 const TEST_DIR_SRC = path.resolve(CORE_DIR, '..', 'playwright-test');
 const TEST_DIR_LIB = path.resolve(CORE_DIR, '..', '@playwright', 'test');
 const COVERAGE_PATH = path.join(CORE_DIR, '..', '..', 'tests', 'config', 'coverage.js');
-const WS_LIB = path.relative(process.cwd(), path.dirname(require.resolve('ws')));
+
+export type StackFrame = {
+  file: string,
+  line?: number,
+  column?: number,
+  function?: string,
+};
 
 export type ParsedStackTrace = {
   allFrames: StackFrame[];
@@ -61,11 +64,6 @@ export function isInternalFileName(file: string, functionName?: string): boolean
   // EventEmitter.emit has 'events.js' file.
   if (file === 'events.js' && functionName?.endsWith('emit'))
     return true;
-  // Node 12
-  if (file === '_stream_readable.js' || file === '_stream_writable.js')
-    return true;
-  if (file.startsWith(WS_LIB))
-    return true;
   return false;
 }
 
@@ -79,18 +77,12 @@ export function captureStackTrace(rawStack?: string): ParsedStackTrace {
     inCore: boolean;
   };
   let parsedFrames = stack.split('\n').map(line => {
-    const frame = stackUtils.parseLine(line);
-    if (!frame || !frame.file)
+    const { frame, fileName } = parseStackTraceLine(line);
+    if (!frame || !frame.file || !fileName)
       return null;
-    if (isInternalFileName(frame.file, frame.function))
+    if (!process.env.PWDEBUGIMPL && isInternalFileName(frame.file, frame.function))
       return null;
-    // Workaround for https://github.com/tapjs/stack-utils/issues/60
-    let fileName: string;
-    if (frame.file.startsWith('file://'))
-      fileName = new URL(frame.file).pathname;
-    else
-      fileName = path.resolve(process.cwd(), frame.file);
-    if (isTesting && fileName.includes(COVERAGE_PATH))
+    if (!process.env.PWDEBUGIMPL && isTesting && fileName.includes(COVERAGE_PATH))
       return null;
     const inCore = fileName.startsWith(CORE_LIB) || fileName.startsWith(CORE_SRC);
     const parsed: ParsedFrame = {
@@ -114,7 +106,8 @@ export function captureStackTrace(rawStack?: string): ParsedStackTrace {
     if (parsedFrames[i].inCore && !parsedFrames[i + 1].inCore) {
       const frame = parsedFrames[i].frame;
       apiName = normalizeAPIName(frame.function);
-      parsedFrames = parsedFrames.slice(i + 1);
+      if (!process.env.PWDEBUGIMPL)
+        parsedFrames = parsedFrames.slice(i + 1);
       break;
     }
   }
@@ -130,9 +123,11 @@ export function captureStackTrace(rawStack?: string): ParsedStackTrace {
 
   // Hide all test runner and library frames in the user stack (event handlers produce them).
   parsedFrames = parsedFrames.filter((f, i) => {
+    if (process.env.PWDEBUGIMPL)
+      return true;
     if (f.frame.file.startsWith(TEST_DIR_SRC) || f.frame.file.startsWith(TEST_DIR_LIB))
       return false;
-    if (i && f.frame.file.startsWith(CORE_DIR))
+    if (f.frame.file.startsWith(CORE_DIR))
       return false;
     return true;
   });

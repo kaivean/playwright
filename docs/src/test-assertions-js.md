@@ -3,8 +3,7 @@ id: test-assertions
 title: "Assertions"
 ---
 
-Playwright Test uses [expect](https://jestjs.io/docs/expect) library for test assertions. This library provides
-a lot of matchers like `toEqual`, `toContain`, `toMatch`, `toMatchSnapshot` and many more:
+Playwright Test uses [expect](https://jestjs.io/docs/expect) library for test assertions. This library provides a lot of matchers like `toEqual`, `toContain`, `toMatch`, `toMatchSnapshot` and many more:
 
 ```js
 expect(success).toBeTruthy();
@@ -17,14 +16,9 @@ the expected condition is met. Consider the following example:
 await expect(page.locator('.status')).toHaveText('Submitted');
 ```
 
-Playwright Test will be re-testing the node with the selector `.status` until fetched Node has the `"Submitted"`
-text. It will be re-fetching the node and checking it over and over, until the condition is met or until the timeout is
-reached. You can either pass this timeout or configure it once via the [`property: TestConfig.expect`] value
-in test config.
+Playwright Test will be re-testing the node with the selector `.status` until fetched Node has the `"Submitted"` text. It will be re-fetching the node and checking it over and over, until the condition is met or until the timeout is reached. You can either pass this timeout or configure it once via the [`property: TestConfig.expect`] value in test config.
 
 By default, the timeout for assertions is set to 5 seconds. Learn more about [various timeouts](./test-timeouts.md).
-
-<!-- TOC -->
 
 ## Negating Matchers
 
@@ -61,7 +55,7 @@ await expect.soft(page.locator('#status')).toHaveText('Success');
 await expect.soft(page.locator('#eta')).toHaveText('1 day');
 
 // Avoid running further if there were soft assertion failures.
-expect(test.info().errors).toBeEmpty();
+expect(test.info().errors).toHaveLength(0);
 ```
 
 ## Custom Expect Message
@@ -69,7 +63,7 @@ expect(test.info().errors).toBeEmpty();
 You can specify a custom error message as a second argument to the `expect` function, for example:
 
 ```js
-await expect(page.locator('text=Name'), 'should be logged in').toBeVisible();
+await expect(page.getByText('Name'), 'should be logged in').toBeVisible();
 ```
 
 The error would look like this:
@@ -79,12 +73,12 @@ The error would look like this:
 
     Call log:
       - expect.toBeVisible with timeout 5000ms
-      - waiting for selector "text=Name"
+      - waiting for "getByText('Name')"
 
 
       2 |
       3 | test('example test', async({ page }) => {
-    > 4 |   await expect(page.locator('text=Name'), 'should be logged in').toBeVisible();
+    > 4 |   await expect(page.getByText('Name'), 'should be logged in').toBeVisible();
         |                                                                  ^
       5 | });
       6 |
@@ -103,21 +97,26 @@ You can convert any synchronous `expect` to an asynchronous polling one using `e
 The following method will poll given function until it returns HTTP status 200:
 
 ```js
-expect.poll(async () => {
+await expect.poll(async () => {
   const response = await page.request.get('https://api.example.com');
   return response.status();
 }, {
-  // Custom error message
+  // Custom error message, optional.
   message: 'make sure API eventually succeeds', // custom error message
   // Poll for 10 seconds; defaults to 5 seconds. Pass 0 to disable timeout.
   timeout: 10000,
 }).toBe(200);
 ```
 
+You can also specify custom polling intervals:
 
-## API reference
-See the following pages for Playwright-specific assertions:
-- [APIResponseAssertions] assertions for [APIResponse]
-- [LocatorAssertions] assertions for [Locator]
-- [PageAssertions] assertions for [Page]
-- [ScreenshotAssertions] for comparing screenshot with stored value
+```js
+await expect.poll(async () => {
+  const response = await page.request.get('https://api.example.com');
+  return response.status();
+}, {
+  // Probe, wait 1s, probe, wait 2s, probe, wait 10s, probe, wait 10s, probe, .... Defaults to [100, 250, 500, 1000].
+  intervals: [1_000, 2_000, 10_000],
+  timeout: 60_000
+}).toBe(200);
+```

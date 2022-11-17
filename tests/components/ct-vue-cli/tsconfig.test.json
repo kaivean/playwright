@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["playwright", "src/**/*"],
+  "compilerOptions": {
+    "allowJs": true,
+    "composite": true,
+    "lib": [],
+    "jsx": "react-jsx",
+    "types": ["node"]
+  }
+}

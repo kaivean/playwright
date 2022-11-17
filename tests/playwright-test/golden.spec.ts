@@ -268,6 +268,27 @@ test('should update snapshot with the update-snapshots flag', async ({ runInline
   expect(data.toString()).toBe(ACTUAL_SNAPSHOT);
 });
 
+test('should ignore text snapshot with the ignore-snapshots flag', async ({ runInlineTest }, testInfo) => {
+  const EXPECTED_SNAPSHOT = 'Hello world';
+  const ACTUAL_SNAPSHOT = 'Hello world updated';
+  const result = await runInlineTest({
+    ...files,
+    'a.spec.js-snapshots/snapshot.txt': EXPECTED_SNAPSHOT,
+    'a.spec.js': `
+      const { test } = require('./helper');
+      test('is a test', ({}) => {
+        expect('${ACTUAL_SNAPSHOT}').toMatchSnapshot('snapshot.txt');
+      });
+    `
+  }, { 'ignore-snapshots': true });
+
+  expect(result.exitCode).toBe(0);
+  const snapshotOutputPath = testInfo.outputPath('a.spec.js-snapshots/snapshot.txt');
+  expect(result.output).toContain(``);
+  const data = fs.readFileSync(snapshotOutputPath);
+  expect(data.toString()).toBe(EXPECTED_SNAPSHOT);
+});
+
 test('shouldn\'t update snapshot with the update-snapshots flag for negated matcher', async ({ runInlineTest }, testInfo) => {
   const EXPECTED_SNAPSHOT = 'Hello world';
   const ACTUAL_SNAPSHOT = 'Hello world updated';
@@ -770,21 +791,23 @@ test('should attach expected/actual/diff with snapshot path', async ({ runInline
 
   const outputText = stripAnsi(result.output);
   const attachments = outputText.split('\n').filter(l => l.startsWith('## ')).map(l => l.substring(3)).map(l => JSON.parse(l))[0];
-  for (const attachment of attachments)
+  for (const attachment of attachments) {
     attachment.path = attachment.path.replace(/\\/g, '/').replace(/.*test-results\//, '');
+    attachment.name = attachment.name.replace(/\\/g, '/');
+  }
   expect(attachments).toEqual([
     {
-      name: 'snapshot-expected.png',
+      name: 'test/path/snapshot-expected.png',
       contentType: 'image/png',
       path: 'a-is-a-test/test/path/snapshot-expected.png'
     },
     {
-      name: 'snapshot-actual.png',
+      name: 'test/path/snapshot-actual.png',
       contentType: 'image/png',
       path: 'a-is-a-test/test/path/snapshot-actual.png'
     },
     {
-      name: 'snapshot-diff.png',
+      name: 'test/path/snapshot-diff.png',
       contentType: 'image/png',
       path: 'a-is-a-test/test/path/snapshot-diff.png'
     }

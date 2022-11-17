@@ -21,20 +21,24 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { program, Command } from 'commander';
+import type { Command } from '../utilsBundle';
+import { program } from '../utilsBundle';
 import { runDriver, runServer, printApiJson, launchBrowserServer } from './driver';
 import { showTraceViewer } from '../server/trace/viewer/traceViewer';
 import * as playwright from '../..';
-import { BrowserContext } from '../client/browserContext';
-import { Browser } from '../client/browser';
-import { Page } from '../client/page';
-import { BrowserType } from '../client/browserType';
-import { BrowserContextOptions, LaunchOptions } from '../client/types';
+import type { BrowserContext } from '../client/browserContext';
+import type { Browser } from '../client/browser';
+import type { Page } from '../client/page';
+import type { BrowserType } from '../client/browserType';
+import type { BrowserContextOptions, LaunchOptions } from '../client/types';
 import { spawn } from 'child_process';
-import { registry, Executable } from '../utils/registry';
-import { spawnAsync, getPlaywrightVersion } from '../utils/utils';
+import { wrapInASCIIBox, isLikelyNpxGlobal, assert } from '../utils';
 import { launchGridAgent } from '../grid/gridAgent';
-import { GridServer, GridFactory } from '../grid/gridServer';
+import type { GridFactory } from '../grid/gridServer';
+import { GridServer } from '../grid/gridServer';
+import type { Executable } from '../server';
+import { registry, writeDockerVersion } from '../server';
+import { addDockerCLI } from '../containers/docker';
 
 const packageJSON = require('../../package.json');
 
@@ -42,19 +46,30 @@ program
     .version('Version ' + (process.env.PW_CLI_DISPLAY_VERSION || packageJSON.version))
     .name(buildBasePlaywrightCLICommand(process.env.PW_LANG_NAME));
 
+program
+    .command('mark-docker-image [dockerImageNameTemplate]', { hidden: true })
+    .description('mark docker image')
+    .allowUnknownOption(true)
+    .action(function(dockerImageNameTemplate) {
+      assert(dockerImageNameTemplate, 'dockerImageNameTemplate is required');
+      writeDockerVersion(dockerImageNameTemplate).catch(logErrorAndExit);
+    });
+
 commandWithOpenOptions('open [url]', 'open page in browser specified via -b, --browser', [])
     .action(function(url, options) {
-      open(options, url, language()).catch(logErrorAndExit);
+      open(options, url, codegenId()).catch(logErrorAndExit);
     })
     .addHelpText('afterAll', `
 Examples:
 
-  $ open  $ open -b webkit https://example.com`);
+  $ open
+  $ open -b webkit https://example.com`);
 
 commandWithOpenOptions('codegen [url]', 'open page and generate code for user actions',
     [
       ['-o, --output <file name>', 'saves the generated script to a file'],
-      ['--target <language>', `language to generate, one of javascript, test, python, python-async, csharp`, language()],
+      ['--target <language>', `language to generate, one of javascript, playwright-test, python, python-async, python-pytest, csharp, csharp-mstest, csharp-nunit, java`, codegenId()],
+      ['--save-trace <filename>', 'record a trace for the session and save it to a file'],
     ]).action(function(url, options) {
   codegen(options, url, options.target, options.output).catch(logErrorAndExit);
 }).addHelpText('afterAll', `
@@ -100,33 +115,55 @@ function checkBrowsersToInstall(args: string[]): Executable[] {
   return executables;
 }
 
+
 program
     .command('install [browser...]')
     .description('ensure browsers necessary for this version of Playwright are installed')
     .option('--with-deps', 'install system dependencies for browsers')
-    .action(async function(args: string[], options: { withDeps?: boolean }) {
+    .option('--dry-run', 'do not execute installation, only print information')
+    .option('--force', 'force reinstall of stable browser channels')
+    .action(async function(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean }) {
+      if (isLikelyNpxGlobal()) {
+        console.error(wrapInASCIIBox([
+          `WARNING: It looks like you are running 'npx playwright install' without first`,
+          `installing your project's dependencies.`,
+          ``,
+          `To avoid unexpected behavior, please install your dependencies first, and`,
+          `then run Playwright's install command:`,
+          ``,
+          `    npm install`,
+          `    npx playwright install`,
+          ``,
+          `If your project does not yet depend on Playwright, first install the`,
+          `applicable npm package (most commonly @playwright/test), and`,
+          `then run Playwright's install command to download the browsers:`,
+          ``,
+          `    npm install @playwright/test`,
+          `    npx playwright install`,
+          ``,
+        ].join('\n'), 1));
+      }
       try {
-        if (!args.length) {
-          const executables = registry.defaultExecutables();
-          if (options.withDeps)
-            await registry.installDeps(executables, false);
-          await registry.install(executables);
-        } else {
-          const installDockerImage = args.some(arg => arg === 'docker-image');
-          args = args.filter(arg => arg !== 'docker-image');
-          if (installDockerImage) {
-            const imageName = `mcr.microsoft.com/playwright:v${getPlaywrightVersion()}-focal`;
-            const { code } = await spawnAsync('docker', ['pull', imageName], { stdio: 'inherit' });
-            if (code !== 0) {
-              console.log('Failed to pull docker image');
-              process.exit(1);
+        const hasNoArguments = !args.length;
+        const executables = hasNoArguments ? registry.defaultExecutables() : checkBrowsersToInstall(args);
+        if (options.withDeps)
+          await registry.installDeps(executables, !!options.dryRun);
+        if (options.dryRun) {
+          for (const executable of executables) {
+            const version = executable.browserVersion ? `version ` + executable.browserVersion : '';
+            console.log(`browser: ${executable.name}${version ? ' ' + version : ''}`);
+            console.log(`  Install location:    ${executable.directory ?? '<system>'}`);
+            if (executable.downloadURLs?.length) {
+              const [url, ...fallbacks] = executable.downloadURLs;
+              console.log(`  Download url:        ${url}`);
+              for (let i = 0; i < fallbacks.length; ++i)
+                console.log(`  Download fallback ${i + 1}: ${fallbacks[i]}`);
             }
+            console.log(``);
           }
-
-          const executables = checkBrowsersToInstall(args);
-          if (options.withDeps)
-            await registry.installDeps(executables, false);
-          await registry.install(executables);
+        } else {
+          const forceReinstall = hasNoArguments ? false : !!options.force;
+          await registry.install(executables, forceReinstall);
         }
       } catch (e) {
         console.log(`Failed to install browsers\n${e}`);
@@ -206,18 +243,20 @@ Examples:
 program
     .command('experimental-grid-server', { hidden: true })
     .option('--port <port>', 'grid port; defaults to 3333')
+    .option('--address <address>', 'address of the server')
     .option('--agent-factory <factory>', 'path to grid agent factory or npm package')
     .option('--auth-token <authToken>', 'optional authentication token')
     .action(function(options) {
-      launchGridServer(options.agentFactory, options.port || 3333, options.authToken);
+      launchGridServer(options.agentFactory, options.port || 3333, options.address, options.authToken);
     });
 
 program
     .command('experimental-grid-agent', { hidden: true })
     .requiredOption('--agent-id <agentId>', 'agent ID')
     .requiredOption('--grid-url <gridURL>', 'grid URL')
+    .option('--run-id <github run_id>', 'Workflow run_id')
     .action(function(options) {
-      launchGridAgent(options.agentId, options.gridUrl);
+      launchGridAgent(options.agentId, options.gridUrl, options.runId);
     });
 
 program
@@ -231,9 +270,15 @@ program
     .option('--port <port>', 'Server port')
     .option('--path <path>', 'Endpoint Path', '/')
     .option('--max-clients <maxClients>', 'Maximum clients')
-    .option('--no-socks-proxy', 'Disable Socks Proxy')
+    .option('--proxy-mode <mode>', 'Either `client`, `tether` or `disabled`. Defaults to `client`.', 'client')
     .action(function(options) {
-      runServer(options.port ? +options.port : undefined,  options.path, options.maxClients ? +options.maxClients : Infinity, options.socksProxy).catch(logErrorAndExit);
+      runServer({
+        port: options.port ? +options.port : undefined,
+        path: options.path,
+        maxConnections: options.maxClients ? +options.maxClients : Infinity,
+        browserProxyMode: options.proxyMode,
+        ownedByTetherClient: !!process.env.PW_OWNED_BY_TETHER_CLIENT,
+      }).catch(logErrorAndExit);
     });
 
 program
@@ -253,7 +298,7 @@ program
 program
     .command('show-trace [trace...]')
     .option('-b, --browser <browserType>', 'browser to use, one of cr, chromium, ff, firefox, wk, webkit', 'chromium')
-    .description('Show trace viewer')
+    .description('show trace viewer')
     .action(function(traces, options) {
       if (options.browser === 'cr')
         options.browser = 'chromium';
@@ -267,18 +312,38 @@ Examples:
 
   $ show-trace https://example.com/trace.zip`);
 
+addDockerCLI(program);
+
 if (!process.env.PW_LANG_NAME) {
   let playwrightTestPackagePath = null;
+  const resolvePwTestPaths = [__dirname, process.cwd()];
   try {
     playwrightTestPackagePath = require.resolve('@playwright/test/lib/cli', {
-      paths: [__dirname, process.cwd()]
+      paths: resolvePwTestPaths,
     });
   } catch {}
 
   if (playwrightTestPackagePath) {
-    require(playwrightTestPackagePath).addTestCommand(program);
-    require(playwrightTestPackagePath).addShowReportCommand(program);
-    require(playwrightTestPackagePath).addListFilesCommand(program);
+    const pwTestVersion = require(require.resolve('@playwright/test/package.json', {
+      paths: resolvePwTestPaths,
+    })).version;
+    const pwCoreVersion = require(path.join(__dirname, '../../package.json')).version;
+    if (pwTestVersion !== pwCoreVersion) {
+      let hasPlaywrightPackage = false;
+      try {
+        require('playwright');
+        hasPlaywrightPackage = true;
+      } catch {}
+      const strayPackage = hasPlaywrightPackage ? 'playwright' : 'playwright-core';
+      console.error(wrapInASCIIBox([
+        `Playwright Test integrity check failed:`,
+        `You have @playwright/test version '${pwTestVersion}' and '${strayPackage}' version '${pwCoreVersion}' installed!`,
+        `You probably added '${strayPackage}' into your package.json by accident, remove it and re-run 'npm install'`,
+      ].join('\n'), 1));
+      process.exit(1);
+    }
+
+    require(playwrightTestPackagePath).addTestCommands(program);
   } else {
     {
       const command = program.command('test').allowUnknownOption(true);
@@ -315,6 +380,9 @@ type Options = {
   loadStorage?: string;
   proxyServer?: string;
   proxyBypass?: string;
+  blockServiceWorkers?: boolean;
+  saveHar?: string;
+  saveHarGlob?: string;
   saveStorage?: string;
   saveTrace?: string;
   timeout: string;
@@ -335,6 +403,7 @@ async function launchContext(options: Options, headless: boolean, executablePath
   const launchOptions: LaunchOptions = { headless, executablePath };
   if (options.channel)
     launchOptions.channel = options.channel as any;
+  launchOptions.handleSIGINT = false;
 
   const contextOptions: BrowserContextOptions =
     // Copy the device descriptor since we have to compare and modify the options.
@@ -355,6 +424,9 @@ async function launchContext(options: Options, headless: boolean, executablePath
   if (contextOptions.isMobile && browserType.name() === 'firefox')
     contextOptions.isMobile = undefined;
 
+  if (options.blockServiceWorkers)
+    contextOptions.serviceWorkers = 'block';
+
   // Proxy
 
   if (options.proxyServer) {
@@ -367,10 +439,27 @@ async function launchContext(options: Options, headless: boolean, executablePath
 
   const browser = await browserType.launch(launchOptions);
 
+  if (process.env.PWTEST_CLI_EXIT) {
+    const logs: string[] = [];
+    require('playwright-core/lib/utilsBundle').debug.log = (...args: any[]) => {
+      const line = require('util').format(...args) + '\n';
+      logs.push(line);
+      process.stderr.write(line);
+    };
+    browser.on('disconnected', () => {
+      const hasCrashLine = logs.some(line => line.includes('process did exit:') && !line.includes('process did exit: exitCode=0, signal=null'));
+      if (hasCrashLine) {
+        process.stderr.write('Detected browser crash.\n');
+        // Make sure we exit abnormally when browser crashes.
+        process.exit(1);
+      }
+    });
+  }
+
   // Viewport size
   if (options.viewportSize) {
     try {
-      const [ width, height ] = options.viewportSize.split(',').map(n => parseInt(n, 10));
+      const [width, height] = options.viewportSize.split(',').map(n => parseInt(n, 10));
       contextOptions.viewport = { width, height };
     } catch (e) {
       console.log('Invalid window size format: use "width, height", for example --window-size=800,600');
@@ -422,6 +511,15 @@ async function launchContext(options: Options, headless: boolean, executablePath
   if (options.ignoreHttpsErrors)
     contextOptions.ignoreHTTPSErrors = true;
 
+  // HAR
+
+  if (options.saveHar) {
+    contextOptions.recordHar = { path: path.resolve(process.cwd(), options.saveHar), mode: 'minimal' };
+    if (options.saveHarGlob)
+      contextOptions.recordHar.urlFilter = options.saveHarGlob;
+    contextOptions.serviceWorkers = 'block';
+  }
+
   // Close app when the last window closes.
 
   const context = await browser.newContext(contextOptions);
@@ -437,6 +535,8 @@ async function launchContext(options: Options, headless: boolean, executablePath
       await context.tracing.stop({ path: options.saveTrace });
     if (options.saveStorage)
       await context.storageState({ path: options.saveStorage }).catch(e => null);
+    if (options.saveHar)
+      await context.close();
     await browser.close();
   }
 
@@ -450,10 +550,14 @@ async function launchContext(options: Options, headless: boolean, executablePath
       closeBrowser().catch(e => null);
     });
   });
-  if (options.timeout) {
-    context.setDefaultTimeout(parseInt(options.timeout, 10));
-    context.setDefaultNavigationTimeout(parseInt(options.timeout, 10));
-  }
+  process.on('SIGINT', async () => {
+    await closeBrowser();
+    process.exit(130);
+  });
+
+  const timeout = options.timeout ? parseInt(options.timeout, 10) : 0;
+  context.setDefaultTimeout(timeout);
+  context.setDefaultNavigationTimeout(timeout);
 
   if (options.saveTrace)
     await context.tracing.start({ screenshots: true, snapshots: true });
@@ -461,6 +565,7 @@ async function launchContext(options: Options, headless: boolean, executablePath
   // Omit options that we add automatically for presentation purpose.
   delete launchOptions.headless;
   delete launchOptions.executablePath;
+  delete launchOptions.handleSIGINT;
   delete contextOptions.deviceScaleFactor;
   return { browser, browserName: browserType.name(), context, contextOptions, launchOptions };
 }
@@ -499,8 +604,9 @@ async function codegen(options: Options, url: string | undefined, language: stri
     contextOptions,
     device: options.device,
     saveStorage: options.saveStorage,
-    startRecording: true,
-    outputFile: outputFile ? path.resolve(outputFile) : undefined
+    mode: 'recording',
+    outputFile: outputFile ? path.resolve(outputFile) : undefined,
+    handleSIGINT: false,
   });
   await openPage(context, url);
   if (process.env.PWTEST_CLI_EXIT)
@@ -560,6 +666,7 @@ function lookupBrowserType(options: Options): BrowserType {
   if (browserType)
     return browserType;
   program.help();
+  process.exit(1);
 }
 
 function validateOptions(options: Options) {
@@ -580,8 +687,8 @@ function logErrorAndExit(e: Error) {
   process.exit(1);
 }
 
-function language(): string {
-  return process.env.PW_LANG_NAME || 'test';
+function codegenId(): string {
+  return process.env.PW_LANG_NAME || 'playwright-test';
 }
 
 function commandWithOpenOptions(command: string, description: string, options: any[][]): Command {
@@ -590,6 +697,7 @@ function commandWithOpenOptions(command: string, description: string, options: a
     result = result.option(option[0], ...option.slice(1));
   return result
       .option('-b, --browser <browserType>', 'browser to use, one of cr, chromium, ff, firefox, wk, webkit', 'chromium')
+      .option('--block-service-workers', 'block service workers')
       .option('--channel <channel>', 'Chromium distribution channel, "chrome", "chrome-beta", "msedge-dev", etc')
       .option('--color-scheme <scheme>', 'emulate preferred color scheme, "light" or "dark"')
       .option('--device <deviceName>', 'emulate device, for example  "iPhone 11"')
@@ -599,15 +707,16 @@ function commandWithOpenOptions(command: string, description: string, options: a
       .option('--lang <language>', 'specify language / locale, for example "en-GB"')
       .option('--proxy-server <proxy>', 'specify proxy server, for example "http://myproxy:3128" or "socks5://myproxy:8080"')
       .option('--proxy-bypass <bypass>', 'comma-separated domains to bypass proxy, for example ".com,chromium.org,.domain.com"')
+      .option('--save-har <filename>', 'save HAR file with all network activity at the end')
+      .option('--save-har-glob <glob pattern>', 'filter entries in the HAR by matching url against this glob pattern')
       .option('--save-storage <filename>', 'save context storage state at the end, for later use with --load-storage')
-      .option('--save-trace <filename>', 'record a trace for the session and save it to a file')
       .option('--timezone <time zone>', 'time zone to emulate, for example "Europe/Rome"')
-      .option('--timeout <timeout>', 'timeout for Playwright actions in milliseconds', '10000')
+      .option('--timeout <timeout>', 'timeout for Playwright actions in milliseconds, no timeout by default')
       .option('--user-agent <ua string>', 'specify user agent string')
       .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280, 720"');
 }
 
-async function launchGridServer(factoryPathOrPackageName: string, port: number, authToken: string|undefined): Promise<void> {
+async function launchGridServer(factoryPathOrPackageName: string, port: number, address: string | undefined, authToken: string | undefined): Promise<void> {
   if (!factoryPathOrPackageName)
     factoryPathOrPackageName = path.join('..', 'grid', 'simpleGridFactory');
   let factory;
@@ -621,9 +730,9 @@ async function launchGridServer(factoryPathOrPackageName: string, port: number, 
   if (!factory || !factory.launch || typeof factory.launch !== 'function')
     throw new Error('factory does not export `launch` method');
   factory.name = factory.name || factoryPathOrPackageName;
-  const gridServer = new GridServer(factory as GridFactory, authToken);
+  const gridServer = new GridServer(factory as GridFactory, authToken, address);
   await gridServer.start(port);
-  console.log('Grid server is running at ' + gridServer.urlPrefix());
+  console.log('Grid server is running at ' + gridServer.gridURL());
 }
 
 function buildBasePlaywrightCLICommand(cliTargetLang: string | undefined): string {
@@ -633,7 +742,7 @@ function buildBasePlaywrightCLICommand(cliTargetLang: string | undefined): strin
     case 'java':
       return `mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="...options.."`;
     case 'csharp':
-      return `pwsh bin\\Debug\\netX\\playwright.ps1`;
+      return `pwsh bin/Debug/netX/playwright.ps1`;
     default:
       return `npx playwright`;
   }

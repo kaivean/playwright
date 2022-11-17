@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import colors from 'colors/safe';
-import { BaseReporter, formatFailure, formatTestTitle } from './base';
-import { FullConfig, TestCase, Suite, TestResult, FullResult } from '../../types/testReporter';
+import { colors } from 'playwright-core/lib/utilsBundle';
+import { BaseReporter, formatError, formatFailure, formatTestTitle } from './base';
+import type { FullConfig, TestCase, Suite, TestResult, FullResult, TestStep, TestError } from '../../types/testReporter';
 
 class LineReporter extends BaseReporter {
   private _current = 0;
@@ -50,27 +50,36 @@ class LineReporter extends BaseReporter {
       stream.write(`\u001B[1A\u001B[2K`);
     if (test && this._lastTest !== test) {
       // Write new header for the output.
-      const title = colors.gray(formatTestTitle(this.config, test));
+      const title = colors.dim(formatTestTitle(this.config, test));
       stream.write(this.fitToScreen(title) + `\n`);
       this._lastTest = test;
     }
 
     stream.write(chunk);
+    if (chunk[chunk.length - 1] !== '\n')
+      console.log();
+
     console.log();
+  }
+
+  onTestBegin(test: TestCase, result: TestResult) {
+    ++this._current;
+    this._updateLine(test, result, undefined);
+  }
+
+  onStepBegin(test: TestCase, result: TestResult, step: TestStep) {
+    if (step.category === 'test.step')
+      this._updateLine(test, result, step);
+  }
+
+  onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
+    if (step.category === 'test.step')
+      this._updateLine(test, result, step.parent);
   }
 
   override onTestEnd(test: TestCase, result: TestResult) {
     super.onTestEnd(test, result);
-    ++this._current;
-    const retriesSuffix = this.totalTestCount < this._current ? ` (retries)` : ``;
-    const title = `[${this._current}/${this.totalTestCount}]${retriesSuffix} ${formatTestTitle(this.config, test)}`;
-    const suffix = result.retry ? ` (retry #${result.retry})` : '';
-    if (process.env.PW_TEST_DEBUG_REPORTERS)
-      process.stdout.write(`${title + suffix}\n`);
-    else
-      process.stdout.write(`\u001B[1A\u001B[2K${this.fitToScreen(title, suffix) + colors.yellow(suffix)}\n`);
-
-    if (!this.willRetry(test) && (test.outcome() === 'flaky' || test.outcome() === 'unexpected')) {
+    if (!this.willRetry(test) && (test.outcome() === 'flaky' || test.outcome() === 'unexpected' || result.status === 'interrupted')) {
       if (!process.env.PW_TEST_DEBUG_REPORTERS)
         process.stdout.write(`\u001B[1A\u001B[2K`);
       console.log(formatFailure(this.config, test, {
@@ -78,6 +87,27 @@ class LineReporter extends BaseReporter {
       }).message);
       console.log();
     }
+  }
+
+  private _updateLine(test: TestCase, result: TestResult, step?: TestStep) {
+    const retriesPrefix = this.totalTestCount < this._current ? ` (retries)` : ``;
+    const prefix = `[${this._current}/${this.totalTestCount}]${retriesPrefix} `;
+    const currentRetrySuffix = result.retry ? colors.yellow(` (retry #${result.retry})`) : '';
+    const title = formatTestTitle(this.config, test, step) + currentRetrySuffix;
+    if (process.env.PW_TEST_DEBUG_REPORTERS)
+      process.stdout.write(`${prefix + title}\n`);
+    else
+      process.stdout.write(`\u001B[1A\u001B[2K${prefix + this.fitToScreen(title, prefix)}\n`);
+  }
+
+  override onError(error: TestError): void {
+    super.onError(error);
+
+    const message = formatError(this.config, error, colors.enabled).message + '\n\n';
+    if (!process.env.PW_TEST_DEBUG_REPORTERS)
+      process.stdout.write(`\u001B[1A\u001B[2K`);
+    process.stdout.write(message);
+    console.log();
   }
 
   override async onEnd(result: FullResult) {

@@ -19,7 +19,7 @@
 const path = require('path');
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const Documentation = require('./documentation');
-const XmlDoc = require('./xmlDocumentation');
+const XmlDoc = require('./dotnetXmlDocumentation');
 const PROJECT_DIR = path.join(__dirname, '..', '..');
 const fs = require('fs');
 const { parseApi } = require('./api_parser');
@@ -80,7 +80,6 @@ classNameMap.set('Error', 'Exception');
 classNameMap.set('TimeoutError', 'TimeoutException');
 classNameMap.set('EvaluationArgument', 'object');
 classNameMap.set('boolean', 'bool');
-classNameMap.set('Serializable', 'T');
 classNameMap.set('any', 'object');
 classNameMap.set('Buffer', 'byte[]');
 classNameMap.set('path', 'string');
@@ -227,11 +226,6 @@ for (const [name, type] of modelTypes)
 for (const [name, literals] of enumTypes)
   renderEnum(name, literals);
 
-if (process.argv[3] !== '--skip-format') {
-  // run the formatting tool for .NET, to ensure the files are prepped
-  execSync(`dotnet format "${outputDir}"`);
-}
-
 /**
  * @param {string} name
  */
@@ -293,7 +287,7 @@ function renderConstructors(name, type, out) {
 function renderMember(member, parent, options, out) {
   const name = toMemberName(member);
   if (member.kind === 'method') {
-    renderMethod(member, parent, name, { mode: 'options', trimRunAndPrefix: options.trimRunAndPrefix }, out);
+    renderMethod(member, parent, name, { trimRunAndPrefix: options.trimRunAndPrefix }, out);
     return;
   }
 
@@ -354,12 +348,6 @@ function getPropertyOverloads(type, member, name, parent) {
     if (member.type.expression === '[string]|[float]')
       jsonName = `${member.name}String`;
     overloads.push({ type, name, jsonName });
-  } else {
-    for (const overload of member.type.union) {
-      const t = translateType(overload, parent, t => generateNameDefault(member, name, t, parent));
-      const suffix = toOverloadSuffix(t);
-      overloads.push({ type: t, name: name + suffix, jsonName: member.name + suffix });
-    }
   }
   return overloads;
 }
@@ -407,7 +395,7 @@ function generateNameDefault(member, name, t, parent) {
           attemptedName = `${parent.name}BoundingBoxResult`;
         if (attemptedName === 'BrowserContextCookie')
           attemptedName = 'BrowserContextCookiesResult';
-        if (attemptedName === 'File')
+        if (attemptedName === 'File' || (parent.name === 'FormData' && attemptedName === 'SetValue'))
           attemptedName = `FilePayload`;
         if (attemptedName === 'Size')
           attemptedName = 'RequestSizesResult';
@@ -469,7 +457,6 @@ function generateEnumNameIfApplicable(type) {
  * @param {Documentation.Class | Documentation.Type} parent
  * @param {string} name
  * @param {{
- *   mode: 'options'|'named'|'base',
  *   nodocs?: boolean,
  *   abstract?: boolean,
  *   public?: boolean,
@@ -501,6 +488,7 @@ function renderMethod(member, parent, name, options, out) {
   if (member.args.size === 0
     && type !== 'void'
     && !name.startsWith('Get')
+    && name !== 'CreateFormData'
     && !name.startsWith('PostDataJSON')
     && !name.startsWith('As')) {
     if (!member.async) {
@@ -561,15 +549,12 @@ function renderMethod(member, parent, name, options, out) {
       return;
 
     if (arg.name === 'options') {
-      if (options.mode === 'options' || options.mode === 'base') {
-        const optionsType = member.clazz.name + name.replace('<T>', '') + 'Options';
+      const optionsType = rewriteSuggestedOptionsName(member.clazz.name + name.replace('<T>', '') + 'Options');
+      if (!optionTypes.has(optionsType) || arg.type.properties.length > optionTypes.get(optionsType).properties.length)
         optionTypes.set(optionsType, arg.type);
-        args.push(`${optionsType}? options = default`);
-        argTypeMap.set(`${optionsType}? options = default`, 'options');
-        addParamsDoc('options', ['Call options']);
-      } else {
-        arg.type.properties.forEach(processArg);
-      }
+      args.push(`${optionsType}? options = default`);
+      argTypeMap.set(`${optionsType}? options = default`, 'options');
+      addParamsDoc('options', ['Call options']);
       return;
     }
 
@@ -636,37 +621,6 @@ function renderMethod(member, parent, name, options, out) {
       .sort((a, b) => b.alias === 'options' ? -1 : 0) // move options to the back to the arguments list
       .forEach(processArg);
 
-  let body = ';';
-  if (options.mode === 'base') {
-    // Generate options -> named transition.
-    const tokens = [];
-    for (const arg of member.argsArray) {
-      if (arg.name === 'action' && options.trimRunAndPrefix)
-        continue;
-      if (arg.name !== 'options') {
-        tokens.push(toArgumentName(arg.name));
-        continue;
-      }
-      for (const opt of arg.type.properties) {
-        // TODO: use translate type here?
-        if (opt.type.union && !opt.type.union[0].name.startsWith('"') && opt.type.union[0].name !== 'null' && opt.type.expression !== '[string]|[Buffer]') {
-          // Explode overloads.
-          for (const t of opt.type.union) {
-            const suffix = toOverloadSuffix(translateType(t, parent));
-            tokens.push(`${opt.name}${suffix}: options.${toMemberName(opt)}${suffix}`);
-          }
-        } else {
-          tokens.push(`${opt.alias || opt.name}: options.${toMemberName(opt)}`);
-        }
-      }
-    }
-    body = `
-{
-    options ??= new ${member.clazz.name}${name}Options();
-    return ${toAsync(name, member.async)}(${tokens.join(', ')});
-}`;
-  }
-
   if (!explodedArgs.length) {
     if (!options.nodocs) {
       out.push(...XmlDoc.renderXmlDoc(member.spec, maxDocumentationColumnWidth));
@@ -674,7 +628,7 @@ function renderMethod(member, parent, name, options, out) {
     }
     if (member.deprecated)
       out.push(`[System.Obsolete]`);
-    out.push(`${modifiers}${type} ${toAsync(name, member.async)}(${args.join(', ')})${body}`);
+    out.push(`${modifiers}${type} ${toAsync(name, member.async)}(${args.join(', ')});`);
   } else {
     let containsOptionalExplodedArgs = false;
     explodedArgs.forEach((explodedArg, argIndex) => {
@@ -696,7 +650,7 @@ function renderMethod(member, parent, name, options, out) {
           overloadedArgs.push(arg);
         }
       }
-      out.push(`${modifiers}${type} ${toAsync(name, member.async)}(${overloadedArgs.join(', ')})${body}`);
+      out.push(`${modifiers}${type} ${toAsync(name, member.async)}(${overloadedArgs.join(', ')});`);
       if (argIndex < explodedArgs.length - 1)
         out.push(''); // output a special blank line
     });
@@ -716,7 +670,7 @@ function renderMethod(member, parent, name, options, out) {
         if (!options.nodocs)
           printArgDoc(argType, paramDocs.get(argType), out);
       });
-      out.push(`${type} ${name}(${filteredArgs.join(', ')})${body}`);
+      out.push(`${type} ${name}(${filteredArgs.join(', ')});`);
     }
   }
 }
@@ -772,7 +726,7 @@ function translateType(type, parent, generateNameCallback = t => t.name, optiona
       // get the inner types of both templates, and if they're strings, it's a keyvaluepair string, string,
       const keyType = translateType(type.templates[0], parent, generateNameCallback, false, isReturnType);
       const valueType = translateType(type.templates[1], parent, generateNameCallback, false, isReturnType);
-      if (parent.name === 'Request' || parent.name === 'Response')
+      if (['Request', 'Response', 'APIResponse'].includes(parent.name))
         return `Dictionary<${keyType}, ${valueType}>`;
       return `IEnumerable<KeyValuePair<${keyType}, ${valueType}>>`;
     }
@@ -835,6 +789,9 @@ function translateType(type, parent, generateNameCallback = t => t.name, optiona
     return `${type.name}<${types.join(', ')}>`;
   }
 
+  if (type.name === 'Serializable')
+    return isReturnType ? 'T' : 'object';
+
   // there's a chance this is a name we've already seen before, so check
   // this is also where we map known types, like boolean -> bool, etc.
   const name = classNameMap.get(type.name) || type.name;
@@ -876,14 +833,6 @@ function printArgDoc(name, value, out) {
 }
 
 /**
- * @param {string} typeName
- * @return {string}
- */
-function toOverloadSuffix(typeName) {
-  return toTitleCase(typeName.replace(/[<].*[>]/, '').replace(/[^a-zA-Z]/g, ''));
-}
-
-/**
  * @param {string} name
  * @param {boolean} convert
  */
@@ -894,3 +843,22 @@ function toAsync(name, convert) {
     return name.replace('<', 'Async<');
   return name + 'Async';
 }
+
+/**
+ * @param {string} suggestedName
+ * @returns {string}
+ */
+function rewriteSuggestedOptionsName(suggestedName) {
+  if ([
+    'APIRequestContextDeleteOptions',
+    'APIRequestContextFetchOptions',
+    'APIRequestContextGetOptions',
+    'APIRequestContextHeadOptions',
+    'APIRequestContextPatchOptions',
+    'APIRequestContextPostOptions',
+    'APIRequestContextPutOptions',
+  ].includes(suggestedName))
+    return 'APIRequestContextOptions';
+  return suggestedName;
+}
+

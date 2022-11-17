@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-import { LaunchServerOptions, Logger } from './client/types';
-import { EventEmitter } from 'ws';
-import { BrowserServerLauncher, BrowserServer } from './client/browserType';
+import type { LaunchServerOptions, Logger } from './client/types';
+import { ws } from './utilsBundle';
+import type { WebSocketEventEmitter } from './utilsBundle';
+import type { BrowserServerLauncher, BrowserServer } from './client/browserType';
 import { envObjectToArray } from './client/clientHelper';
-import { createGuid } from './utils/utils';
-import { ProtocolLogger } from './server/types';
+import { createGuid } from './utils';
+import type { ProtocolLogger } from './server/types';
 import { serverSideCallMetadata } from './server/instrumentation';
 import { createPlaywright } from './server/playwright';
 import { PlaywrightServer } from './remote/playwrightServer';
@@ -48,21 +49,20 @@ export class BrowserServerLauncherImpl implements BrowserServerLauncher {
       throw e;
     });
 
-    let path = `/${createGuid()}`;
-    if (options.wsPath)
-      path = options.wsPath.startsWith('/') ? options.wsPath : `/${options.wsPath}`;
+    const path = options.wsPath ? (options.wsPath.startsWith('/') ? options.wsPath : `/${options.wsPath}`) : `/${createGuid()}`;
 
     // 2. Start the server
-    const server = new PlaywrightServer(path, Infinity, false, browser);
+    const server = new PlaywrightServer({ path, maxConnections: Infinity, browserProxyMode: 'disabled', preLaunchedBrowser: browser });
     const wsEndpoint = await server.listen(options.port);
 
     // 3. Return the BrowserServer interface
-    const browserServer = new EventEmitter() as (BrowserServer & EventEmitter);
+    const browserServer = new ws.EventEmitter() as (BrowserServer & WebSocketEventEmitter);
     browserServer.process = () => browser.options.browserProcess.process!;
     browserServer.wsEndpoint = () => wsEndpoint;
     browserServer.close = () => browser.options.browserProcess.close();
     browserServer.kill = () => browser.options.browserProcess.kill();
     (browserServer as any)._disconnectForTest = () => server.close();
+    (browserServer as any)._userDataDirForTest = (browser as any)._userDataDirForTest;
     browser.options.browserProcess.onclose = async (exitCode, signal) => {
       server.close();
       browserServer.emit('close', exitCode, signal);

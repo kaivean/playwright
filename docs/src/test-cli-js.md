@@ -3,10 +3,6 @@ id: test-cli
 title: "Command line"
 ---
 
-<!-- TOC -->
-
-## Examples
-
 Here are the most common options available in the command line.
 
 - Run all the tests
@@ -29,6 +25,11 @@ Here are the most common options available in the command line.
   npx playwright test my-spec my-spec-2
   ```
 
+- Run files that are in line 42 in my-spec.ts
+  ```bash
+  npx playwright test my-spec.ts:42
+  ```
+
 - Run the test with the title
   ```bash
   npx playwright test -g "add a todo item"
@@ -39,14 +40,9 @@ Here are the most common options available in the command line.
   npx playwright test --headed
   ```
 
-- Run tests in a particular browser (config-less mode)
+- Run all the tests against a specific project
   ```bash
-  npx playwright test --browser=webkit
-  ```
-
-- Run tests in all browsers (config-less mode)
-  ```bash
-  npx playwright test --browser=all
+  npx playwright test --project=chromium
   ```
 
 - Disable [parallelization](./test-parallel.md)
@@ -59,7 +55,7 @@ Here are the most common options available in the command line.
   npx playwright test --reporter=dot
   ```
 
-- Run in debug mode with [Playwright Inspector](./inspector.md)
+- Run in debug mode with [Playwright Inspector](./debug.md)
   ```bash
   npx playwright test --debug
   ```
@@ -77,7 +73,7 @@ Complete set of Playwright Test options is available in the [configuration file]
 
 - `--browser`: Run test in a specific browser. Available options are  `"chromium"`, `"firefox"`, `"webkit"` or `"all"` to run tests in all three browsers at the same time.
 
-- `--debug`: Run tests with Playwright Inspector. Shortcut for `PWDEBUG=1` environment variable and `--timeout=0 --maxFailures=1 --headed --workers=1` options.
+- `--debug`: Run tests with Playwright Inspector. Shortcut for `PWDEBUG=1` environment variable and `--timeout=0 --max-failures=1 --headed --workers=1` options.
 
 - `-c <file>` or `--config <file>`: Configuration file. If not passed, defaults to `playwright.config.ts` or `playwright.config.js` in the current directory.
 
@@ -85,7 +81,7 @@ Complete set of Playwright Test options is available in the [configuration file]
 
 - `--forbid-only`: Whether to disallow `test.only`. Useful on CI.
 
-- `-g <grep>` or `--grep <grep>`: Only run tests matching this regular expression. For example, this will run `'should add to cart'` when passed `-g="add to cart"`.
+- `-g <grep>` or `--grep <grep>`: Only run tests matching this regular expression. For example, this will run `'should add to cart'` when passed `-g "add to cart"`.
 
 - `--grep-invert <grep>`: Only run tests **not** matching this regular expression. The opposite of `--grep`.
 
@@ -110,6 +106,8 @@ Complete set of Playwright Test options is available in the [configuration file]
 - `--shard <shard>`: [Shard](./test-parallel.md#shard-tests-between-multiple-machines) tests and execute only selected shard, specified in the form `current/all`, 1-based, for example `3/5`.
 
 - `--timeout <number>`: Maximum timeout in milliseconds for each test, defaults to 30 seconds. Learn more about [various timeouts](./test-timeouts.md).
+
+- `--ignore-snapshots`: Whether to ignore [snapshots](./test-snapshots.md). Use this when snapshot expectations are known to be different, e.g. running tests on Linux against Windows screenshots.
 
 - `--update-snapshots` or `-u`: Whether to update [snapshots](./test-snapshots.md) with actual results instead of comparing them. Use this when snapshot expectations have changed.
 

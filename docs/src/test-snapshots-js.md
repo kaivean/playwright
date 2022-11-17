@@ -3,9 +3,9 @@ id: test-snapshots
 title: "Visual comparisons"
 ---
 
-Playwright Test includes the ability to produce and visually compare screenshots using `await expect(pageOrLocator).toHaveScreenshot()`. On first execution, Playwright test will generate reference screenshots. Subsequent runs will compare against the reference.
+Playwright Test includes the ability to produce and visually compare screenshots using `await expect(page).toHaveScreenshot()`. On first execution, Playwright test will generate reference screenshots. Subsequent runs will compare against the reference.
 
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 const { test, expect } = require('@playwright/test');
 
@@ -15,7 +15,7 @@ test('example test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test, expect } from '@playwright/test';
 
@@ -43,11 +43,11 @@ drwxr-xr-x  3 user  group   96 Jun  4 11:46 example.spec.ts-snapshots
 ```
 
 The snapshot name `example-test-1-chromium-darwin.png` consists of a few parts:
-- `example-test-1.png` - an auto-generated name of the snapshot. Alternatively you can specify snapshot name as the first argument of the `toMatchSnapshot()` method:
-    ```js js-flavor=js
+- `example-test-1.png` - an auto-generated name of the snapshot. Alternatively you can specify snapshot name as the first argument of the `toHaveScreenshot()` method:
+    ```js tab=js-js
     await expect(page).toHaveScreenshot('landing.png');
     ```
-    ```js js-flavor=ts
+    ```js tab=js-ts
     await expect(page).toHaveScreenshot('landing.png');
     ```
 
@@ -56,7 +56,7 @@ The snapshot name `example-test-1-chromium-darwin.png` consists of a few parts:
 If you are not on the same operating system as your CI system, you can use Docker to generate/update the screenshots:
 
 ```bash
-docker run --rm --network host -v $(pwd):/work/ -w /work/ -it mcr.microsoft.com/playwright:v1.21.0-focal /bin/bash
+docker run --rm --network host -v $(pwd):/work/ -w /work/ -it mcr.microsoft.com/playwright:v1.29.0-focal /bin/bash
 npm install
 npx playwright test --update-snapshots
 ```
@@ -67,12 +67,12 @@ Sometimes you need to update the reference screenshot, for example when the page
 npx playwright test --update-snapshots
 ```
 
-> Note that `snapshotName` also accepts an array of path segments to the snapshot file such as `await expect(page).toHaveScreenshot(['relative', 'path', 'to', 'snapshot.png'])`.
+> Note that `snapshotName` also accepts an array of path segments to the snapshot file such as `expect().toHaveScreenshot(['relative', 'path', 'to', 'snapshot.png'])`.
 > However, this path must stay within the snapshots directory for each test file (i.e. `a.spec.js-snapshots`), otherwise it will throw.
 
-Playwright Test uses the [pixelmatch](https://github.com/mapbox/pixelmatch) library. You can [pass various options](./test-assertions#expectpageorlocatortohavescreenshot-options) to modify its behavior:
+Playwright Test uses the [pixelmatch](https://github.com/mapbox/pixelmatch) library. You can [pass various options](./test-assertions#page-assertions-to-have-screenshot-2) to modify its behavior:
 
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 const { test, expect } = require('@playwright/test');
 
@@ -82,7 +82,7 @@ test('example test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test, expect } from '@playwright/test';
 
@@ -94,7 +94,7 @@ test('example test', async ({ page }) => {
 
 If you'd like to share the default value among all the tests in the project, you can specify it in the playwright config, either globally or per project:
 
-```js js-flavor=js
+```js tab=js-js
 module.exports = {
   expect: {
     toHaveScreenshot: { maxDiffPixels: 100 },
@@ -102,8 +102,8 @@ module.exports = {
 };
 ```
 
-```js js-flavor=ts
-import { PlaywrightTestConfig } from '@playwright/test';
+```js tab=js-ts
+import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
   expect: {
     toHaveScreenshot: { maxDiffPixels: 100 },
@@ -116,7 +116,7 @@ Apart from screenshots, you can use `expect(value).toMatchSnapshot(snapshotName)
 
 Here we compare text content against the reference.
 
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 const { test, expect } = require('@playwright/test');
 
@@ -126,7 +126,7 @@ test('example test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test, expect } from '@playwright/test';
 

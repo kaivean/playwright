@@ -27,10 +27,8 @@ it('should work for open shadow roots', async ({ page, server }) => {
   expect(await page.$$(`data-testid:light=foo`)).toEqual([]);
 });
 
-it('should click on links in shadow dom', async ({ page, server, browserName, browserMajorVersion, isElectron, isAndroid }) => {
+it('should click on links in shadow dom', async ({ page, server, browserName, browserMajorVersion }) => {
   it.fixme(browserName === 'chromium' && browserMajorVersion < 91, 'Remove when crrev.com/864024 gets to the stable channel');
-  it.fixme(isAndroid);
-  it.fixme(isElectron);
 
   await page.goto(server.PREFIX + '/shadow-dom-link.html');
   expect(await page.evaluate(() => (window as any).clickCount)).toBe(0);
@@ -47,8 +45,8 @@ it('should work with :visible', async ({ page }) => {
   `);
   expect(await page.$('div:visible')).toBe(null);
 
-  const error = await page.waitForSelector(`div:visible`, { timeout: 100 }).catch(e => e);
-  expect(error.message).toContain('100ms');
+  const error = await page.waitForSelector(`div:visible`, { timeout: 1000 }).catch(e => e);
+  expect(error.message).toContain('1000ms');
 
   const promise = page.waitForSelector(`div:visible`, { state: 'attached' });
   await page.$eval('#target2', div => div.textContent = 'Now visible');
@@ -67,8 +65,8 @@ it('should work with >> visible=', async ({ page }) => {
   `);
   expect(await page.$('div >> visible=true')).toBe(null);
 
-  const error = await page.waitForSelector(`div >> visible=true`, { timeout: 100 }).catch(e => e);
-  expect(error.message).toContain('100ms');
+  const error = await page.waitForSelector(`div >> visible=true`, { timeout: 1000 }).catch(e => e);
+  expect(error.message).toContain('1000ms');
 
   const promise = page.waitForSelector(`div >> visible=true`, { state: 'attached' });
   await page.$eval('#target2', div => div.textContent = 'Now visible');
@@ -135,9 +133,36 @@ it('should work with nth=', async ({ page }) => {
   });
   const element = await promise;
   expect(await element.evaluate(e => e.id)).toBe('target3');
+
+  await page.setContent(`
+    <div>
+      <div>
+        <div>
+          <span>hi</span>
+          <span>hello</span>
+        </div>
+      </div>
+    </div>
+  `);
+  expect(await page.locator('div >> div >> span >> nth=1').textContent()).toBe('hello');
 });
 
-it('should work with position selectors', async ({ page }) => {
+it('should work with strict mode and chaining', async ({ page }) => {
+  await page.setContent(`
+    <div>
+      <div>
+        <div>
+          <span>hi</span>
+        </div>
+      </div>
+    </div>
+  `);
+  expect(await page.locator('div >> div >> span').textContent()).toBe('hi');
+});
+
+it('should work with layout selectors', async ({ page, trace }) => {
+  it.skip(trace === 'on');
+
   /*
 
        +--+  +--+
@@ -189,6 +214,9 @@ it('should work with position selectors', async ({ page }) => {
       div.style.width = box[2] + 'px';
       div.style.height = box[3] + 'px';
       container.appendChild(div);
+      const span = document.createElement('span');
+      span.textContent = '' + i;
+      div.appendChild(span);
     }
   }, boxes);
 
@@ -340,36 +368,68 @@ it('should properly determine visibility of display:contents elements', async ({
   await page.waitForSelector('article', { state: 'hidden' });
 });
 
-it('should work with has=', async ({ page, server }) => {
+it('should work with internal:has=', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/deep-shadow.html');
-  expect(await page.$$eval(`div >> has="#target"`, els => els.length)).toBe(2);
-  expect(await page.$$eval(`div >> has="[data-testid=foo]"`, els => els.length)).toBe(3);
-  expect(await page.$$eval(`div >> has="[attr*=value]"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> internal:has="#target"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> internal:has="[data-testid=foo]"`, els => els.length)).toBe(3);
+  expect(await page.$$eval(`div >> internal:has="[attr*=value]"`, els => els.length)).toBe(2);
 
   await page.setContent(`<section><span></span><div></div></section><section><br></section>`);
-  expect(await page.$$eval(`section >> has="span, div"`, els => els.length)).toBe(1);
-  expect(await page.$$eval(`section >> has="span, div"`, els => els.length)).toBe(1);
-  expect(await page.$$eval(`section >> has="br"`, els => els.length)).toBe(1);
-  expect(await page.$$eval(`section >> has="span, br"`, els => els.length)).toBe(2);
-  expect(await page.$$eval(`section >> has="span, br, div"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`section >> internal:has="span, div"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> internal:has="span, div"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> internal:has="br"`, els => els.length)).toBe(1);
+  expect(await page.$$eval(`section >> internal:has="span, br"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`section >> internal:has="span, br, div"`, els => els.length)).toBe(2);
 
   await page.setContent(`<div><span>hello</span></div><div><span>world</span></div>`);
-  expect(await page.$$eval(`div >> has="text=world"`, els => els.length)).toBe(1);
-  expect(await page.$eval(`div >> has="text=world"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
-  expect(await page.$$eval(`div >> has="text=\\"hello\\""`, els => els.length)).toBe(1);
-  expect(await page.$eval(`div >> has="text=\\"hello\\""`, e => e.outerHTML)).toBe(`<div><span>hello</span></div>`);
-  expect(await page.$$eval(`div >> has="xpath=./span"`, els => els.length)).toBe(2);
-  expect(await page.$$eval(`div >> has="span"`, els => els.length)).toBe(2);
-  expect(await page.$$eval(`div >> has="span >> text=wor"`, els => els.length)).toBe(1);
-  expect(await page.$eval(`div >> has="span >> text=wor"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
-  expect(await page.$eval(`div >> has="span >> text=wor" >> span`, e => e.outerHTML)).toBe(`<span>world</span>`);
+  expect(await page.$$eval(`div >> internal:has="text=world"`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> internal:has="text=world"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
+  expect(await page.$$eval(`div >> internal:has="text=\\"hello\\""`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> internal:has="text=\\"hello\\""`, e => e.outerHTML)).toBe(`<div><span>hello</span></div>`);
+  expect(await page.$$eval(`div >> internal:has="xpath=./span"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> internal:has="span"`, els => els.length)).toBe(2);
+  expect(await page.$$eval(`div >> internal:has="span >> text=wor"`, els => els.length)).toBe(1);
+  expect(await page.$eval(`div >> internal:has="span >> text=wor"`, e => e.outerHTML)).toBe(`<div><span>world</span></div>`);
+  expect(await page.$eval(`div >> internal:has="span >> text=wor" >> span`, e => e.outerHTML)).toBe(`<span>world</span>`);
 
-  const error1 = await page.$(`div >> has=abc`).catch(e => e);
-  expect(error1.message).toContain('Malformed selector: has=abc');
-  const error2 = await page.$(`has="div"`).catch(e => e);
-  expect(error2.message).toContain('"has" selector cannot be first');
-  const error3 = await page.$(`div >> has=33`).catch(e => e);
-  expect(error3.message).toContain('Malformed selector: has=33');
-  const error4 = await page.$(`div >> has="span!"`).catch(e => e);
+  const error1 = await page.$(`div >> internal:has=abc`).catch(e => e);
+  expect(error1.message).toContain('Malformed selector: internal:has=abc');
+  const error2 = await page.$(`internal:has="div"`).catch(e => e);
+  expect(error2.message).toContain('"internal:has" selector cannot be first');
+  const error3 = await page.$(`div >> internal:has=33`).catch(e => e);
+  expect(error3.message).toContain('Malformed selector: internal:has=33');
+  const error4 = await page.$(`div >> internal:has="span!"`).catch(e => e);
   expect(error4.message).toContain('Unexpected token "!" while parsing selector "span!"');
+});
+
+it('chaining should work with large DOM @smoke', async ({ page, server }) => {
+  await page.evaluate(() => {
+    let last = document.body;
+    for (let i = 0; i < 100; i++) {
+      const e = document.createElement('div');
+      last.appendChild(e);
+      last = e;
+    }
+    const target = document.createElement('span');
+    target.textContent = 'Found me!';
+    last.appendChild(target);
+  });
+
+  // Naive implementation generates C(100, 9) ~= 1.9*10^12 entries.
+  const selectors = [
+    'div >> div >> div >> div >> div >> div >> div >> div >> span',
+    'div div div div div div div div span',
+    'div div >> div div >> div div >> div div >> span',
+  ];
+
+  const counts = [];
+  const times = [];
+  for (const selector of selectors) {
+    const time = Date.now();
+    counts.push(await page.$$eval(selector, els => els.length));
+    times.push({ selector, time: Date.now() - time });
+  }
+  expect(counts).toEqual([1, 1, 1]);
+  // Uncomment to see performance results.
+  // console.log(times);
 });

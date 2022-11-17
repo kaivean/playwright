@@ -19,24 +19,36 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { CRBrowser } from './crBrowser';
-import { Env, gracefullyCloseSet } from '../../utils/processLauncher';
+import type { Env } from '../../utils/processLauncher';
+import { gracefullyCloseSet } from '../../utils/processLauncher';
 import { kBrowserCloseMessageId } from './crConnection';
 import { rewriteErrorMessage } from '../../utils/stackTrace';
 import { BrowserType, kNoXServerRunningError } from '../browserType';
-import { ConnectionTransport, ProtocolRequest, WebSocketTransport } from '../transport';
+import type { ConnectionTransport, ProtocolRequest } from '../transport';
+import { WebSocketTransport } from '../transport';
 import { CRDevTools } from './crDevTools';
-import { Browser, BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
-import * as types from '../types';
-import { debugMode, fetchData, getUserAgent, headersArrayToObject, HTTPRequestParams, removeFolders, streamToString, wrapInASCIIBox } from '../../utils/utils';
-import { RecentLogsCollector } from '../../utils/debugLogger';
-import { Progress, ProgressController } from '../progress';
-import { TimeoutSettings } from '../../utils/timeoutSettings';
+import type { BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
+import { Browser } from '../browser';
+import type * as types from '../types';
+import type * as channels from '@protocol/channels';
+import type { HTTPRequestParams } from '../../common/netUtils';
+import { NET_DEFAULT_TIMEOUT } from '../../common/netUtils';
+import { fetchData } from '../../common/netUtils';
+import { getUserAgent } from '../../common/userAgent';
+import { debugMode, headersArrayToObject, streamToString, wrapInASCIIBox } from '../../utils';
+import { removeFolders } from '../../utils/fileUtils';
+import { RecentLogsCollector } from '../../common/debugLogger';
+import type { Progress } from '../progress';
+import { ProgressController } from '../progress';
+import { TimeoutSettings } from '../../common/timeoutSettings';
 import { helper } from '../helper';
-import { CallMetadata } from '../instrumentation';
+import type { CallMetadata } from '../instrumentation';
 import http from 'http';
 import https from 'https';
-import { registry } from '../../utils/registry';
-import { ManualPromise } from '../../utils/async';
+import { registry } from '../registry';
+import { ManualPromise } from '../../utils/manualPromise';
+import { validateBrowserContextOptions } from '../browserContext';
+import { chromiumSwitches } from './chromiumSwitches';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -76,7 +88,7 @@ export class Chromium extends BrowserType {
     const chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint, headersMap);
     const cleanedUp = new ManualPromise<void>();
     const doCleanup = async () => {
-      await removeFolders([ artifactsDir ]);
+      await removeFolders([artifactsDir]);
       await onClose?.();
       cleanedUp.resolve();
     };
@@ -85,12 +97,13 @@ export class Chromium extends BrowserType {
       await cleanedUp;
     };
     const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
+    const persistent: channels.BrowserNewContextParams = { noDefaultViewport: true };
     const browserOptions: BrowserOptions = {
       ...this._playwrightOptions,
       slowMo: options.slowMo,
       name: 'chromium',
       isChromium: true,
-      persistent: { noDefaultViewport: true },
+      persistent,
       browserProcess,
       protocolLogger: helper.debugProtocolLogger(),
       browserLogsCollector: new RecentLogsCollector(),
@@ -103,7 +116,9 @@ export class Chromium extends BrowserType {
       // users in normal (launch/launchServer) mode since otherwise connectOverCDP
       // does not work at all with proxies on Windows.
       proxy: { server: 'per-context' },
+      originalLaunchOptions: {},
     };
+    validateBrowserContextOptions(persistent, browserOptions);
     progress.throwIfAborted();
     const browser = await CRBrowser.connect(chromeTransport, browserOptions);
     browser.on(Browser.Events.Disconnected, doCleanup);
@@ -217,7 +232,8 @@ export class Chromium extends BrowserType {
         const chromeOptions = maybeChromeOptions && typeof maybeChromeOptions === 'object' ? maybeChromeOptions : undefined;
         const debuggerAddress = chromeOptions && typeof chromeOptions.debuggerAddress === 'string' ? chromeOptions.debuggerAddress : undefined;
         const chromeOptionsURL = typeof maybeChromeOptions === 'string' ? maybeChromeOptions : undefined;
-        const endpointURLString = addProtocol(debuggerAddress || chromeOptionsURL);
+        // TODO(dgozman): figure out if we can make ChromeDriver to return 127.0.0.1 instead of localhost.
+        const endpointURLString = addProtocol(debuggerAddress || chromeOptionsURL).replace('localhost', '127.0.0.1');
         progress.log(`<selenium> retrieved endpoint ${endpointURLString} for sessionId=${sessionId}`);
         endpointURL = new URL(endpointURLString);
         if (endpointURL.hostname === 'localhost' || endpointURL.hostname === '127.0.0.1') {
@@ -267,7 +283,7 @@ export class Chromium extends BrowserType {
       throw new Error('Playwright manages remote debugging connection itself.');
     if (args.find(arg => !arg.startsWith('-')))
       throw new Error('Arguments can not specify page to be opened');
-    const chromeArguments = [...DEFAULT_ARGS];
+    const chromeArguments = [...chromiumSwitches];
 
     // See https://github.com/microsoft/playwright/issues/7362
     if (os.platform() === 'darwin')
@@ -310,36 +326,6 @@ export class Chromium extends BrowserType {
   }
 }
 
-const DEFAULT_ARGS = [
-  '--disable-background-networking',
-  '--enable-features=NetworkService,NetworkServiceInProcess',
-  '--disable-background-timer-throttling',
-  '--disable-backgrounding-occluded-windows',
-  '--disable-breakpad',
-  '--disable-client-side-phishing-detection',
-  '--disable-component-extensions-with-background-pages',
-  '--disable-default-apps',
-  '--disable-dev-shm-usage',
-  '--disable-extensions',
-  '--disable-features=ImprovedCookieControls,LazyFrameLoading,GlobalMediaControls,DestroyProfileOnBrowserClose,MediaRouter,AcceptCHFrame,AutoExpandDetailsElement,CertificateTransparencyComponentUpdater',
-  '--allow-pre-commit-input',
-  '--disable-hang-monitor',
-  '--disable-ipc-flooding-protection',
-  '--disable-popup-blocking',
-  '--disable-prompt-on-repost',
-  '--disable-renderer-backgrounding',
-  '--disable-sync',
-  '--force-color-profile=srgb',
-  '--metrics-recording-only',
-  '--no-first-run',
-  '--enable-automation',
-  '--password-store=basic',
-  '--use-mock-keychain',
-  // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
-  '--no-service-autorun',
-  '--export-tagged-pdf'
-];
-
 async function urlToWSEndpoint(progress: Progress, endpointURL: string) {
   if (endpointURL.startsWith('ws'))
     return endpointURL;
@@ -347,7 +333,9 @@ async function urlToWSEndpoint(progress: Progress, endpointURL: string) {
   const httpURL = endpointURL.endsWith('/') ? `${endpointURL}json/version/` : `${endpointURL}/json/version/`;
   const request = endpointURL.startsWith('https') ? https : http;
   const json = await new Promise<string>((resolve, reject) => {
-    request.get(httpURL, resp => {
+    request.get(httpURL, {
+      timeout: NET_DEFAULT_TIMEOUT,
+    }, resp => {
       if (resp.statusCode! < 200 || resp.statusCode! >= 400) {
         reject(new Error(`Unexpected status ${resp.statusCode} when connecting to ${httpURL}.\n` +
         `This does not look like a DevTools server, try connecting via ws://.`));

@@ -16,7 +16,7 @@
  */
 
 import { test as it, expect } from './pageTest';
-import { globToRegex } from '../../packages/playwright-core/lib/client/clientHelper';
+import { globToRegex } from '../../packages/playwright-core/lib/common/netUtils';
 import vm from 'vm';
 
 it('should work with navigation @smoke', async ({ page, server }) => {
@@ -33,7 +33,7 @@ it('should work with navigation @smoke', async ({ page, server }) => {
   expect(requests.get('style.css').isNavigationRequest()).toBe(false);
 });
 
-it('should intercept after a service worker', async ({ page, server, isAndroid, isElectron }) => {
+it('should intercept after a service worker', async ({ page, server, browserName, isAndroid, isElectron }) => {
   it.skip(isAndroid);
   it.skip(isElectron);
 
@@ -61,6 +61,14 @@ it('should intercept after a service worker', async ({ page, server, isAndroid, 
   // Page route is not applied to service worker initiated fetch.
   const nonInterceptedResponse = await page.evaluate(() => window['fetchDummy']('passthrough'));
   expect(nonInterceptedResponse).toBe('FAILURE: Not Found');
+
+  // Firefox does not want to fetch the redirect for some reason.
+  if (browserName !== 'firefox') {
+    // Page route is not applied to service worker initiated fetch with redirect.
+    server.setRedirect('/serviceworkers/fetchdummy/passthrough', '/simple.json');
+    const redirectedResponse = await page.evaluate(() => window['fetchDummy']('passthrough'));
+    expect(redirectedResponse).toBe('{"foo": "bar"}\n');
+  }
 });
 
 it('should work with glob', async () => {
@@ -105,9 +113,8 @@ it('should intercept network activity from worker', async function({ page, serve
   expect(msg.text()).toBe('intercepted');
 });
 
-it('should intercept network activity from worker 2', async function({ page, server, isElectron, isAndroid, browserName, browserMajorVersion }) {
+it('should intercept network activity from worker 2', async function({ page, server, isAndroid }) {
   it.skip(isAndroid);
-  it.fixme(isElectron);
 
   const url = server.PREFIX + '/worker/worker.js';
   await page.route(url, route => {
@@ -124,9 +131,7 @@ it('should intercept network activity from worker 2', async function({ page, ser
   expect(msg.text()).toBe('intercepted');
 });
 
-it('should work with regular expression passed from a different context', async ({ page, server, isElectron }) => {
-  it.skip(isElectron);
-
+it('should work with regular expression passed from a different context', async ({ page, server }) => {
   const ctx = vm.createContext();
   const regexp = vm.runInContext('new RegExp("empty\\.html")', ctx);
   let intercepted = false;

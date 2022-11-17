@@ -16,45 +16,60 @@
 
 import { formatLocation, debugTest } from './util';
 import * as crypto from 'crypto';
-import { FixturesWithLocation, Location, WorkerInfo } from './types';
-import { ManualPromise } from 'playwright-core/lib/utils/async';
-import { TestInfoImpl } from './testInfo';
-import { FixtureDescription, TimeoutManager } from './timeoutManager';
+import type { FixturesWithLocation, Location, WorkerInfo } from './types';
+import { ManualPromise } from 'playwright-core/lib/utils/manualPromise';
+import type { TestInfoImpl } from './testInfo';
+import type { FixtureDescription, TimeoutManager } from './timeoutManager';
 
 type FixtureScope = 'test' | 'worker';
-type FixtureOptions = { auto?: boolean, scope?: FixtureScope, option?: boolean, timeout?: number | undefined };
+type FixtureAuto = boolean | 'all-hooks-included';
+const kScopeOrder: FixtureScope[] = ['test', 'worker'];
+type FixtureOptions = { auto?: FixtureAuto, scope?: FixtureScope, option?: boolean, timeout?: number | undefined };
 type FixtureTuple = [ value: any, options: FixtureOptions ];
 type FixtureRegistration = {
-  location: Location;  // Fixutre registration location.
+  // Fixture registration location.
+  location: Location;
+  // Fixture name comes from test.extend() call.
   name: string;
   scope: FixtureScope;
-  fn: Function | any;  // Either a fixture function, or a fixture value.
-  auto: boolean;
+  // Either a fixture function, or a fixture value.
+  fn: Function | any;
+  // Auto fixtures always run without user explicitly mentioning them.
+  auto: FixtureAuto;
+  // An "option" fixture can have a value set in the config.
   option: boolean;
+  // Custom title to be used instead of the name, internal-only.
+  customTitle?: string;
+  // Fixture with a separate timeout does not count towards the test time.
   timeout?: number;
-  deps: string[];  // Names of the dependencies, ({ foo, bar }) => {...}
-  id: string;  // Unique id, to differentiate between fixtures with the same name.
-  super?: FixtureRegistration;  // A fixture override can use the previous version of the fixture.
+  // Names of the dependencies, comes from the declaration "({ foo, bar }) => {...}"
+  deps: string[];
+  // Unique id, to differentiate between fixtures with the same name.
+  id: string;
+  // A fixture override can use the previous version of the fixture.
+  super?: FixtureRegistration;
 };
 
 class Fixture {
   runner: FixtureRunner;
   registration: FixtureRegistration;
-  usages: Set<Fixture>;
   value: any;
+  failed = false;
 
   _useFuncFinished: ManualPromise<void> | undefined;
   _selfTeardownComplete: Promise<void> | undefined;
   _teardownWithDepsComplete: Promise<void> | undefined;
   _runnableDescription: FixtureDescription;
+  _deps = new Set<Fixture>();
+  _usages = new Set<Fixture>();
 
   constructor(runner: FixtureRunner, registration: FixtureRegistration) {
     this.runner = runner;
     this.registration = registration;
-    this.usages = new Set();
     this.value = null;
+    const title = this.registration.customTitle || this.registration.name;
     this._runnableDescription = {
-      fixture: this.registration.name,
+      title: this.registration.timeout !== undefined ? `Fixture "${title}"` : `setting up "${title}"`,
       location: registration.location,
       slot: this.registration.timeout === undefined ? undefined : {
         timeout: this.registration.timeout,
@@ -73,8 +88,17 @@ class Fixture {
     for (const name of this.registration.deps) {
       const registration = this.runner.pool!.resolveDependency(this.registration, name)!;
       const dep = await this.runner.setupFixtureForRegistration(registration, testInfo);
-      dep.usages.add(this);
+      // Fixture teardown is root => leafs, when we need to teardown a fixture,
+      // it recursively tears down its usages first.
+      dep._usages.add(this);
+      // Don't forget to decrement all usages when fixture goes.
+      // Otherwise worker-scope fixtures will retain test-scope fixtures forever.
+      this._deps.add(dep);
       params[name] = dep.value;
+      if (dep.failed) {
+        this.failed = true;
+        return;
+      }
     }
 
     let called = false;
@@ -93,6 +117,7 @@ class Fixture {
     const info = this.registration.scope === 'worker' ? workerInfo : testInfo;
     testInfo._timeoutManager.setCurrentFixture(this._runnableDescription);
     this._selfTeardownComplete = Promise.resolve().then(() => this.registration.fn(params, useFunc, info)).catch((e: any) => {
+      this.failed = true;
       if (!useFuncStarted.isDone())
         useFuncStarted.reject(e);
       else
@@ -103,26 +128,46 @@ class Fixture {
   }
 
   async teardown(timeoutManager: TimeoutManager) {
-    if (!this._teardownWithDepsComplete)
-      this._teardownWithDepsComplete = this._teardownInternal(timeoutManager);
+    if (this._teardownWithDepsComplete) {
+      // When we are waiting for the teardown for the second time,
+      // most likely after the first time did timeout, annotate current fixture
+      // for better error messages.
+      this._setTeardownDescription(timeoutManager);
+      await this._teardownWithDepsComplete;
+      timeoutManager.setCurrentFixture(undefined);
+      return;
+    }
+    this._teardownWithDepsComplete = this._teardownInternal(timeoutManager);
     await this._teardownWithDepsComplete;
+  }
+
+  private _setTeardownDescription(timeoutManager: TimeoutManager) {
+    const title = this.registration.customTitle || this.registration.name;
+    this._runnableDescription.title = this.registration.timeout !== undefined ? `Fixture "${title}"` : `tearing down "${title}"`;
+    timeoutManager.setCurrentFixture(this._runnableDescription);
   }
 
   private async _teardownInternal(timeoutManager: TimeoutManager) {
     if (typeof this.registration.fn !== 'function')
       return;
     try {
-      for (const fixture of this.usages)
+      for (const fixture of this._usages)
         await fixture.teardown(timeoutManager);
-      this.usages.clear();
+      if (this._usages.size !== 0) {
+        // TODO: replace with assert.
+        console.error('Internal error: fixture integrity at', this._runnableDescription.title);  // eslint-disable-line no-console
+        this._usages.clear();
+      }
       if (this._useFuncFinished) {
         debugTest(`teardown ${this.registration.name}`);
-        timeoutManager.setCurrentFixture(this._runnableDescription);
+        this._setTeardownDescription(timeoutManager);
         this._useFuncFinished.resolve();
         await this._selfTeardownComplete;
         timeoutManager.setCurrentFixture(undefined);
       }
     } finally {
+      for (const dep of this._deps)
+        dep._usages.delete(this);
       this.runner.instanceForId.delete(this.registration.id);
     }
   }
@@ -147,17 +192,18 @@ export class FixturePool {
       for (const entry of Object.entries(fixtures)) {
         const name = entry[0];
         let value = entry[1];
-        let options: { auto: boolean, scope: FixtureScope, option: boolean, timeout: number | undefined } | undefined;
+        let options: { auto: FixtureAuto, scope: FixtureScope, option: boolean, timeout: number | undefined, customTitle: string | undefined } | undefined;
         if (isFixtureTuple(value)) {
           options = {
-            auto: !!value[1].auto,
+            auto: value[1].auto ?? false,
             scope: value[1].scope || 'test',
             option: !!value[1].option,
             timeout: value[1].timeout,
+            customTitle: (value[1] as any)._title,
           };
           value = value[0];
         }
-        const fn = value as (Function | any);
+        let fn = value as (Function | any);
 
         const previous = this.registrations.get(name);
         if (previous && options) {
@@ -166,18 +212,27 @@ export class FixturePool {
           if (previous.auto !== options.auto)
             throw errorWithLocations(`Fixture "${name}" has already been registered as a { auto: '${previous.scope}' } fixture.`, { location, name }, previous);
         } else if (previous) {
-          options = { auto: previous.auto, scope: previous.scope, option: previous.option, timeout: previous.timeout };
+          options = { auto: previous.auto, scope: previous.scope, option: previous.option, timeout: previous.timeout, customTitle: previous.customTitle };
         } else if (!options) {
-          options = { auto: false, scope: 'test', option: false, timeout: undefined };
+          options = { auto: false, scope: 'test', option: false, timeout: undefined, customTitle: undefined };
         }
 
-        if (options.scope !== 'test' && options.scope !== 'worker')
+        if (!kScopeOrder.includes(options.scope))
           throw errorWithLocations(`Fixture "${name}" has unknown { scope: '${options.scope}' }.`, { location, name });
         if (options.scope === 'worker' && disallowWorkerFixtures)
           throw errorWithLocations(`Cannot use({ ${name} }) in a describe group, because it forces a new worker.\nMake it top-level in the test file or put in the configuration file.`, { location, name });
 
+        // Overriding option with "undefined" value means setting it to the default value
+        // from the original declaration of the option.
+        if (fn === undefined && options.option && previous) {
+          let original = previous;
+          while (original.super)
+            original = original.super;
+          fn = original.fn;
+        }
+
         const deps = fixtureParameterNames(fn, location);
-        const registration: FixtureRegistration = { id: '', name, location, scope: options.scope, fn, auto: options.auto, option: options.option, timeout: options.timeout, deps, super: previous };
+        const registration: FixtureRegistration = { id: '', name, location, scope: options.scope, fn, auto: options.auto, option: options.option, timeout: options.timeout, customTitle: options.customTitle, deps, super: previous };
         registrationId(registration);
         this.registrations.set(name, registration);
       }
@@ -200,8 +255,8 @@ export class FixturePool {
           else
             throw errorWithLocations(`Fixture "${registration.name}" has unknown parameter "${name}".`, registration);
         }
-        if (registration.scope === 'worker' && dep.scope === 'test')
-          throw errorWithLocations(`Worker fixture "${registration.name}" cannot depend on a test fixture "${name}".`, registration, dep);
+        if (kScopeOrder.indexOf(registration.scope) > kScopeOrder.indexOf(dep.scope))
+          throw errorWithLocations(`${registration.scope} fixture "${registration.name}" cannot depend on a ${dep.scope} fixture "${name}".`, registration, dep);
         if (!markers.has(dep)) {
           visit(dep);
         } else if (markers.get(dep) === 'visiting') {
@@ -227,15 +282,10 @@ export class FixturePool {
   }
 
   validateFunction(fn: Function, prefix: string, location: Location) {
-    const visit = (registration: FixtureRegistration) => {
-      for (const name of registration.deps)
-        visit(this.resolveDependency(registration, name)!);
-    };
     for (const name of fixtureParameterNames(fn, location)) {
       const registration = this.registrations.get(name);
       if (!registration)
         throw errorWithLocations(`${prefix} has unknown parameter "${name}".`, { location, name: prefix, quoted: false });
-      visit(registration);
     }
   }
 
@@ -254,8 +304,14 @@ export class FixtureRunner {
   setPool(pool: FixturePool) {
     if (!this.testScopeClean)
       throw new Error('Did not teardown test scope');
-    if (this.pool && pool.digest !== this.pool.digest)
-      throw new Error('Digests do not match');
+    if (this.pool && pool.digest !== this.pool.digest) {
+      throw new Error([
+        `Playwright detected inconsistent test.use() options.`,
+        `Most common mistakes that lead to this issue:`,
+        `  - Calling test.use() outside of the test file, for example in a common helper.`,
+        `  - One test file imports from another test file.`,
+      ].join('\n'));
+    }
     this.pool = pool;
   }
 
@@ -279,12 +335,21 @@ export class FixtureRunner {
       throw error;
   }
 
-  async resolveParametersForFunction(fn: Function, testInfo: TestInfoImpl): Promise<object> {
-    // Install all automatic fixtures.
+  async resolveParametersForFunction(fn: Function, testInfo: TestInfoImpl, autoFixtures: 'worker' | 'test' | 'all-hooks-only'): Promise<object | null> {
+    // Install automatic fixtures.
     for (const registration of this.pool!.registrations.values()) {
-      const shouldSkip = !testInfo && registration.scope === 'test';
-      if (registration.auto && !shouldSkip)
-        await this.setupFixtureForRegistration(registration, testInfo);
+      if (registration.auto === false)
+        continue;
+      let shouldRun = true;
+      if (autoFixtures === 'all-hooks-only')
+        shouldRun = registration.scope === 'worker' || registration.auto === 'all-hooks-included';
+      else if (autoFixtures === 'worker')
+        shouldRun = registration.scope === 'worker';
+      if (shouldRun) {
+        const fixture = await this.setupFixtureForRegistration(registration, testInfo);
+        if (fixture.failed)
+          return null;
+      }
     }
 
     // Install used fixtures.
@@ -293,13 +358,19 @@ export class FixtureRunner {
     for (const name of names) {
       const registration = this.pool!.registrations.get(name)!;
       const fixture = await this.setupFixtureForRegistration(registration, testInfo);
+      if (fixture.failed)
+        return null;
       params[name] = fixture.value;
     }
     return params;
   }
 
-  async resolveParametersAndRunFunction(fn: Function, testInfo: TestInfoImpl) {
-    const params = await this.resolveParametersForFunction(fn, testInfo);
+  async resolveParametersAndRunFunction(fn: Function, testInfo: TestInfoImpl, autoFixtures: 'worker' | 'test' | 'all-hooks-only') {
+    const params = await this.resolveParametersForFunction(fn, testInfo, autoFixtures);
+    if (params === null) {
+      // Do not run the function when fixture setup has already failed.
+      return null;
+    }
     return fn(params, testInfo);
   }
 

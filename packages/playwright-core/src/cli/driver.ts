@@ -18,13 +18,11 @@
 
 import fs from 'fs';
 import * as playwright from '../..';
-import { BrowserType } from '../client/browserType';
-import { LaunchServerOptions } from '../client/types';
-import { DispatcherConnection, Root } from '../dispatchers/dispatcher';
-import { PlaywrightDispatcher } from '../dispatchers/playwrightDispatcher';
+import type { BrowserType } from '../client/browserType';
+import type { LaunchServerOptions } from '../client/types';
+import { createPlaywright, DispatcherConnection, RootDispatcher, PlaywrightDispatcher } from '../server';
 import { IpcTransport, PipeTransport } from '../protocol/transport';
 import { PlaywrightServer } from '../remote/playwrightServer';
-import { createPlaywright } from '../server/playwright';
 import { gracefullyCloseAll } from '../utils/processLauncher';
 
 export function printApiJson() {
@@ -34,29 +32,41 @@ export function printApiJson() {
 
 export function runDriver() {
   const dispatcherConnection = new DispatcherConnection();
-  new Root(dispatcherConnection, async (rootScope, { sdkLanguage }) => {
+  new RootDispatcher(dispatcherConnection, async (rootScope, { sdkLanguage }) => {
     const playwright = createPlaywright(sdkLanguage);
     return new PlaywrightDispatcher(rootScope, playwright);
   });
   const transport = process.send ? new IpcTransport(process) : new PipeTransport(process.stdout, process.stdin);
   transport.onmessage = message => dispatcherConnection.dispatch(JSON.parse(message));
   dispatcherConnection.onmessage = message => transport.send(JSON.stringify(message));
-  transport.onclose = async () => {
+  transport.onclose = () => {
     // Drop any messages during shutdown on the floor.
     dispatcherConnection.onmessage = () => {};
-    // Force exit after 30 seconds.
-    setTimeout(() => process.exit(0), 30000);
-    // Meanwhile, try to gracefully close all browsers.
-    await gracefullyCloseAll();
-    process.exit(0);
+    selfDestruct();
   };
 }
 
-export async function runServer(port: number | undefined, path: string = '/', maxClients: number = Infinity, enableSocksProxy: boolean = true) {
-  const server = await PlaywrightServer.startDefault({ path, maxClients, enableSocksProxy });
+export type RunServerOptions = {
+  port?: number,
+  path?: string,
+  maxConnections?: number,
+  browserProxyMode?: 'client' | 'tether' | 'disabled',
+  ownedByTetherClient?: boolean,
+};
+
+export async function runServer(options: RunServerOptions) {
+  const {
+    port,
+    path = '/',
+    maxConnections = Infinity,
+    browserProxyMode = 'client',
+    ownedByTetherClient = false,
+  } = options;
+  const server = new PlaywrightServer({ path, maxConnections, browserProxyMode, ownedByTetherClient });
   const wsEndpoint = await server.listen(port);
   process.on('exit', () => server.close().catch(console.error));
   console.log('Listening on ' + wsEndpoint);  // eslint-disable-line no-console
+  process.stdin.on('close', () => selfDestruct());
 }
 
 export async function launchBrowserServer(browserName: string, configFile?: string) {
@@ -66,4 +76,13 @@ export async function launchBrowserServer(browserName: string, configFile?: stri
   const browserType = (playwright as any)[browserName] as BrowserType;
   const server = await browserType.launchServer(options);
   console.log(server.wsEndpoint());
+}
+
+function selfDestruct() {
+  // Force exit after 30 seconds.
+  setTimeout(() => process.exit(0), 30000);
+  // Meanwhile, try to gracefully close all browsers.
+  gracefullyCloseAll().then(() => {
+    process.exit(0);
+  });
 }

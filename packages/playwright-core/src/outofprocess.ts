@@ -16,10 +16,10 @@
 
 import { Connection } from './client/connection';
 import { IpcTransport } from './protocol/transport';
-import { Playwright } from './client/playwright';
+import type { Playwright } from './client/playwright';
 import * as childProcess from 'child_process';
 import * as path from 'path';
-import { ManualPromise } from './utils/async';
+import { ManualPromise } from './utils/manualPromise';
 
 export async function start(env: any = {}): Promise<{ playwright: Playwright, stop: () => Promise<void> }> {
   const client = new PlaywrightClient(env);
@@ -48,6 +48,7 @@ class PlaywrightClient {
     this._driverProcess.on('exit', this._onExit.bind(this));
 
     const connection = new Connection();
+    connection.markAsRemote();
     this._transport = new IpcTransport(this._driverProcess);
     connection.onmessage = message => this._transport.send(JSON.stringify(message));
     this._transport.onmessage = message => connection.dispatch(JSON.parse(message));

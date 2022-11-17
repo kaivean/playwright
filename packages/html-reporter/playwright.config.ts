@@ -14,29 +14,24 @@
  * limitations under the License.
  */
 
-import { PlaywrightTestConfig, devices } from '@playwright/test';
-import path from 'path';
-import url from 'url';
+import type { PlaywrightTestConfig } from '@playwright/experimental-ct-react';
+import { devices } from '@playwright/experimental-ct-react';
 
 const config: PlaywrightTestConfig = {
   testDir: 'src',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? [
-    ['html', { open: 'never' }],
-  ] : [
-    ['html', { open: 'on-failure' }]
-  ],
+  ignoreSnapshots: !process.env.PLAYWRIGHT_DOCKER,
+  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{testFilePath}/{arg}{ext}',
+  reporter: 'html',
   use: {
-    baseURL: url.pathToFileURL(path.join(__dirname, 'out', 'index.html')).toString(),
+    ctPort: 3101,
     trace: 'on-first-retry',
   },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
+  projects: [{
+    name: 'chromium',
+    use: { ...devices['Desktop Chrome'] },
+  }],
 };
 
 export default config;

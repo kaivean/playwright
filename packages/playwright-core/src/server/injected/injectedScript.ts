@@ -14,17 +14,25 @@
  * limitations under the License.
  */
 
-import { SelectorEngine, SelectorRoot } from './selectorEngine';
+import type { SelectorEngine, SelectorRoot } from './selectorEngine';
 import { XPathEngine } from './xpathSelectorEngine';
 import { ReactEngine } from './reactSelectorEngine';
 import { VueEngine } from './vueSelectorEngine';
-import { allEngineNames, ParsedSelector, ParsedSelectorPart, parseSelector, stringifySelector } from '../common/selectorParser';
-import { SelectorEvaluatorImpl, isVisible, parentElementOrShadowHost, elementMatchesText, TextMatcher, createRegexTextMatcher, createStrictTextMatcher, createLaxTextMatcher } from './selectorEvaluator';
-import { CSSComplexSelectorList } from '../common/cssParser';
+import { createRoleEngine } from './roleSelectorEngine';
+import { parseAttributeSelector } from '../isomorphic/selectorParser';
+import type { NestedSelectorBody, ParsedSelector, ParsedSelectorPart } from '../isomorphic/selectorParser';
+import { allEngineNames, parseSelector, stringifySelector } from '../isomorphic/selectorParser';
+import { type TextMatcher, elementMatchesText, createRegexTextMatcher, createStrictTextMatcher, createLaxTextMatcher, elementText, createStrictFullTextMatcher } from './selectorUtils';
+import { SelectorEvaluatorImpl } from './selectorEvaluator';
+import { enclosingShadowRootOrDocument, isElementVisible, parentElementOrShadowHost } from './domUtils';
+import type { CSSComplexSelectorList } from '../isomorphic/cssParser';
 import { generateSelector } from './selectorGenerator';
-import type * as channels from '../../protocol/channels';
+import type * as channels from '@protocol/channels';
 import { Highlight } from './highlight';
-import { getElementAccessibleName } from './roleUtils';
+import { getAriaCheckedStrict, getAriaDisabled, getAriaRole, getElementAccessibleName } from './roleUtils';
+import { kLayoutSelectorNames, type LayoutSelectorName, layoutSelectorScore } from './layoutSelectorUtils';
+import { asLocator } from '../isomorphic/locatorGenerators';
+import type { Language } from '../isomorphic/locatorGenerators';
 
 type Predicate<T> = (progress: InjectedScriptProgress) => T | symbol;
 
@@ -60,11 +68,6 @@ export interface SelectorEngineV2 {
   queryAll(root: SelectorRoot, body: any): Element[];
 }
 
-export type ElementMatch = {
-  element: Element;
-  capture: Element | undefined;
-};
-
 export type HitTargetInterceptionResult = {
   stop: () => 'done' | { hitTargetDescription: string };
 };
@@ -78,9 +81,13 @@ export class InjectedScript {
   private _hitTargetInterceptor: undefined | ((event: MouseEvent | PointerEvent | TouchEvent) => void);
   private _highlight: Highlight | undefined;
   readonly isUnderTest: boolean;
+  private _sdkLanguage: Language;
+  private _testIdAttributeNameForStrictErrorAndConsoleCodegen: string = 'data-testid';
 
-  constructor(isUnderTest: boolean, stableRafCount: number, browserName: string, customEngines: { name: string, engine: SelectorEngine}[]) {
+  constructor(isUnderTest: boolean, sdkLanguage: Language, testIdAttributeNameForStrictErrorAndConsoleCodegen: string, stableRafCount: number, browserName: string, customEngines: { name: string, engine: SelectorEngine }[]) {
     this.isUnderTest = isUnderTest;
+    this._sdkLanguage = sdkLanguage;
+    this._testIdAttributeNameForStrictErrorAndConsoleCodegen = testIdAttributeNameForStrictErrorAndConsoleCodegen;
     this._evaluator = new SelectorEvaluatorImpl(new Map());
 
     this._engines = new Map();
@@ -88,8 +95,9 @@ export class InjectedScript {
     this._engines.set('xpath:light', XPathEngine);
     this._engines.set('_react', ReactEngine);
     this._engines.set('_vue', VueEngine);
-    this._engines.set('text', this._createTextEngine(true));
-    this._engines.set('text:light', this._createTextEngine(false));
+    this._engines.set('role', createRoleEngine(false));
+    this._engines.set('text', this._createTextEngine(true, false));
+    this._engines.set('text:light', this._createTextEngine(false, false));
     this._engines.set('id', this._createAttributeEngine('id', true));
     this._engines.set('id:light', this._createAttributeEngine('id', false));
     this._engines.set('data-testid', this._createAttributeEngine('data-testid', true));
@@ -100,9 +108,15 @@ export class InjectedScript {
     this._engines.set('data-test:light', this._createAttributeEngine('data-test', false));
     this._engines.set('css', this._createCSSEngine());
     this._engines.set('nth', { queryAll: () => [] });
-    this._engines.set('visible', { queryAll: () => [] });
-    this._engines.set('control', this._createControlEngine());
-    this._engines.set('has', this._createHasEngine());
+    this._engines.set('visible', this._createVisibleEngine());
+    this._engines.set('internal:control', this._createControlEngine());
+    this._engines.set('internal:has', this._createHasEngine());
+    this._engines.set('internal:label', this._createInternalLabelEngine());
+    this._engines.set('internal:text', this._createTextEngine(true, true));
+    this._engines.set('internal:has-text', this._createInternalHasTextEngine());
+    this._engines.set('internal:attr', this._createNamedAttributeEngine());
+    this._engines.set('internal:testid', this._createNamedAttributeEngine());
+    this._engines.set('internal:role', createRoleEngine(true));
 
     for (const { name, engine } of customEngines)
       this._engines.set(name, engine);
@@ -118,7 +132,11 @@ export class InjectedScript {
   }
 
   eval(expression: string): any {
-    return global.eval(expression);
+    return globalThis.eval(expression);
+  }
+
+  testIdAttributeNameForStrictErrorAndConsoleCodegen(): string {
+    return this._testIdAttributeNameForStrictErrorAndConsoleCodegen;
   }
 
   parseSelector(selector: string): ParsedSelector {
@@ -130,98 +148,91 @@ export class InjectedScript {
     return result;
   }
 
-  generateSelector(targetElement: Element): string {
-    return generateSelector(this, targetElement, true).selector;
+  generateSelector(targetElement: Element, testIdAttributeName: string): string {
+    return generateSelector(this, targetElement, testIdAttributeName).selector;
   }
 
   querySelector(selector: ParsedSelector, root: Node, strict: boolean): Element | undefined {
-    if (!(root as any)['querySelector'])
-      throw this.createStacklessError('Node is not queryable.');
-    this._evaluator.begin();
-    try {
-      const result = this._querySelectorRecursively([{ element: root as Element, capture: undefined }], selector, 0, new Map());
-      if (strict && result.length > 1)
-        throw this.strictModeViolationError(selector, result.map(r => r.element));
-      return result[0]?.capture || result[0]?.element;
-    } finally {
-      this._evaluator.end();
-    }
+    const result = this.querySelectorAll(selector, root);
+    if (strict && result.length > 1)
+      throw this.strictModeViolationError(selector, result);
+    return result[0];
   }
 
-  private _querySelectorRecursively(roots: ElementMatch[], selector: ParsedSelector, index: number, queryCache: Map<Element, Element[][]>): ElementMatch[] {
-    if (index === selector.parts.length)
-      return roots;
+  private _queryNth(elements: Set<Element>, part: ParsedSelectorPart): Set<Element> {
+    const list = [...elements];
+    let nth = +part.body;
+    if (nth === -1)
+      nth = list.length - 1;
+    return new Set<Element>(list.slice(nth, nth + 1));
+  }
 
-    const part = selector.parts[index];
-    if (part.name === 'nth') {
-      let filtered: ElementMatch[] = [];
-      if (part.body === '0') {
-        filtered = roots.slice(0, 1);
-      } else if (part.body === '-1') {
-        if (roots.length)
-          filtered = roots.slice(roots.length - 1);
-      } else {
-        if (typeof selector.capture === 'number')
-          throw this.createStacklessError(`Can't query n-th element in a request with the capture.`);
-        const nth = +part.body;
-        const set = new Set<Element>();
-        for (const root of roots) {
-          set.add(root.element);
-          if (nth + 1 === set.size)
-            filtered = [root];
-        }
-      }
-      return this._querySelectorRecursively(filtered, selector, index + 1, queryCache);
+  private _queryLayoutSelector(elements: Set<Element>, part: ParsedSelectorPart, originalRoot: Node): Set<Element> {
+    const name = part.name as LayoutSelectorName;
+    const body = part.body as NestedSelectorBody;
+    const result: { element: Element, score: number }[] = [];
+    const inner = this.querySelectorAll(body.parsed, originalRoot);
+    for (const element of elements) {
+      const score = layoutSelectorScore(name, element, inner, body.distance);
+      if (score !== undefined)
+        result.push({ element, score });
     }
-
-    if (part.name === 'visible') {
-      const visible = Boolean(part.body);
-      const filtered = roots.filter(match => visible === isVisible(match.element));
-      return this._querySelectorRecursively(filtered, selector, index + 1, queryCache);
-    }
-
-    const result: ElementMatch[] = [];
-    for (const root of roots) {
-      const capture = index - 1 === selector.capture ? root.element : root.capture;
-
-      // Do not query engine twice for the same element.
-      let queryResults = queryCache.get(root.element);
-      if (!queryResults) {
-        queryResults = [];
-        queryCache.set(root.element, queryResults);
-      }
-      let all = queryResults[index];
-      if (!all) {
-        all = this._queryEngineAll(part, root.element);
-        queryResults[index] = all;
-      }
-
-      for (const element of all) {
-        if (!('nodeName' in element))
-          throw this.createStacklessError(`Expected a Node but got ${Object.prototype.toString.call(element)}`);
-        result.push({ element, capture });
-      }
-    }
-    return this._querySelectorRecursively(result, selector, index + 1, queryCache);
+    result.sort((a, b) => a.score - b.score);
+    return new Set<Element>(result.map(r => r.element));
   }
 
   querySelectorAll(selector: ParsedSelector, root: Node): Element[] {
+    if (selector.capture !== undefined) {
+      if (selector.parts.some(part => part.name === 'nth'))
+        throw this.createStacklessError(`Can't query n-th element in a request with the capture.`);
+      const withHas: ParsedSelector = { parts: selector.parts.slice(0, selector.capture + 1) };
+      if (selector.capture < selector.parts.length - 1) {
+        const parsed: ParsedSelector = { parts: selector.parts.slice(selector.capture + 1) };
+        const has: ParsedSelectorPart = { name: 'internal:has', body: { parsed }, source: stringifySelector(parsed) };
+        withHas.parts.push(has);
+      }
+      return this.querySelectorAll(withHas, root);
+    }
+
     if (!(root as any)['querySelectorAll'])
       throw this.createStacklessError('Node is not queryable.');
+
+    if (selector.capture !== undefined) {
+      // We should have handled the capture above.
+      throw this.createStacklessError('Internal error: there should not be a capture in the selector.');
+    }
+
     this._evaluator.begin();
     try {
-      const result = this._querySelectorRecursively([{ element: root as Element, capture: undefined }], selector, 0, new Map());
-      const set = new Set<Element>();
-      for (const r of result)
-        set.add(r.capture || r.element);
-      return [...set];
+      let roots = new Set<Element>([root as Element]);
+      for (const part of selector.parts) {
+        if (part.name === 'nth') {
+          roots = this._queryNth(roots, part);
+        } else if (kLayoutSelectorNames.includes(part.name as LayoutSelectorName)) {
+          roots = this._queryLayoutSelector(roots, part, root);
+        } else {
+          const next = new Set<Element>();
+          for (const root of roots) {
+            const all = this._queryEngineAll(part, root);
+            for (const one of all)
+              next.add(one);
+          }
+          roots = next;
+        }
+      }
+      return [...roots];
     } finally {
       this._evaluator.end();
     }
   }
 
   private _queryEngineAll(part: ParsedSelectorPart, root: SelectorRoot): Element[] {
-    return this._engines.get(part.name)!.queryAll(root, part.body);
+    const result = this._engines.get(part.name)!.queryAll(root, part.body);
+    for (const element of result) {
+      if (!('nodeName' in element))
+        throw this.createStacklessError(`Expected a Node but got ${Object.prototype.toString.call(element)}`);
+    }
+    return result;
   }
 
   private _createAttributeEngine(attribute: string, shadow: boolean): SelectorEngine {
@@ -245,9 +256,9 @@ export class InjectedScript {
     };
   }
 
-  private _createTextEngine(shadow: boolean): SelectorEngine {
+  private _createTextEngine(shadow: boolean, internal: boolean): SelectorEngine {
     const queryList = (root: SelectorRoot, selector: string): Element[] => {
-      const { matcher, kind } = createTextMatcher(selector);
+      const { matcher, kind } = createTextMatcher(selector, internal);
       const result: Element[] = [];
       let lastDidNotMatchSelf: Element | null = null;
 
@@ -255,10 +266,10 @@ export class InjectedScript {
         // TODO: replace contains() with something shadow-dom-aware?
         if (kind === 'lax' && lastDidNotMatchSelf && lastDidNotMatchSelf.contains(element))
           return false;
-        const matches = elementMatchesText(this._evaluator, element, matcher);
+        const matches = elementMatchesText(this._evaluator._cacheText, element, matcher);
         if (matches === 'none')
           lastDidNotMatchSelf = element;
-        if (matches === 'self' || (matches === 'selfAndChildren' && kind === 'strict'))
+        if (matches === 'self' || (matches === 'selfAndChildren' && kind === 'strict' && !internal))
           result.push(element);
       };
 
@@ -277,6 +288,62 @@ export class InjectedScript {
     };
   }
 
+  private _createInternalHasTextEngine(): SelectorEngine {
+    const evaluator = this._evaluator;
+    return {
+      queryAll: (root: SelectorRoot, selector: string): Element[] => {
+        if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
+          return [];
+        const element = root as Element;
+        const text = elementText(evaluator._cacheText, element);
+        const { matcher } = createTextMatcher(selector, true);
+        return matcher(text) ? [element] : [];
+      }
+    };
+  }
+
+  private _createInternalLabelEngine(): SelectorEngine {
+    const evaluator = this._evaluator;
+    return {
+      queryAll: (root: SelectorRoot, selector: string): Element[] => {
+        const { matcher } = createTextMatcher(selector, true);
+        const result: Element[] = [];
+        const labels = this._evaluator._queryCSS({ scope: root as Document | Element, pierceShadow: true }, 'label') as HTMLLabelElement[];
+        for (const label of labels) {
+          const control = label.control;
+          if (control && matcher(elementText(evaluator._cacheText, label)))
+            result.push(control);
+        }
+        return result;
+      }
+    };
+  }
+
+  private _createNamedAttributeEngine(): SelectorEngine {
+    const queryList = (root: SelectorRoot, selector: string): Element[] => {
+      const parsed = parseAttributeSelector(selector, true);
+      if (parsed.name || parsed.attributes.length !== 1)
+        throw new Error('Malformed attribute selector: ' + selector);
+      const { name, value, caseSensitive } = parsed.attributes[0];
+      const lowerCaseValue = caseSensitive ? null : value.toLowerCase();
+      let matcher: (s: string) => boolean;
+      if (value instanceof RegExp)
+        matcher = s => !!s.match(value);
+      else if (caseSensitive)
+        matcher = s => s === value;
+      else
+        matcher = s => s.toLowerCase().includes(lowerCaseValue!);
+      const elements = this._evaluator._queryCSS({ scope: root as Document | Element, pierceShadow: true }, `[${name}]`);
+      return elements.filter(e => matcher(e.getAttribute(name)!));
+    };
+
+    return {
+      queryAll: (root: SelectorRoot, selector: string): Element[] => {
+        return queryList(root, selector);
+      }
+    };
+  }
+
   private _createControlEngine(): SelectorEngineV2 {
     return {
       queryAll(root: SelectorRoot, body: any) {
@@ -284,32 +351,49 @@ export class InjectedScript {
           return [];
         if (body === 'return-empty')
           return [];
-        throw new Error(`Internal error, unknown control selector ${body}`);
+        if (body === 'component') {
+          if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
+            return [];
+          // Usually, we return the mounted component that is a single child.
+          // However, when mounting fragments, return the root instead.
+          return [root.childElementCount === 1 ? root.firstElementChild! : root as Element];
+        }
+        throw new Error(`Internal error, unknown internal:control selector ${body}`);
       }
     };
   }
 
   private _createHasEngine(): SelectorEngineV2 {
-    const queryAll = (root: SelectorRoot, body: ParsedSelector) => {
+    const queryAll = (root: SelectorRoot, body: NestedSelectorBody) => {
       if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
         return [];
-      const has = !!this.querySelector(body, root, false);
+      const has = !!this.querySelector(body.parsed, root, false);
       return has ? [root as Element] : [];
     };
     return { queryAll };
   }
 
+  private _createVisibleEngine(): SelectorEngineV2 {
+    const queryAll = (root: SelectorRoot, body: string) => {
+      if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
+        return [];
+      return isElementVisible(root as Element) === Boolean(body) ? [root as Element] : [];
+    };
+    return { queryAll };
+  }
+
   extend(source: string, params: any): any {
-    const constrFunction = global.eval(`
+    const constrFunction = globalThis.eval(`
     (() => {
+      const module = {};
       ${source}
-      return pwExport;
+      return module.exports;
     })()`);
     return new constrFunction(this, params);
   }
 
   isVisible(element: Element): boolean {
-    return isVisible(element);
+    return isElementVisible(element);
   }
 
   pollRaf<T>(predicate: Predicate<T>): InjectedScriptPoll<T> {
@@ -423,15 +507,21 @@ export class InjectedScript {
     return { left: parseInt(style.borderLeftWidth || '', 10), top: parseInt(style.borderTopWidth || '', 10) };
   }
 
-  retarget(node: Node, behavior: 'follow-label' | 'no-follow-label'): Element | null {
+  retarget(node: Node, behavior: 'none' | 'follow-label' | 'no-follow-label' | 'button-link'): Element | null {
     let element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
     if (!element)
       return null;
-    if (!element.matches('input, textarea, select'))
-      element = element.closest('button, [role=button], [role=checkbox], [role=radio]') || element;
+    if (behavior === 'none')
+      return element;
+    if (!element.matches('input, textarea, select')) {
+      if (behavior === 'button-link')
+        element = element.closest('button, [role=button], a, [role=link]') || element;
+      else
+        element = element.closest('button, [role=button], [role=checkbox], [role=radio]') || element;
+    }
     if (behavior === 'follow-label') {
       if (!element.matches('input, textarea, button, select, [role=button], [role=checkbox], [role=radio]') &&
-          !(element as any).isContentEditable) {
+        !(element as any).isContentEditable) {
         // Go up to the label that might be connected to the input/textarea.
         element = element.closest('label') || element;
       }
@@ -503,7 +593,7 @@ export class InjectedScript {
   }
 
   elementState(node: Node, state: ElementStateWithoutStable): boolean | 'error:notconnected' {
-    const element = this.retarget(node, ['stable', 'visible', 'hidden'].includes(state) ? 'no-follow-label' : 'follow-label');
+    const element = this.retarget(node, ['stable', 'visible', 'hidden'].includes(state) ? 'none' : 'follow-label');
     if (!element || !element.isConnected) {
       if (state === 'hidden')
         return true;
@@ -515,7 +605,7 @@ export class InjectedScript {
     if (state === 'hidden')
       return !this.isVisible(element);
 
-    const disabled = isElementDisabled(element);
+    const disabled = getAriaDisabled(element);
     if (state === 'disabled')
       return disabled;
     if (state === 'enabled')
@@ -526,16 +616,11 @@ export class InjectedScript {
       return !disabled && editable;
 
     if (state === 'checked' || state === 'unchecked') {
-      if (['checkbox', 'radio'].includes(element.getAttribute('role') || '')) {
-        const result = element.getAttribute('aria-checked') === 'true';
-        return state === 'checked' ? result : !result;
-      }
-      if (element.nodeName !== 'INPUT')
+      const need = state === 'checked';
+      const checked = getAriaCheckedStrict(element);
+      if (checked === 'error')
         throw this.createStacklessError('Not a checkbox or radio button');
-      if (!['radio', 'checkbox'].includes((element as HTMLInputElement).type.toLowerCase()))
-        throw this.createStacklessError('Not a checkbox or radio button');
-      const result = (element as HTMLInputElement).checked;
-      return state === 'checked' ? result : !result;
+      return need === checked;
     }
     throw this.createStacklessError(`Unexpected element state "${state}"`);
   }
@@ -652,12 +737,24 @@ export class InjectedScript {
     return 'done';
   }
 
+  private _activelyFocused(node: Node): { activeElement: Element | null, isFocused: boolean } {
+    const activeElement = (node.getRootNode() as (Document | ShadowRoot)).activeElement;
+    const isFocused = activeElement === node && !!node.ownerDocument && node.ownerDocument.hasFocus();
+    return { activeElement, isFocused };
+  }
+
   focusNode(node: Node, resetSelectionIfNotFocused?: boolean): 'error:notconnected' | 'done' {
     if (!node.isConnected)
       return 'error:notconnected';
     if (node.nodeType !== Node.ELEMENT_NODE)
       throw this.createStacklessError('Node is not an element');
-    const wasFocused = (node.getRootNode() as (Document | ShadowRoot)).activeElement === node && node.ownerDocument && node.ownerDocument.hasFocus();
+
+    const { activeElement, isFocused: wasFocused } = this._activelyFocused(node);
+    if ((node as HTMLElement).isContentEditable && !wasFocused && activeElement && (activeElement as HTMLElement | SVGElement).blur) {
+      // Workaround the Firefox bug where focusing the element does not switch current
+      // contenteditable to the new element. However, blurring the previous one helps.
+      (activeElement as HTMLElement | SVGElement).blur();
+    }
     (node as HTMLElement | SVGElement).focus();
 
     if (resetSelectionIfNotFocused && !wasFocused && node.nodeName.toLowerCase() === 'input') {
@@ -668,6 +765,15 @@ export class InjectedScript {
         // Some inputs do not allow selection.
       }
     }
+    return 'done';
+  }
+
+  blurNode(node: Node): 'error:notconnected' | 'done' {
+    if (!node.isConnected)
+      return 'error:notconnected';
+    if (node.nodeType !== Node.ELEMENT_NODE)
+      throw this.createStacklessError('Node is not an element');
+    (node as HTMLElement | SVGElement).blur();
     return 'done';
   }
 
@@ -694,16 +800,49 @@ export class InjectedScript {
     input.dispatchEvent(new Event('change', { 'bubbles': true }));
   }
 
-  checkHitTargetAt(node: Node, point: { x: number, y: number }): 'error:notconnected' | 'done' | { hitTargetDescription: string } {
-    let element: Element | null | undefined = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-    if (!element || !element.isConnected)
-      return 'error:notconnected';
-    element = element.closest('button, [role=button]') || element;
-    const hitElement = this.deepElementFromPoint(document, point.x, point.y);
-    return this._expectHitTargetParent(hitElement, element);
-  }
+  expectHitTarget(hitPoint: { x: number, y: number }, targetElement: Element) {
+    const roots: (Document | ShadowRoot)[] = [];
 
-  private _expectHitTargetParent(hitElement: Element | undefined, targetElement: Element) {
+    // Get all component roots leading to the target element.
+    // Go from the bottom to the top to make it work with closed shadow roots.
+    let parentElement = targetElement;
+    while (parentElement) {
+      const root = enclosingShadowRootOrDocument(parentElement);
+      if (!root)
+        break;
+      roots.push(root);
+      if (root.nodeType === 9 /* Node.DOCUMENT_NODE */)
+        break;
+      parentElement = (root as ShadowRoot).host;
+    }
+
+    // Hit target in each component root should point to the next component root.
+    // Hit target in the last component root should point to the target or its descendant.
+    let hitElement: Element | undefined;
+    for (let index = roots.length - 1; index >= 0; index--) {
+      const root = roots[index];
+      // All browsers have different behavior around elementFromPoint and elementsFromPoint.
+      // https://github.com/w3c/csswg-drafts/issues/556
+      // http://crbug.com/1188919
+      const elements: Element[] = root.elementsFromPoint(hitPoint.x, hitPoint.y);
+      const singleElement = root.elementFromPoint(hitPoint.x, hitPoint.y);
+      if (singleElement && elements[0] && parentElementOrShadowHost(singleElement) === elements[0]) {
+        const style = document.defaultView?.getComputedStyle(singleElement);
+        if (style?.display === 'contents') {
+          // Workaround a case where elementsFromPoint misses the inner-most element with display:contents.
+          // https://bugs.chromium.org/p/chromium/issues/detail?id=1342092
+          elements.unshift(singleElement);
+        }
+      }
+      const innerElement = elements[0] as Element | undefined;
+      if (!innerElement)
+        break;
+      hitElement = innerElement;
+      if (index && innerElement !== (roots[index - 1] as ShadowRoot).host)
+        break;
+    }
+
+    // Check whether hit target is the target or its descendant.
     const hitParents: Element[] = [];
     while (hitElement && hitElement !== targetElement) {
       hitParents.push(hitElement);
@@ -711,6 +850,7 @@ export class InjectedScript {
     }
     if (hitElement === targetElement)
       return 'done';
+
     const hitTargetDescription = this.previewNode(hitParents[0] || document.documentElement);
     // Root is the topmost element in the hitTarget's chain that is not in the
     // element's chain. For example, it might be a dialog element that overlays
@@ -731,11 +871,53 @@ export class InjectedScript {
     return { hitTargetDescription };
   }
 
-  setupHitTargetInterceptor(node: Node, action: 'hover' | 'tap' | 'mouse', blockAllEvents: boolean): HitTargetInterceptionResult | 'error:notconnected' {
-    const maybeElement: Element | null | undefined = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-    if (!maybeElement || !maybeElement.isConnected)
+  // Life of a pointer action, for example click.
+  //
+  // 0. Retry items 1 and 2 while action fails due to navigation or element being detached.
+  //   1. Resolve selector to an element.
+  //   2. Retry the following steps until the element is detached or frame navigates away.
+  //     2a. Wait for the element to be stable (not moving), visible and enabled.
+  //     2b. Scroll element into view. Scrolling alternates between:
+  //         - Built-in protocol scrolling.
+  //         - Anchoring to the top/left, bottom/right and center/center.
+  //         This is to scroll elements from under sticky headers/footers.
+  //     2c. Click point is calculated, either based on explicitly specified position,
+  //         or some visible point of the element based on protocol content quads.
+  //     2d. Click point relative to page viewport is converted relative to the target iframe
+  //         for the next hit-point check.
+  //     2e. (injected) Hit target at the click point must be a descendant of the target element.
+  //         This prevents mis-clicking in edge cases like <iframe> overlaying the target.
+  //     2f. (injected) Events specific for click (or some other action type) are intercepted on
+  //         the Window with capture:true. See 2i for details.
+  //         Note: this step is skipped for drag&drop (see inline comments for the reason).
+  //     2g. Necessary keyboard modifiers are pressed.
+  //     2h. Click event is issued (mousemove + mousedown + mouseup).
+  //     2i. (injected) For each event, we check that hit target at the event point
+  //         is a descendant of the target element.
+  //         This guarantees no race between issuing the event and handling it in the page,
+  //         for example due to layout shift.
+  //         When hit target check fails, we block all future events in the page.
+  //     2j. Keyboard modifiers are restored.
+  //     2k. (injected) Event interceptor is removed.
+  //     2l. All navigations triggered between 2g-2k are awaited to be either committed or canceled.
+  //     2m. If failed, wait for increasing amount of time before the next retry.
+  setupHitTargetInterceptor(node: Node, action: 'hover' | 'tap' | 'mouse' | 'drag', hitPoint: { x: number, y: number }, blockAllEvents: boolean): HitTargetInterceptionResult | 'error:notconnected' | string /* hitTargetDescription */ {
+    const element = this.retarget(node, 'button-link');
+    if (!element || !element.isConnected)
       return 'error:notconnected';
-    const element = maybeElement.closest('button, [role=button]') || maybeElement;
+
+    // First do a preliminary check, to reduce the possibility of some iframe
+    // intercepting the action.
+    const preliminaryResult = this.expectHitTarget(hitPoint, element);
+    if (preliminaryResult !== 'done')
+      return preliminaryResult.hitTargetDescription;
+
+    // When dropping, the "element that is being dragged" often stays under the cursor,
+    // so hit target check at the moment we receive mousedown does not work -
+    // it finds the "element that is being dragged" instead of the
+    // "element that we drop onto".
+    if (action === 'drag')
+      return { stop: () => 'done' };
 
     const events = {
       'hover': kHoverHitTargetInterceptorEvents,
@@ -759,10 +941,8 @@ export class InjectedScript {
 
       // Check that we hit the right element at the first event, and assume all
       // subsequent events will be fine.
-      if (result === undefined && point) {
-        const hitElement = this.deepElementFromPoint(document, point.clientX, point.clientY);
-        result = this._expectHitTargetParent(hitElement, element);
-      }
+      if (result === undefined && point)
+        result = this.expectHitTarget({ x: point.clientX, y: point.clientY }, element);
 
       if (blockAllEvents || (result !== 'done' && result !== undefined)) {
         event.preventDefault();
@@ -797,28 +977,10 @@ export class InjectedScript {
       case 'pointer': event = new PointerEvent(type, eventInit); break;
       case 'focus': event = new FocusEvent(type, eventInit); break;
       case 'drag': event = new DragEvent(type, eventInit); break;
+      case 'wheel': event = new WheelEvent(type, eventInit); break;
       default: event = new Event(type, eventInit); break;
     }
     node.dispatchEvent(event);
-  }
-
-  deepElementFromPoint(document: Document, x: number, y: number): Element | undefined {
-    let container: Document | ShadowRoot | null = document;
-    let element: Element | undefined;
-    while (container) {
-      // elementFromPoint works incorrectly in Chromium (http://crbug.com/1188919),
-      // so we use elementsFromPoint instead.
-      const elements: Element[] = container.elementsFromPoint(x, y);
-      let innerElement = elements[0] as Element | undefined;
-      // Workaround https://bugs.chromium.org/p/chromium/issues/detail?id=1307458.
-      if (elements[0] && elements[1] && elements[0].contains(elements[1]) && container.elementFromPoint(x, y) === elements[1])
-        innerElement = elements[1];
-      if (!innerElement || element === innerElement)
-        break;
-      element = innerElement;
-      container = element.shadowRoot;
-    }
-    return element;
   }
 
   previewNode(node: Node): string {
@@ -861,12 +1023,12 @@ export class InjectedScript {
   strictModeViolationError(selector: ParsedSelector, matches: Element[]): Error {
     const infos = matches.slice(0, 10).map(m => ({
       preview: this.previewNode(m),
-      selector: this.generateSelector(m),
+      selector: this.generateSelector(m, this._testIdAttributeNameForStrictErrorAndConsoleCodegen),
     }));
-    const lines = infos.map((info, i) => `\n    ${i + 1}) ${info.preview} aka playwright.$("${info.selector}")`);
+    const lines = infos.map((info, i) => `\n    ${i + 1}) ${info.preview} aka ${asLocator(this._sdkLanguage, info.selector)}`);
     if (infos.length < matches.length)
       lines.push('\n    ...');
-    return this.createStacklessError(`strict mode violation: "${stringifySelector(selector)}" resolved to ${matches.length} elements:${lines.join('')}\n`);
+    return this.createStacklessError(`strict mode violation: ${asLocator(this._sdkLanguage, stringifySelector(selector))} resolved to ${matches.length} elements:${lines.join('')}\n`);
   }
 
   createStacklessError(message: string): Error {
@@ -885,7 +1047,7 @@ export class InjectedScript {
   maskSelectors(selectors: ParsedSelector[]) {
     if (this._highlight)
       this.hideHighlight();
-    this._highlight = new Highlight(this.isUnderTest);
+    this._highlight = new Highlight(this);
     this._highlight.install();
     const elements = [];
     for (const selector of selectors)
@@ -895,17 +1057,10 @@ export class InjectedScript {
 
   highlight(selector: ParsedSelector) {
     if (!this._highlight) {
-      this._highlight = new Highlight(this.isUnderTest);
+      this._highlight = new Highlight(this);
       this._highlight.install();
     }
-    this._runHighlightOnRaf(selector);
-  }
-
-  _runHighlightOnRaf(selector: ParsedSelector) {
-    if (!this._highlight)
-      return;
-    this._highlight.updateHighlight(this.querySelectorAll(selector, document.documentElement), stringifySelector(selector), false);
-    requestAnimationFrame(() => this._runHighlightOnRaf(selector));
+    this._highlight.runHighlightOnRaf(selector);
   }
 
   hideHighlight() {
@@ -965,6 +1120,8 @@ export class InjectedScript {
         elementState = progress.injectedScript.elementState(element, 'disabled');
       } else if (expression === 'to.be.editable') {
         elementState = progress.injectedScript.elementState(element, 'editable');
+      } else if (expression === 'to.be.readonly') {
+        elementState = !progress.injectedScript.elementState(element, 'editable');
       } else if (expression === 'to.be.empty') {
         if (element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA')
           elementState = !(element as HTMLInputElement).value;
@@ -973,7 +1130,7 @@ export class InjectedScript {
       } else if (expression === 'to.be.enabled') {
         elementState = progress.injectedScript.elementState(element, 'enabled');
       } else if (expression === 'to.be.focused') {
-        elementState = document.activeElement === element;
+        elementState = this._activelyFocused(element).isFocused;
       } else if (expression === 'to.be.hidden') {
         elementState = progress.injectedScript.elementState(element, 'hidden');
       } else if (expression === 'to.be.visible') {
@@ -998,19 +1155,36 @@ export class InjectedScript {
       }
     }
 
+    // Multi-Select/Combobox
+    {
+      if (expression === 'to.have.values') {
+        element = this.retarget(element, 'follow-label')!;
+        if (element.nodeName !== 'SELECT' || !(element as HTMLSelectElement).multiple)
+          throw this.createStacklessError('Not a select element with a multiple attribute');
+
+        const received = [...(element as HTMLSelectElement).selectedOptions].map(o => o.value);
+        if (received.length !== options.expectedText!.length)
+          return { received, matches: false };
+        return { received, matches: received.map((r, i) => new ExpectedTextMatcher(options.expectedText![i]).matches(r)).every(Boolean) };
+      }
+    }
+
     {
       // Single text value.
       let received: string | undefined;
       if (expression === 'to.have.attribute') {
-        received = element.getAttribute(options.expressionArg) || '';
+        const value = element.getAttribute(options.expressionArg);
+        if (value === null)
+          return { received: null, matches: false };
+        received = value;
       } else if (expression === 'to.have.class') {
-        received = element.className;
+        received = element.classList.toString();
       } else if (expression === 'to.have.css') {
         received = window.getComputedStyle(element).getPropertyValue(options.expressionArg);
       } else if (expression === 'to.have.id') {
         received = element.id;
       } else if (expression === 'to.have.text') {
-        received = options.useInnerText ? (element as HTMLElement).innerText : element.textContent || '';
+        received = options.useInnerText ? (element as HTMLElement).innerText : elementText(new Map(), element).full;
       } else if (expression === 'to.have.title') {
         received = document.title;
       } else if (expression === 'to.have.url') {
@@ -1019,7 +1193,7 @@ export class InjectedScript {
         element = this.retarget(element, 'follow-label')!;
         if (element.nodeName !== 'INPUT' && element.nodeName !== 'TEXTAREA' && element.nodeName !== 'SELECT')
           throw this.createStacklessError('Not an input element');
-        received = (element as any).value;
+        received = (element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
       }
 
       if (received !== undefined && options.expectedText) {
@@ -1029,6 +1203,30 @@ export class InjectedScript {
     }
 
     throw this.createStacklessError('Unknown expect matcher: ' + expression);
+  }
+
+  renderUnexpectedValue(expression: string, received: any): string {
+    if (expression === 'to.be.checked')
+      return received ? 'checked' : 'unchecked';
+    if (expression === 'to.be.unchecked')
+      return received ? 'unchecked' : 'checked';
+    if (expression === 'to.be.visible')
+      return received ? 'visible' : 'hidden';
+    if (expression === 'to.be.hidden')
+      return received ? 'hidden' : 'visible';
+    if (expression === 'to.be.enabled')
+      return received ? 'enabled' : 'disabled';
+    if (expression === 'to.be.disabled')
+      return received ? 'disabled' : 'enabled';
+    if (expression === 'to.be.editable')
+      return received ? 'editable' : 'readonly';
+    if (expression === 'to.be.readonly')
+      return received ? 'readonly' : 'editable';
+    if (expression === 'to.be.empty')
+      return received ? 'empty' : 'not empty';
+    if (expression === 'to.be.focused')
+      return received ? 'focused' : 'not focused';
+    return received;
   }
 
   expectArray(elements: Element[], options: FrameExpectParams): { matches: boolean, received?: any } {
@@ -1043,9 +1241,9 @@ export class InjectedScript {
     // List of values.
     let received: string[] | undefined;
     if (expression === 'to.have.text.array' || expression === 'to.contain.text.array')
-      received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : e.textContent || '');
+      received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : elementText(new Map(), e).full);
     else if (expression === 'to.have.class.array')
-      received = elements.map(e => e.className);
+      received = elements.map(e => e.classList.toString());
 
     if (received && options.expectedText) {
       // "To match an array" is "to contain an array" + "equal length"
@@ -1055,18 +1253,14 @@ export class InjectedScript {
         return { received, matches: false };
 
       // Each matcher should get a "received" that matches it, in order.
-      let i = 0;
       const matchers = options.expectedText.map(e => new ExpectedTextMatcher(e));
-      let allMatchesFound = true;
-      for (const matcher of matchers) {
-        while (i < received.length && !matcher.matches(received[i]))
-          i++;
-        if (i >= received.length) {
-          allMatchesFound = false;
-          break;
-        }
+      let mIndex = 0, rIndex = 0;
+      while (mIndex < matchers.length && rIndex < received.length) {
+        if (matchers[mIndex].matches(received[rIndex]))
+          ++mIndex;
+        ++rIndex;
       }
-      return { received, matches: allMatchesFound };
+      return { received, matches: mIndex === matchers.length };
     }
     throw this.createStacklessError('Unknown expect matcher: ' + expression);
   }
@@ -1074,6 +1268,10 @@ export class InjectedScript {
   getElementAccessibleName(element: Element, includeHidden?: boolean): string {
     const hiddenCache = new Map<Element, boolean>();
     return getElementAccessibleName(element, !!includeHidden, hiddenCache);
+  }
+
+  getAriaRole(element: Element) {
+    return getAriaRole(element);
   }
 }
 
@@ -1084,11 +1282,11 @@ function oneLine(s: string): string {
   return s.replace(/\n/g, '↵').replace(/\t/g, '⇆');
 }
 
-const eventType = new Map<string, 'mouse'|'keyboard'|'touch'|'pointer'|'focus'|'drag'>([
+const eventType = new Map<string, 'mouse' | 'keyboard' | 'touch' | 'pointer' | 'focus' | 'drag' | 'wheel'>([
   ['auxclick', 'mouse'],
   ['click', 'mouse'],
   ['dblclick', 'mouse'],
-  ['mousedown','mouse'],
+  ['mousedown', 'mouse'],
   ['mouseeenter', 'mouse'],
   ['mouseleave', 'mouse'],
   ['mousemove', 'mouse'],
@@ -1130,6 +1328,8 @@ const eventType = new Map<string, 'mouse'|'keyboard'|'touch'|'pointer'|'focus'|'
   ['dragleave', 'drag'],
   ['dragexit', 'drag'],
   ['drop', 'drag'],
+
+  ['wheel', 'wheel'],
 ]);
 
 const kHoverHitTargetInterceptorEvents = new Set(['mousemove']);
@@ -1137,7 +1337,9 @@ const kTapHitTargetInterceptorEvents = new Set(['pointerdown', 'pointerup', 'tou
 const kMouseHitTargetInterceptorEvents = new Set(['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'auxclick', 'dblclick', 'contextmenu']);
 const kAllHitTargetInterceptorEvents = new Set([...kHoverHitTargetInterceptorEvents, ...kTapHitTargetInterceptorEvents, ...kMouseHitTargetInterceptorEvents]);
 
-function unescape(s: string): string {
+function cssUnquote(s: string): string {
+  // Trim quotes.
+  s = s.substring(1, s.length - 1);
   if (!s.includes('\\'))
     return s;
   const r: string[] = [];
@@ -1150,23 +1352,30 @@ function unescape(s: string): string {
   return r.join('');
 }
 
-function createTextMatcher(selector: string): { matcher: TextMatcher, kind: 'regex' | 'strict' | 'lax' } {
+function createTextMatcher(selector: string, internal: boolean): { matcher: TextMatcher, kind: 'regex' | 'strict' | 'lax' } {
   if (selector[0] === '/' && selector.lastIndexOf('/') > 0) {
     const lastSlash = selector.lastIndexOf('/');
     const matcher: TextMatcher = createRegexTextMatcher(selector.substring(1, lastSlash), selector.substring(lastSlash + 1));
     return { matcher, kind: 'regex' };
   }
+  const unquote = internal ? JSON.parse.bind(JSON) : cssUnquote;
   let strict = false;
   if (selector.length > 1 && selector[0] === '"' && selector[selector.length - 1] === '"') {
-    selector = unescape(selector.substring(1, selector.length - 1));
+    selector = unquote(selector);
+    strict = true;
+  } else if (internal && selector.length > 1 && selector[0] === '"' && selector[selector.length - 2] === '"' && selector[selector.length - 1] === 'i') {
+    selector = unquote(selector.substring(0, selector.length - 1));
+    strict = false;
+  } else if (internal && selector.length > 1 && selector[0] === '"' && selector[selector.length - 2] === '"' && selector[selector.length - 1] === 's') {
+    selector = unquote(selector.substring(0, selector.length - 1));
+    strict = true;
+  } else if (selector.length > 1 && selector[0] === "'" && selector[selector.length - 1] === "'") {
+    selector = unquote(selector);
     strict = true;
   }
-  if (selector.length > 1 && selector[0] === "'" && selector[selector.length - 1] === "'") {
-    selector = unescape(selector.substring(1, selector.length - 1));
-    strict = true;
-  }
-  const matcher = strict ? createStrictTextMatcher(selector) : createLaxTextMatcher(selector);
-  return { matcher, kind: strict ? 'strict' : 'lax' };
+  if (strict)
+    return { matcher: internal ? createStrictFullTextMatcher(selector) : createStrictTextMatcher(selector), kind: 'strict' };
+  return { matcher: createLaxTextMatcher(selector), kind: 'lax' };
 }
 
 class ExpectedTextMatcher {
@@ -1174,17 +1383,26 @@ class ExpectedTextMatcher {
   private _substring: string | undefined;
   private _regex: RegExp | undefined;
   private _normalizeWhiteSpace: boolean | undefined;
+  private _ignoreCase: boolean | undefined;
 
   constructor(expected: channels.ExpectedTextValue) {
     this._normalizeWhiteSpace = expected.normalizeWhiteSpace;
-    this._string = expected.matchSubstring ? undefined : this.normalizeWhiteSpace(expected.string);
-    this._substring = expected.matchSubstring ? this.normalizeWhiteSpace(expected.string) : undefined;
-    this._regex = expected.regexSource ? new RegExp(expected.regexSource, expected.regexFlags) : undefined;
+    this._ignoreCase = expected.ignoreCase;
+    this._string = expected.matchSubstring ? undefined : this.normalize(expected.string);
+    this._substring = expected.matchSubstring ? this.normalize(expected.string) : undefined;
+    if (expected.regexSource) {
+      const flags = new Set((expected.regexFlags || '').split(''));
+      if (expected.ignoreCase === false)
+        flags.delete('i');
+      if (expected.ignoreCase === true)
+        flags.add('i');
+      this._regex = new RegExp(expected.regexSource, [...flags].join(''));
+    }
   }
 
   matches(text: string): boolean {
-    if (this._normalizeWhiteSpace && !this._regex)
-      text = this.normalizeWhiteSpace(text)!;
+    if (!this._regex)
+      text = this.normalize(text)!;
     if (this._string !== undefined)
       return text === this._string;
     if (this._substring !== undefined)
@@ -1194,10 +1412,14 @@ class ExpectedTextMatcher {
     return false;
   }
 
-  private normalizeWhiteSpace(s: string | undefined): string | undefined {
+  private normalize(s: string | undefined): string | undefined {
     if (!s)
       return s;
-    return this._normalizeWhiteSpace ? s.trim().replace(/\u200b/g, '').replace(/\s+/g, ' ') : s;
+    if (this._normalizeWhiteSpace)
+      s = s.trim().replace(/\u200b/g, '').replace(/\s+/g, ' ');
+    if (this._ignoreCase)
+      s = s.toLocaleLowerCase();
+    return s;
   }
 }
 
@@ -1250,35 +1472,4 @@ function deepEquals(a: any, b: any): boolean {
   return false;
 }
 
-function isElementDisabled(element: Element): boolean {
-  const isRealFormControl = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'OPTGROUP'].includes(element.nodeName);
-  if (isRealFormControl && element.hasAttribute('disabled'))
-    return true;
-  if (isRealFormControl && hasDisabledFieldSet(element))
-    return true;
-  if (hasAriaDisabled(element))
-    return true;
-  return false;
-}
-
-function hasDisabledFieldSet(element: Element|null): boolean {
-  if (!element)
-    return false;
-  if (element.tagName === 'FIELDSET' && element.hasAttribute('disabled'))
-    return true;
-  // fieldset does not work across shadow boundaries
-  return hasDisabledFieldSet(element.parentElement);
-}
-function hasAriaDisabled(element: Element|undefined): boolean {
-  if (!element)
-    return false;
-  const attribute = (element.getAttribute('aria-disabled') || '').toLowerCase();
-  if (attribute === 'true')
-    return true;
-  if (attribute === 'false')
-    return false;
-  return hasAriaDisabled(parentElementOrShadowHost(element));
-}
-
-
-export default InjectedScript;
+module.exports = InjectedScript;

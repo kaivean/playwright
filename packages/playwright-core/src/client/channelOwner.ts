@@ -15,15 +15,18 @@
  */
 
 import { EventEmitter } from 'events';
-import * as channels from '../protocol/channels';
-import { createScheme, ValidationError, Validator } from '../protocol/validator';
-import { debugLogger } from '../utils/debugLogger';
-import { captureRawStack, captureStackTrace, ParsedStackTrace } from '../utils/stackTrace';
-import { isUnderTest } from '../utils/utils';
+import type * as channels from '@protocol/channels';
+import { maybeFindValidator, ValidationError, type ValidatorContext } from '../protocol/validator';
+import { debugLogger } from '../common/debugLogger';
+import type { ParsedStackTrace } from '../utils/stackTrace';
+import { captureRawStack, captureStackTrace } from '../utils/stackTrace';
+import { isUnderTest } from '../utils';
 import { zones } from '../utils/zones';
-import { ClientInstrumentation } from './clientInstrumentation';
+import type { ClientInstrumentation } from './clientInstrumentation';
 import type { Connection } from './connection';
 import type { Logger } from './types';
+
+type Listener = (...args: any[]) => void;
 
 export abstract class ChannelOwner<T extends channels.Channel = channels.Channel> extends EventEmitter {
   readonly _connection: Connection;
@@ -36,6 +39,7 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
   readonly _initializer: channels.InitializerTraits<T>;
   _logger: Logger | undefined;
   _instrumentation: ClientInstrumentation | undefined;
+  private _eventToSubscriptionMapping: Map<string, string> = new Map();
 
   constructor(parent: ChannelOwner | Connection, type: string, guid: string, initializer: channels.InitializerTraits<T>, instrumentation?: ClientInstrumentation) {
     super();
@@ -54,6 +58,57 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
 
     this._channel = this._createChannel(new EventEmitter());
     this._initializer = initializer;
+  }
+
+  _setEventToSubscriptionMapping(mapping: Map<string, string>) {
+    this._eventToSubscriptionMapping = mapping;
+  }
+
+  private _updateSubscription(event: string | symbol, enabled: boolean) {
+    const protocolEvent = this._eventToSubscriptionMapping.get(String(event));
+    if (protocolEvent)
+      (this._channel as any).updateSubscription({ event: protocolEvent, enabled }).catch(() => {});
+  }
+
+  override on(event: string | symbol, listener: Listener): this {
+    if (!this.listenerCount(event))
+      this._updateSubscription(event, true);
+    super.on(event, listener);
+    return this;
+  }
+
+  override addListener(event: string | symbol, listener: Listener): this {
+    if (!this.listenerCount(event))
+      this._updateSubscription(event, true);
+    super.addListener(event, listener);
+    return this;
+  }
+
+  override prependListener(event: string | symbol, listener: Listener): this {
+    if (!this.listenerCount(event))
+      this._updateSubscription(event, true);
+    super.prependListener(event, listener);
+    return this;
+  }
+
+  override off(event: string | symbol, listener: Listener): this {
+    super.off(event, listener);
+    if (!this.listenerCount(event))
+      this._updateSubscription(event, false);
+    return this;
+  }
+
+  override removeListener(event: string | symbol, listener: Listener): this {
+    super.removeListener(event, listener);
+    if (!this.listenerCount(event))
+      this._updateSubscription(event, false);
+    return this;
+  }
+
+  _adopt(child: ChannelOwner<any>) {
+    child._parent!._objects.delete(child._guid);
+    this._objects.set(child._guid, child);
+    child._parent = this;
   }
 
   _dispose() {
@@ -78,10 +133,8 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
   private _createChannel(base: Object): T {
     const channel = new Proxy(base, {
       get: (obj: any, prop) => {
-        if (prop === 'debugScopeState')
-          return (params: any) => this._connection.sendMessageToServer(this, prop, params, null);
         if (typeof prop === 'string') {
-          const validator = scheme[paramsName(this._type, prop)];
+          const validator = maybeFindValidator(this._type, prop, 'Params');
           if (validator) {
             return (params: any) => {
               return this._wrapApiCall(apiZone => {
@@ -89,7 +142,7 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
                 apiZone.reported = true;
                 if (csi && stackTrace && stackTrace.apiName)
                   csi.onApiCallBegin(renderCallWithParams(stackTrace.apiName, params), stackTrace, callCookie);
-                return this._connection.sendMessageToServer(this, prop, validator(params, ''), stackTrace);
+                return this._connection.sendMessageToServer(this, this._type, prop, validator(params, '', { tChannelImpl: tChannelImplToWire, binary: this._connection.isRemote() ? 'toBase64' : 'buffer' }), stackTrace);
               });
             };
           }
@@ -127,12 +180,21 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
       return result;
     } catch (e) {
       const innerError = ((process.env.PWDEBUGIMPL || isUnderTest()) && e.stack) ? '\n<inner error>\n' + e.stack : '';
-      e.message = apiName + ': ' + e.message;
-      e.stack = e.message + '\n' + frameTexts.join('\n') + innerError;
+      if (apiName && !apiName.includes('<anonymous>'))
+        e.message = apiName + ': ' + e.message;
+      const stackFrames = '\n' + frameTexts.join('\n') + innerError;
+      if (stackFrames.trim())
+        e.stack = e.message + stackFrames;
+      else
+        e.stack = '';
       csi?.onApiCallEnd(callCookie, e);
       logApiCall(logger, `<= ${apiName} failed`, isInternal);
       throw e;
     }
+  }
+
+  _toImpl(): any {
+    return this._connection.toImpl?.(this);
   }
 
   private toJSON() {
@@ -155,12 +217,8 @@ function logApiCall(logger: Logger | undefined, message: string, isNested: boole
   debugLogger.log('api', message);
 }
 
-function paramsName(type: string, method: string) {
-  return type + method[0].toUpperCase() + method.substring(1) + 'Params';
-}
-
 const paramsToRender = ['url', 'selector', 'text', 'key'];
-export function renderCallWithParams(apiName: string, params: any) {
+function renderCallWithParams(apiName: string, params: any) {
   const paramsArray = [];
   if (params) {
     for (const name of paramsToRender) {
@@ -172,15 +230,11 @@ export function renderCallWithParams(apiName: string, params: any) {
   return apiName + paramsText;
 }
 
-const tChannel = (name: string): Validator => {
-  return (arg: any, path: string) => {
-    if (arg._object instanceof ChannelOwner && (name === '*' || arg._object._type === name))
-      return { guid: arg._object._guid };
-    throw new ValidationError(`${path}: expected ${name}`);
-  };
-};
-
-const scheme = createScheme(tChannel);
+function tChannelImplToWire(names: '*' | string[], arg: any, path: string, context: ValidatorContext) {
+  if (arg._object instanceof ChannelOwner && (names === '*' || names.includes(arg._object._type)))
+    return { guid: arg._object._guid };
+  throw new ValidationError(`${path}: expected channel ${names.toString()}`);
+}
 
 type ApiZone = {
   stackTrace: ParsedStackTrace;

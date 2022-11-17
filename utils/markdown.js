@@ -17,14 +17,58 @@
 // @ts-check
 
 /** @typedef {{
- *    type: 'text' | 'li' | 'code' | 'properties' | 'h0' | 'h1' | 'h2' | 'h3' | 'h4' | 'note',
+ *    type: string,
  *    text?: string,
+ *    children?: MarkdownNode[],
  *    codeLang?: string,
- *    noteType?: string,
- *    lines?: string[],
- *    liType?: 'default' | 'bullet' | 'ordinal',
- *    children?: MarkdownNode[]
- *  }} MarkdownNode */
+ *  }} MarkdownBaseNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'text',
+ *    text: string,
+ *  }} MarkdownTextNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'h0' | 'h1' | 'h2' | 'h3' | 'h4',
+ *    text: string,
+ *    children: MarkdownNode[]
+ *  }} MarkdownHeaderNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'li',
+ *    text: string,
+ *    liType: 'default' | 'bullet' | 'ordinal',
+ *    children: MarkdownNode[]
+ *  }} MarkdownLiNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'code',
+ *    lines: string[],
+ *    codeLang: string,
+ *  }} MarkdownCodeNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'note',
+ *    text: string,
+ *    noteType: string,
+ *  }} MarkdownNoteNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'null',
+ *  }} MarkdownNullNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'properties',
+ *    lines: string[],
+ *  }} MarkdownPropsNode */
+
+/** @typedef {{
+ *    value: string, groupId: string, spec: MarkdownNode
+ * }} CodeGroup */
+
+/** @typedef {function(CodeGroup[]): MarkdownNode[]} CodeGroupTransformer */
+
+/** @typedef {MarkdownTextNode | MarkdownLiNode | MarkdownCodeNode | MarkdownNoteNode | MarkdownHeaderNode | MarkdownNullNode | MarkdownPropsNode } MarkdownNode */
 
 function flattenWrappedLines(content) {
   const inLines = content.replace(/\r\n/g, '\n').split('\n');
@@ -110,13 +154,13 @@ function buildTree(lines) {
         else
           break;
       }
-      headerStack[0].children.push(node);
+      /** @type {MarkdownNode[]}*/(headerStack[0].children).push(node);
       headerStack.unshift(node);
       continue;
     }
 
     // Remaining items respect indent-based nesting.
-    const [, indent, content] = line.match('^([ ]*)(.*)');
+    const [, indent, content] = /** @type {string[]} */ (line.match('^([ ]*)(.*)'));
     if (content.startsWith('```')) {
       /** @type {MarkdownNode} */
       const node = {
@@ -143,10 +187,10 @@ function buildTree(lines) {
 
     if (content.startsWith(':::')) {
       /** @type {MarkdownNode} */
-      const node = {
+      const node = /** @type {MarkdownNoteNode} */ ({
         type: 'note',
         noteType: content.substring(3)
-      };
+      });
       line = lines[++i];
       const tokens = [];
       while (!line.trim().startsWith(':::')) {
@@ -184,16 +228,17 @@ function buildTree(lines) {
     const liType = content.match(/^(-|1.|\*) /);
     const node = /** @type {MarkdownNode} */({ type: 'text', text: content });
     if (liType) {
-      node.type = 'li';
-      node.text = content.substring(liType[0].length);
+      const liNode = /** @type {MarkdownLiNode} */(node);
+      liNode.type = 'li';
+      liNode.text = content.substring(liType[0].length);
       if (content.startsWith('1.'))
-        node.liType = 'ordinal';
+        liNode.liType = 'ordinal';
       else if (content.startsWith('*'))
-        node.liType = 'bullet';
+        liNode.liType = 'bullet';
       else
-        node.liType = 'default';
+        liNode.liType = 'default';
     }
-    const match = node.text.match(/\*\*langs: (.*)\*\*(.*)/);
+    const match = node.text?.match(/\*\*langs: (.*)\*\*(.*)/);
     if (match) {
       node.codeLang = match[1];
       node.text = match[2];
@@ -218,7 +263,9 @@ function render(nodes, maxColumns) {
   const result = [];
   let lastNode;
   for (let node of nodes) {
-    innerRenderMdNode('', node, lastNode, result, maxColumns);
+    if (node.type === 'null')
+      continue;
+    innerRenderMdNode('', node, /** @type {MarkdownNode} */ (lastNode), result, maxColumns);
     lastNode = node;
   }
   return result.join('\n');
@@ -238,9 +285,10 @@ function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
   };
 
   if (node.type.startsWith('h')) {
+    const headerNode = /** @type {MarkdownHeaderNode} */ (node);
     newLine();
     const depth = +node.type.substring(1);
-    result.push(`${'#'.repeat(depth)} ${node.text}`);
+    result.push(`${'#'.repeat(depth)} ${headerNode.text}`);
     let lastNode = node;
     for (const child of node.children || []) {
       innerRenderMdNode('', child, lastNode, result, maxColumns);
@@ -262,7 +310,10 @@ function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
 
   if (node.type === 'code') {
     newLine();
-    result.push(`${indent}\`\`\`${node.codeLang}`);
+    if (process.env.API_JSON_MODE)
+      result.push(`${indent}\`\`\`${node.codeLang}`);
+    else
+      result.push(`${indent}\`\`\`${node.codeLang ? parseCodeLang(node.codeLang).highlighter : ''}`);
     for (const line of node.lines)
       result.push(indent + line);
     result.push(`${indent}\`\`\``);
@@ -405,7 +456,10 @@ function filterNodesForLanguage(nodes, language) {
       const child = node.children[i];
       if (child.type !== 'li' || child.liType !== 'bullet' || !child.text.startsWith('langs:'))
         continue;
-      const only = child.text.substring('langs:'.length).split(',').map(l => l.trim());
+      const onlyText = child.text.substring('langs:'.length);
+      if (!onlyText)
+        return true;
+      const only = onlyText.split(',').map(l => l.trim());
       node.children.splice(i, 1);
       return only.includes(language);
     }
@@ -419,4 +473,86 @@ function filterNodesForLanguage(nodes, language) {
   return result;
 }
 
-module.exports = { parse, render, clone, visitAll, visit, generateToc, filterNodesForLanguage };
+/**
+ * @param {string} codeLang
+ * @return {{ highlighter: string, language: string|undefined, codeGroup: string|undefined}}
+ */
+function parseCodeLang(codeLang) {
+  if (codeLang === 'python async')
+    return { highlighter: 'py', codeGroup: 'python-async', language: 'python' };
+  if (codeLang === 'python sync')
+    return { highlighter: 'py', codeGroup: 'python-sync', language: 'python' };
+
+  const [highlighter] = codeLang.split(' ');
+  if (!highlighter)
+    throw new Error(`Cannot parse code block lang: "${codeLang}"`);
+
+  const languageMatch = codeLang.match(/ lang=([\w\d]+)/);
+  let language = languageMatch ? languageMatch[1] : undefined;
+  if (!language) {
+    if (highlighter === 'ts')
+      language = 'js';
+    else if (highlighter === 'py')
+      language = 'python';
+    else if (['js', 'python', 'csharp', 'java'].includes(highlighter))
+      language = highlighter;
+  }
+
+  const tabMatch = codeLang.match(/ tab=([\w\d-]+)/);
+  return { highlighter, language, codeGroup: tabMatch ? tabMatch[1] : '' };
+}
+
+/**
+ * @param {MarkdownNode[]} spec
+ * @param {string} language
+ * @param {CodeGroupTransformer} transformer
+ * @returns {MarkdownNode[]}
+ */
+function processCodeGroups(spec, language, transformer) {
+  /** @type {MarkdownNode[]} */
+  const newSpec = [];
+  for (let i = 0; i < spec.length; ++i) {
+    /** @type {{value: string, groupId: string, spec: MarkdownNode}[]} */
+    const tabs = [];
+    for (;i < spec.length; i++) {
+      const codeLang = spec[i].codeLang;
+      if (!codeLang)
+        break;
+      let parsed;
+      try {
+        parsed = parseCodeLang(codeLang);
+      } catch (e) {
+        throw new Error(e.message + '\n while processing:\n' + render([spec[i]]));
+      }
+      if (!parsed.codeGroup)
+        break;
+      if (parsed.language && parsed.language !== language)
+        continue;
+      const [groupId, value] = parsed.codeGroup.split('-');
+      tabs.push({ groupId, value, spec: spec[i] });
+    }
+    if (tabs.length) {
+      if (tabs.length === 1)
+        throw new Error(`Lonely tab "${tabs[0].spec.codeLang}". Make sure there are at least two tabs in the group.\n` + render([tabs[0].spec]));
+
+      // Validate group consistency.
+      const groupId = tabs[0].groupId;
+      const values = new Set();
+      for (const tab of tabs) {
+        if (tab.groupId !== groupId)
+          throw new Error('Mixed group ids: ' + render(spec));
+        if (values.has(tab.value))
+          throw new Error(`Duplicated tab "${tab.value}"\n` + render(tabs.map(tab => tab.spec)));
+        values.add(tab.value);
+      }
+
+      // Append transformed nodes.
+      newSpec.push(...transformer(tabs));
+    }
+    if (i < spec.length)
+      newSpec.push(spec[i]);
+  }
+  return newSpec;
+}
+
+module.exports = { parse, render, clone, visitAll, visit, generateToc, filterNodesForLanguage, parseCodeLang, processCodeGroups };

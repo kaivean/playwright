@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { TestServer } from '../../utils/testserver';
+import type { TestServer } from '../../utils/testserver';
 import { test as it, expect } from './pageTest';
 
 function initServer(server: TestServer): string[] {
@@ -27,8 +27,6 @@ function initServer(server: TestServer): string[] {
   });
   return messages;
 }
-
-it.skip(({ isAndroid }) => isAndroid, 'Too flaky on Android');
 
 it('should await navigation when clicking anchor', async ({ page, server }) => {
   const messages = initServer(server);
@@ -166,7 +164,9 @@ it('should await navigation when assigning location twice', async ({ page, serve
   expect(messages.join('|')).toBe('routeoverride|evaluate');
 });
 
-it('should await navigation when evaluating reload', async ({ page, server }) => {
+it('should await navigation when evaluating reload', async ({ page, server, browserName }) => {
+  it.fixme(browserName === 'firefox', 'With fission enabled, navigations in Firefox start asynchronously');
+
   await page.goto(server.EMPTY_PAGE);
   const messages = initServer(server);
   await Promise.all([
@@ -193,9 +193,9 @@ it('should work with waitForLoadState(load)', async ({ page, server }) => {
   await page.setContent(`<a id="anchor" href="${server.EMPTY_PAGE}">empty.html</a>`);
   await Promise.all([
     page.click('a').then(() => page.waitForLoadState('load')).then(() => messages.push('clickload')),
-    page.waitForEvent('framenavigated').then(() => page.waitForLoadState('domcontentloaded')).then(() => messages.push('domcontentloaded')),
+    page.waitForEvent('load').then(() => messages.push('load')),
   ]);
-  expect(messages.join('|')).toBe('route|domcontentloaded|clickload');
+  expect(messages.join('|')).toBe('route|load|clickload');
 });
 
 it('should work with goto following click', async ({ page, server }) => {

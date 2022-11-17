@@ -1,9 +1,364 @@
 ---
 id: release-notes
 title: "Release notes"
+toc_max_heading_level: 2
 ---
 
-<!-- TOC -->
+## Version 1.28
+
+### Playwright Tools
+
+* **Live Locators in CodeGen.** Generate a locator for any element on the page using "Explore" tool.
+
+![Locator Explorer](https://user-images.githubusercontent.com/9798949/202293757-2e3ec0ac-1feb-4d6f-9935-73e08658b76d.png)
+
+### New APIs
+
+- [`method: Locator.blur`]
+- [`method: Locator.clear`]
+
+### Browser Versions
+
+* Chromium 108.0.5359.29
+* Mozilla Firefox 106.0
+* WebKit 16.4
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 107
+* Microsoft Edge 107
+
+## Version 1.27
+
+### Locators
+
+With these new APIs writing locators is a joy:
+- [`method: Page.getByText`] to locate by text content.
+- [`method: Page.getByRole`] to locate by [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+- [`method: Page.getByLabel`] to locate a form control by associated label's text.
+- [`method: Page.getByTestId`] to locate an element based on its `data-testid` attribute (other attribute can be configured).
+- [`method: Page.getByPlaceholder`] to locate an input by placeholder.
+- [`method: Page.getByAltText`] to locate an element, usually image, by its text alternative.
+- [`method: Page.getByTitle`] to locate an element by its title.
+
+```csharp
+await page.GetByLabel("User Name").FillAsync("John");
+
+await page.GetByLabel("Password").FillAsync("secret-password");
+
+await page.GetByRole("button", new() { NameString = "Sign in" }).ClickAsync();
+
+await Expect(page.GetByText("Welcome, John!")).ToBeVisibleAsync();
+```
+
+All the same methods are also available on [Locator], [FrameLocator] and [Frame] classes.
+
+### Other highlights
+
+- As announced in v1.25, Ubuntu 18 will not be supported as of Dec 2022. In addition to that, there will be no WebKit updates on Ubuntu 18 starting from the next Playwright release.
+
+### Behavior Changes
+
+- [`method: LocatorAssertions.toHaveAttribute`] with an empty value does not match missing attribute anymore. For example, the following snippet will succeed when `button` **does not** have a `disabled` attribute.
+
+   ```js
+   await Expect(page.GetByRole("button")).ToHaveAttribute("disabled", "");
+   ```
+
+### Browser Versions
+
+* Chromium 107.0.5304.18
+* Mozilla Firefox 105.0.1
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 106
+* Microsoft Edge 106
+
+
+## Version 1.26
+
+### Assertions
+
+- New option `Enabled` for [`method: LocatorAssertions.toBeEnabled`].
+- [`method: LocatorAssertions.toHaveText`] now pierces open shadow roots.
+- New option `Editable` for [`method: LocatorAssertions.toBeEditable`].
+- New option `Visible` for [`method: LocatorAssertions.toBeVisible`].
+- [`method: APIResponseAssertions.toBeOK`] is now available.
+
+### Other highlights
+
+- New option `MaxRedirects` for [`method: APIRequestContext.get`] and others to limit redirect count.
+- Codegen now supports NUnit and MSTest frameworks.
+- ASP .NET is now supported.
+
+### Behavior Change
+
+A bunch of Playwright APIs already support the `WaitUntil: WaitUntilState.DOMContentLoaded` option.
+For example:
+
+```csharp
+await Page.GotoAsync("https://playwright.dev", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+```
+
+Prior to 1.26, this would wait for all iframes to fire the `DOMContentLoaded`
+event.
+
+To align with web specification, the `WaitUntilState.DOMContentLoaded` value only waits for
+the target frame to fire the `'DOMContentLoaded'` event. Use `WaitUntil: WaitUntilState.Load` to wait for all iframes.
+
+### Browser Versions
+
+* Chromium 106.0.5249.30
+* Mozilla Firefox 104.0
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 105
+* Microsoft Edge 105
+
+## Version 1.25
+
+### New .runsettings file support
+
+`Microsoft.Playwright.NUnit` and `Microsoft.Playwright.MSTest` will now consider the `.runsettings` file and passed settings via the CLI when running end-to-end tests. See in the [documentation](https://playwright.dev/dotnet/docs/test-runners) for a full list of supported settings.
+
+The following does now work:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- Playwright -->
+  <Playwright>
+    <BrowserName>chromium</BrowserName>
+    <ExpectTimeout>5000</ExpectTimeout>
+    <LaunchOptions>
+      <Headless>true</Headless>
+      <Channel>msedge</Channel>
+    </LaunchOptions>
+  </Playwright>
+  <!-- General run configuration -->
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <!-- For debugging selectors, it's recommend to set the following environment variable -->
+      <DEBUG>pw:api</DEBUG>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>
+```
+
+### Announcements
+
+* 🪦 This is the last release with macOS 10.15 support (deprecated as of 1.21).
+* ⚠️ Ubuntu 18 is now deprecated and will not be supported as of Dec 2022.
+
+### Browser Versions
+
+* Chromium 105.0.5195.19
+* Mozilla Firefox 103.0
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 104
+* Microsoft Edge 104
+
+## Version 1.24
+
+<div className="embed-youtube">
+<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/9F05o1shxcY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+</div>
+
+### 🐂 Debian 11 Bullseye Support
+
+Playwright now supports Debian 11 Bullseye on x86_64 for Chromium, Firefox and WebKit. Let us know
+if you encounter any issues!
+
+Linux support looks like this:
+
+|          | Ubuntu 18.04 | Ubuntu 20.04 | Ubuntu 22.04 | Debian 11
+| :--- | :---: | :---: | :---: | :---: |
+| Chromium | ✅ | ✅ | ✅ | ✅ |
+| WebKit | ✅ | ✅ | ✅ | ✅ |
+| Firefox | ✅ | ✅ | ✅ | ✅ |
+
+### New introduction docs
+
+We rewrote our Getting Started docs to be more end-to-end testing focused. Check them out on [playwright.dev](https://playwright.dev/dotnet/docs/intro).
+
+## Version 1.23
+
+### API Testing
+
+Playwright for .NET 1.23 introduces new [API Testing](./api/class-apirequestcontext) that lets you send requests to the server directly from .NET!
+Now you can:
+
+- test your server API
+- prepare server side state before visiting the web application in a test
+- validate server side post-conditions after running some actions in the browser
+
+To do a request on behalf of Playwright's Page, use **new [`property: Page.request`] API**:
+
+```csharp
+// Do a GET request on behalf of page
+var response = await Page.APIRequest.GetAsync("http://example.com/foo.json");
+Console.WriteLine(response.Status);
+Console.WriteLine(response.StatusText);
+Console.WriteLine(response.Ok);
+Console.WriteLine(response.Headers["Content-Type"]);
+Console.WriteLine(await response.TextAsync());
+Console.WriteLine((await response.JsonAsync())?.GetProperty("foo").GetString());
+```
+
+Read more about it in our [API testing guide](./api-testing).
+
+### Network Replay
+
+Now you can record network traffic into a HAR file and re-use this traffic in your tests.
+
+To record network into HAR file:
+
+```bash
+pwsh bin/Debug/netX/playwright.ps1 open --save-har=example.har --save-har-glob="**/api/**" https://example.com
+```
+
+Alternatively, you can record HAR programmatically:
+
+```csharp
+var context = await browser.NewContextAsync(new()
+{
+  RecordHarPath = harPath,
+  RecordHarUrlFilterString = "**/api/**",
+});
+
+// ... Perform actions ...
+
+// Close context to ensure HAR is saved to disk.
+context.CloseAsync();
+```
+
+Use the new methods [`method: Page.routeFromHAR`] or [`method: BrowserContext.routeFromHAR`] to serve matching responses from the [HAR](http://www.softwareishard.com/blog/har-12-spec/) file:
+
+
+```csharp
+await context.RouteFromHARAsync("example.har");
+```
+
+Read more in [our documentation](./network#record-and-replay-requests).
+
+
+### Advanced Routing
+
+You can now use [`method: Route.fallback`] to defer routing to other handlers.
+
+Consider the following example:
+
+```csharp
+// Remove a header from all requests.
+await page.RouteAsync("**/*", async route =>
+{
+    var headers = route.Request.Headers;
+    headers.Remove("X-Secret");
+    await route.ContinueAsync(new() { Headers = headers });
+});
+
+// Abort all images.
+await page.RouteAsync("**/*", async route =>
+{
+    if (route.Request.ResourceType == "image")
+    {
+        await route.AbortAsync();
+    }
+    else
+    {
+        await route.FallbackAsync();
+    }
+});
+```
+
+Note that the new methods [`method: Page.routeFromHAR`] and [`method: BrowserContext.routeFromHAR`] also participate in routing and could be deferred to.
+
+### Web-First Assertions Update
+
+* New method [`method: LocatorAssertions.toHaveValues`] that asserts all selected values of `<select multiple>` element.
+* Methods [`method: LocatorAssertions.toContainText`] and [`method: LocatorAssertions.toHaveText`] now accept `ignoreCase` option.
+
+### Miscellaneous
+
+* If there's a service worker that's in your way, you can now easily disable it with a new context option `serviceWorkers`:
+  ```csharp
+  var context = await Browser.NewContextAsync(new()
+  {
+      ServiceWorkers = ServiceWorkerPolicy.Block
+  });
+  ```
+* Using `.zip` path for `recordHar` context option automatically zips the resulting HAR:
+  ```csharp
+  var context = await Browser.NewContextAsync(new() { RecordHarPath = "example.har.zip" });
+  ```
+* If you intend to edit HAR by hand, consider using the `"minimal"` HAR recording mode
+  that only records information that is essential for replaying:
+  ```csharp
+  var context = await Browser.NewContextAsync(new() { RecordHarPath = "example.har", RecordHarMode = HarMode.Minimal });
+  ```
+* Playwright now runs on Ubuntu 22 amd64 and Ubuntu 22 arm64.
+* Playwright for .NET now supports **linux-arm64** and provides a **arm64 Ubuntu 20.04 Docker image** for it.
+
+## Version 1.22
+
+### Highlights
+
+- Role selectors that allow selecting elements by their [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+
+  ```csharp
+  // Click a button with accessible name "log in"
+  await page.Locator("role=button[name='log in']").ClickAsync();
+  ```
+
+  Read more in [our documentation](./selectors#role-selector).
+
+- New [`method: Locator.filter`] API to filter an existing locator
+
+  ```csharp
+  var buttons = page.Locator("role=button");
+  // ...
+  var submitLocator = buttons.Filter(new LocatorFilterOptions { HasText = "Sign up" });
+  await submitLocator.ClickAsync();
+  ```
+
+## Version 1.21
+
+### Highlights
+
+- New role selectors that allow selecting elements by their [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+
+  ```csharp
+  // Click a button with accessible name "log in"
+  await page.Locator("role=button[name='log in']").ClickAsync();
+  ```
+
+  Read more in [our documentation](./selectors#role-selector).
+- New `scale` option in [`method: Page.screenshot`] for smaller sized screenshots.
+- New `caret` option in [`method: Page.screenshot`] to control text caret. Defaults to `"hide"`.
+- We now ship a designated .NET docker image `mcr.microsoft.com/playwright/dotnet`. Read more in [our documentation](./docker).
+
+### Behavior Changes
+
+- Playwright now supports large file uploads (100s of MBs) via [`method: Locator.setInputFiles`] API.
+
+### Browser Versions
+
+- Chromium 101.0.4951.26
+- Mozilla Firefox 98.0.2
+- WebKit 15.4
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 100
+- Microsoft Edge 100
+
 
 ## Version 1.20
 
@@ -18,15 +373,15 @@ using System.Threading.Tasks;
 using Microsoft.Playwright.NUnit;
 using NUnit.Framework;
 
-namespace Playwright.TestingHarnessTest.NUnit
+namespace PlaywrightTests;
+
+[TestFixture]
+public class ExampleTests : PageTest
 {
-    public class ExampleTests : PageTest
+    [Test]
+    public async Task StatusBecomesSubmitted()
     {
-        [Test]
-        public async Task StatusBecomesSubmitted()
-        {
-            await Expect(Page.Locator(".status")).ToHaveTextAsync("Submitted");
-        }
+        await Expect(Page.Locator(".status")).ToHaveTextAsync("Submitted");
     }
 }
 ```
@@ -67,7 +422,7 @@ This version was also tested against the following stable channels:
 - Locator now supports a `has` option that makes sure it contains another locator inside:
 
   ```csharp
-  await Page.Locator("article", new () { Has = Page.Locator(".highlight") }).ClickAsync();
+  await Page.Locator("article", new() { Has = Page.Locator(".highlight") }).ClickAsync();
   ```
 
   Read more in [locator documentation](./api/class-locator#locator-locator-option-has)
@@ -95,7 +450,7 @@ This version was also tested against the following stable channels:
 - [`method: Locator.dragTo`]
 - Each locator can now be optionally filtered by the text it contains:
     ```csharp
-    await Page.Locator("li", new () { HasTextString = "My Item" })
+    await Page.Locator("li", new() { HasTextString = "My Item" })
               .Locator("button").click();
     ```
     Read more in [locator documentation](./api/class-locator#locator-locator-option-has-text)
@@ -156,12 +511,12 @@ Playwright Trace Viewer is now **available online** at https://trace.playwright.
 
 ![image](https://user-images.githubusercontent.com/746130/141877402-e486643d-72c7-4db3-8844-ed2072c5d676.png)
 
-## Ubuntu ARM64 support + more
+### Ubuntu ARM64 support + more
 
 - Playwright now supports **Ubuntu 20.04 ARM64**. You can now run Playwright tests inside Docker on Apple M1 and on Raspberry Pi.
 - You can now use Playwright to install stable version of Edge on Linux:
     ```bash
-    pwsh bin\Debug\netX\playwright.ps1 install msedge
+    pwsh bin/Debug/netX/playwright.ps1 install msedge
     ```
 
 
@@ -188,7 +543,7 @@ Read more about [`method: Locator.waitFor`].
 
 ### 🎭 Playwright Trace Viewer
 
-- run trace viewer with `pwsh bin\Debug\netX\playwright.ps1 show-trace` and drop trace files to the trace viewer PWA
+- run trace viewer with `pwsh bin/Debug/netX/playwright.ps1 show-trace` and drop trace files to the trace viewer PWA
 - better visual attribution of action targets
 
 Read more about [Trace Viewer](./trace-viewer).
@@ -221,7 +576,7 @@ Previously it was not possible to get multiple header values of a response. This
 - [Response.AllHeadersAsync()](https://playwright.dev/dotnet/docs/next/api/class-response#response-all-headers)
 - [Response.HeadersArrayAsync()](https://playwright.dev/dotnet/docs/next/api/class-response#response-headers-array)
 - [Response.HeaderValueAsync(name: string)](https://playwright.dev/dotnet/docs/next/api/class-response#response-header-value)
-- [Response.HeaderValuesAsync(name: string)](https://playwright.dev/dotnet/docs/next/api/class-response/#response-header-values)
+- [Response.HeaderValuesAsync(name: string)](https://playwright.dev/dotnet/docs/next/api/class-response#response-header-values)
 
 ### 🌈 Forced-Colors emulation
 
@@ -236,7 +591,7 @@ Its now possible to emulate the `forced-colors` CSS media feature by passing it 
 - [Tracing.StopChunkAsync()](https://playwright.dev/dotnet/docs/next/api/class-tracing#tracing-stop-chunk) - Stops a new trace chunk.
 
 ### Important ⚠
-* ⬆ .NET Core Apps 2.1 are **no longer** supported for our CLI tooling. As of August 31st, 2021, .NET Core 2.1 is no [longer supported](https://devblogs.microsoft.com/dotnet/net-core-2-1-will-reach-end-of-support-on-august-21-2021/) and will not receive any security updates. We've decided to move the CLI forward and require .NET Core 3.1 as a minimum. 
+* ⬆ .NET Core Apps 2.1 are **no longer** supported for our CLI tooling. As of August 31st, 2021, .NET Core 2.1 is no [longer supported](https://devblogs.microsoft.com/dotnet/net-core-2-1-will-reach-end-of-support-on-august-21-2021/) and will not receive any security updates. We've decided to move the CLI forward and require .NET Core 3.1 as a minimum.
 
 ### Browser Versions
 
@@ -255,7 +610,7 @@ Set `setStrict(true)` in your action calls to opt in.
 
 ```csharp
 // This will throw if you have more than one button!
-await page.ClickAsync("button", new Page.ClickOptions().setStrict(true));
+await page.Locator("button", new() { Strict = true });
 ```
 
 #### 📍 New [**Locators API**](./api/class-locator)
@@ -278,8 +633,8 @@ Learn more in the [documentation](./api/class-locator).
 React and Vue selectors allow selecting elements by its component name and/or property values. The syntax is very similar to [attribute selectors](https://developer.mozilla.org/en-US/docs/Web/CSS/Attribute_selectors) and supports all attribute selector operators.
 
 ```csharp
-await page.ClickAsync("_react=SubmitButton[enabled=true]");
-await page.ClickAsync("_vue=submit-button[enabled=true]");
+await page.Locator("_react=SubmitButton[enabled=true]").ClickAsync();
+await page.Locator("_vue=submit-button[enabled=true]").ClickAsync();
 ```
 
 Learn more in the [react selectors documentation](./selectors#react-selectors) and the [vue selectors documentation](./selectors#vue-selectors).

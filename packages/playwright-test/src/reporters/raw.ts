@@ -16,13 +16,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { FullConfig, Location, Suite, TestCase, TestResult, TestStatus, TestStep } from '../../types/testReporter';
-import { assert, calculateSha1 } from 'playwright-core/lib/utils/utils';
+import type { FullConfig, Location, Suite, TestCase, TestResult, TestStatus, TestStep } from '../../types/testReporter';
+import { assert } from 'playwright-core/lib/utils';
 import { sanitizeForFilePath } from '../util';
 import { formatResultFailure } from './base';
 import { toPosixPath, serializePatterns } from './json';
 import { MultiMap } from 'playwright-core/lib/utils/multimap';
-import { codeFrameColumns } from '@babel/code-frame';
+import { codeFrameColumns } from '../babelBundle';
+import type { Metadata } from '../types';
 
 export type JsonLocation = Location;
 export type JsonError = string;
@@ -37,7 +38,7 @@ export type JsonReport = {
 export type JsonConfig = Omit<FullConfig, 'projects' | 'attachments'>;
 
 export type JsonProject = {
-  metadata: any,
+  metadata: Metadata,
   name: string,
   outputDir: string,
   repeatEach: number,
@@ -133,8 +134,32 @@ class RawReporter {
     }
   }
 
-  generateAttachments(config: FullConfig): JsonAttachment[] {
-    return this._createAttachments(config.attachments);
+  generateAttachments(attachments: TestResult['attachments'], ioStreams?: Pick<TestResult, 'stdout' | 'stderr'>): JsonAttachment[] {
+    const out: JsonAttachment[] = [];
+    for (const attachment of attachments) {
+      if (attachment.body) {
+        out.push({
+          name: attachment.name,
+          contentType: attachment.contentType,
+          body: attachment.body
+        });
+      } else if (attachment.path) {
+        out.push({
+          name: attachment.name,
+          contentType: attachment.contentType,
+          path: attachment.path
+        });
+      }
+    }
+
+    if (ioStreams) {
+      for (const chunk of ioStreams.stdout)
+        out.push(this._stdioAttachment(chunk, 'stdout'));
+      for (const chunk of ioStreams.stderr)
+        out.push(this._stdioAttachment(chunk, 'stderr'));
+    }
+
+    return out;
   }
 
   generateProjectReport(config: FullConfig, suite: Suite): JsonReport {
@@ -142,7 +167,7 @@ class RawReporter {
     const project = suite.project();
     assert(project, 'Internal Error: Invalid project structure');
     const report: JsonReport = {
-      config,
+      config: filterOutPrivateFields(config),
       project: {
         metadata: project.metadata,
         name: project.name,
@@ -155,11 +180,7 @@ class RawReporter {
         timeout: project.timeout,
       },
       suites: suite.suites.map(fileSuite => {
-        // fileId is based on the location of the enclosing file suite.
-        // Don't use the file in test/suite location, it can be different
-        // due to the source map / require.
-        const fileId = calculateSha1(fileSuite.location!.file.split(path.sep).join('/'));
-        return this._serializeSuite(fileSuite, fileId);
+        return this._serializeSuite(fileSuite);
       })
     };
     for (const file of this.stepsInFile.keys()) {
@@ -190,23 +211,21 @@ class RawReporter {
     return report;
   }
 
-  private _serializeSuite(suite: Suite, fileId: string): JsonSuite {
+  private _serializeSuite(suite: Suite): JsonSuite {
     const location = this._relativeLocation(suite.location);
-    return {
+    const result = {
       title: suite.title,
-      fileId,
+      fileId: (suite as any)._fileId,
       location,
-      suites: suite.suites.map(s => this._serializeSuite(s, fileId)),
-      tests: suite.tests.map(t => this._serializeTest(t, fileId)),
+      suites: suite.suites.map(s => this._serializeSuite(s)),
+      tests: suite.tests.map(t => this._serializeTest(t)),
     };
+    return result;
   }
 
-  private _serializeTest(test: TestCase, fileId: string): JsonTestCase {
-    const [, projectName, , ...titles] = test.titlePath();
-    const testIdExpression = `project:${projectName}|path:${titles.join('>')}|repeat:${test.repeatEachIndex}`;
-    const testId = fileId + '-' + calculateSha1(testIdExpression);
+  private _serializeTest(test: TestCase): JsonTestCase {
     return {
-      testId,
+      testId: test.id,
       title: test.title,
       location: this._relativeLocation(test.location)!,
       expectedStatus: test.expectedStatus,
@@ -227,7 +246,7 @@ class RawReporter {
       duration: result.duration,
       status: result.status,
       errors: formatResultFailure(this.config, test, result, '', true).map(error => error.message),
-      attachments: this._createAttachments(result.attachments, result),
+      attachments: this.generateAttachments(result.attachments, result),
       steps: dedupeSteps(result.steps.map(step => this._serializeStep(test, step)))
     };
   }
@@ -247,34 +266,6 @@ class RawReporter {
     if (step.location)
       this.stepsInFile.set(step.location.file, result);
     return result;
-  }
-
-  private _createAttachments(attachments: TestResult['attachments'], ioStreams?: Pick<TestResult, 'stdout' | 'stderr'>): JsonAttachment[] {
-    const out: JsonAttachment[] = [];
-    for (const attachment of attachments) {
-      if (attachment.body) {
-        out.push({
-          name: attachment.name,
-          contentType: attachment.contentType,
-          body: attachment.body
-        });
-      } else if (attachment.path) {
-        out.push({
-          name: attachment.name,
-          contentType: attachment.contentType,
-          path: attachment.path
-        });
-      }
-    }
-
-    if (ioStreams) {
-      for (const chunk of ioStreams.stdout)
-        out.push(this._stdioAttachment(chunk, 'stdout'));
-      for (const chunk of ioStreams.stderr)
-        out.push(this._stdioAttachment(chunk, 'stderr'));
-    }
-
-    return out;
   }
 
   private _stdioAttachment(chunk: Buffer | string, type: 'stdout' | 'stderr'): JsonAttachment {
@@ -318,6 +309,14 @@ function dedupeSteps(steps: JsonTestStep[]): JsonTestStep[] {
     lastStep = canDedupe ? step : undefined;
   }
   return result;
+}
+
+function filterOutPrivateFields(object: any): any {
+  if (!object || typeof object !== 'object')
+    return object;
+  if (Array.isArray(object))
+    return object.map(filterOutPrivateFields);
+  return Object.fromEntries(Object.entries(object).filter(entry => !entry[0].startsWith('_')).map(entry => [entry[0], filterOutPrivateFields(entry[1])]));
 }
 
 export default RawReporter;

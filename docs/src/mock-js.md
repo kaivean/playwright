@@ -5,10 +5,7 @@ title: "Mock APIs"
 
 Playwright provides native support for most of the browser features. However, there are some experimental APIs
 and APIs which are not (yet) fully supported by all browsers. Playwright usually doesn't provide dedicated
-atomation APIs in such cases. You can use mocks to test behavior of your application in such cases. This guide
-gives a few examples.
-
-<!-- TOC -->
+automation APIs in such cases. You can use mocks to test the behavior of your application in such cases. This guide gives a few examples.
 
 ## Introduction
 
@@ -18,8 +15,7 @@ battery status.
 
 ## Creating mocks
 
-Since the page may be calling the API very early while loading it's important to setup all the mocks before the 
-page started loading. The easiest way to achieve that is to call [`method: Page.addInitScript`]:
+Since the page may be calling the API very early while loading it's important to setup all the mocks before the page started loading. The easiest way to achieve that is to call [`method: Page.addInitScript`]:
 
 ```js
 await page.addInitScript(() => {
@@ -111,7 +107,7 @@ would. The following test demonstrates how to achieve that:
 ```js
 test('update battery status (no golden)', async ({ page }) => {
   await page.addInitScript(() => {
-    // Mock class that will notify corresponding listners when battery status changes.
+    // Mock class that will notify corresponding listeners when battery status changes.
     class BatteryMock {
       level = 0.10;
       charging = false;

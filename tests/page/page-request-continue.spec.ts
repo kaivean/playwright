@@ -36,6 +36,44 @@ it('should amend HTTP headers', async ({ page, server }) => {
   expect(request.headers['foo']).toBe('bar');
 });
 
+it('should delete header with undefined value', async ({ page, server, browserName }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/13106' });
+
+  await page.goto(server.PREFIX + '/empty.html');
+  server.setRoute('/something', (request, response) => {
+    response.writeHead(200, { 'Access-Control-Allow-Origin': '*' });
+    response.end('done');
+  });
+  let interceptedRequest;
+  await page.route(server.PREFIX + '/something', async (route, request) => {
+    interceptedRequest = request;
+    const headers = await request.allHeaders();
+    route.continue({
+      headers: {
+        ...headers,
+        foo: undefined
+      }
+    });
+  });
+
+  const [text, serverRequest] = await Promise.all([
+    page.evaluate(async url => {
+      const data = await fetch(url, {
+        headers: {
+          foo: 'a',
+          bar: 'b',
+        }
+      });
+      return data.text();
+    }, server.PREFIX + '/something'),
+    server.waitForRequest('/something')
+  ]);
+  expect(text).toBe('done');
+  expect(interceptedRequest.headers()['foo']).toEqual(undefined);
+  expect(serverRequest.headers.foo).toBeFalsy();
+  expect(serverRequest.headers.bar).toBe('b');
+});
+
 it('should amend method', async ({ page, server }) => {
   const sRequest = server.waitForRequest('/sleep.zzz');
   await page.goto(server.EMPTY_PAGE);
@@ -49,17 +87,15 @@ it('should amend method', async ({ page, server }) => {
 });
 
 it('should override request url', async ({ page, server }) => {
-  const request = server.waitForRequest('/global-var.html');
+  const serverRequest = server.waitForRequest('/global-var.html');
   await page.route('**/foo', route => {
     route.continue({ url: server.PREFIX + '/global-var.html' });
   });
-  const [response] = await Promise.all([
-    page.waitForEvent('response'),
-    page.goto(server.PREFIX + '/foo'),
-  ]);
-  expect(response.url()).toBe(server.PREFIX + '/foo');
+  const response = await page.goto(server.PREFIX + '/foo');
+  expect(response.request().url()).toBe(server.PREFIX + '/global-var.html');
+  expect(response.url()).toBe(server.PREFIX + '/global-var.html');
   expect(await page.evaluate(() => window['globalVar'])).toBe(123);
-  expect((await request).method).toBe('GET');
+  expect((await serverRequest).method).toBe('GET');
 });
 
 it('should not allow changing protocol when overriding url', async ({ page, server }) => {
@@ -79,7 +115,9 @@ it('should not allow changing protocol when overriding url', async ({ page, serv
   expect(error.message).toContain('New URL must have same protocol as overridden URL');
 });
 
-it('should not throw when continuing while page is closing', async ({ page, server }) => {
+it('should not throw when continuing while page is closing', async ({ page, server, isWebView2 }) => {
+  it.skip(isWebView2, 'Page.close() is not supported in WebView2');
+
   let done;
   await page.route('**/*', async route => {
     done = Promise.all([
@@ -92,7 +130,9 @@ it('should not throw when continuing while page is closing', async ({ page, serv
   expect(error).toBeInstanceOf(Error);
 });
 
-it('should not throw when continuing after page is closed', async ({ page, server }) => {
+it('should not throw when continuing after page is closed', async ({ page, server, isWebView2 }) => {
+  it.skip(isWebView2, 'Page.close() is not supported in WebView2');
+
   let done;
   await page.route('**/*', async route => {
     await page.close();
@@ -123,8 +163,6 @@ it('should amend method on main request', async ({ page, server }) => {
 });
 
 it.describe('post data', () => {
-  it.fixme(({ isAndroid }) => isAndroid, 'Post data does not work');
-
   it('should amend post data', async ({ page, server }) => {
     await page.goto(server.EMPTY_PAGE);
     await page.route('**/*', route => {
@@ -135,6 +173,24 @@ it.describe('post data', () => {
       page.evaluate(() => fetch('/sleep.zzz', { method: 'POST', body: 'birdy' }))
     ]);
     expect((await serverRequest.postBody).toString('utf8')).toBe('doggo');
+  });
+
+  it('should compute content-length from post data', async ({ page, server }) => {
+    it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16027' });
+    await page.goto(server.EMPTY_PAGE);
+    const data = 'a'.repeat(7500);
+    await page.route('**/*', route => {
+      const headers = route.request().headers();
+      headers['content-type'] =  'application/json';
+      route.continue({ postData: data, headers });
+    });
+    const [serverRequest] = await Promise.all([
+      server.waitForRequest('/sleep.zzz'),
+      page.evaluate(() => fetch('/sleep.zzz', { method: 'PATCH', body: 'birdy' }))
+    ]);
+    expect((await serverRequest.postBody).toString('utf8')).toBe(data);
+    expect(serverRequest.headers['content-length']).toBe(String(data.length));
+    expect(serverRequest.headers['content-type']).toBe('application/json');
   });
 
   it('should amend method and post data', async ({ page, server }) => {
@@ -192,6 +248,25 @@ it.describe('post data', () => {
     for (let i = 0; i < arr.length; ++i)
       expect(arr[i]).toBe(buffer[i]);
   });
+
+  it('should use content-type from original request', async ({ page, server, browserName }) => {
+    it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16736' });
+    it.fixme(browserName === 'firefox');
+    await page.goto(server.EMPTY_PAGE);
+    await page.route(`${server.PREFIX}/title.html`, route => route.continue({ postData: '{"b":2}' }));
+    const [request] = await Promise.all([
+      server.waitForRequest('/title.html'),
+      page.evaluate(async url => {
+        await fetch(url, {
+          method: 'POST',
+          body: '{"a":1}',
+          headers: { 'content-type': 'application/json' },
+        });
+      }, `${server.PREFIX}/title.html`)
+    ]);
+    expect(request.headers['content-type']).toBe('application/json');
+    expect((await request.postBody).toString('utf-8')).toBe('{"b":2}');
+  });
 });
 
 it('should work with Cross-Origin-Opener-Policy', async ({ page, server, browserName }) => {
@@ -245,4 +320,57 @@ it('should work with Cross-Origin-Opener-Policy', async ({ page, server, browser
   expect(events).toEqual(['request', 'response', 'requestfinished']);
   expect(requests.size).toBe(1);
   expect(response.request().failure()).toBeNull();
+});
+
+it('should delete the origin header', async ({ page, server, isAndroid, browserName }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/13106' });
+  it.skip(isAndroid, 'No cross-process on Android');
+  it.fail(browserName === 'webkit', 'Does not delete origin in webkit');
+
+  await page.goto(server.PREFIX + '/empty.html');
+  server.setRoute('/something', (request, response) => {
+    response.writeHead(200, { 'Access-Control-Allow-Origin': '*' });
+    response.end('done');
+  });
+  let interceptedRequest;
+  await page.route(server.CROSS_PROCESS_PREFIX + '/something', async (route, request) => {
+    interceptedRequest = request;
+    const headers = await request.allHeaders();
+    delete headers['origin'];
+    route.continue({ headers });
+  });
+
+  const [text, serverRequest] = await Promise.all([
+    page.evaluate(async url => {
+      const data = await fetch(url);
+      return data.text();
+    }, server.CROSS_PROCESS_PREFIX + '/something'),
+    server.waitForRequest('/something')
+  ]);
+  expect(text).toBe('done');
+  expect(interceptedRequest.headers()['origin']).toEqual(undefined);
+  expect(serverRequest.headers.origin).toBeFalsy();
+});
+
+it('should continue preload link requests', async ({ page, server, browserName }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16745' });
+  let intercepted = false;
+  await page.route('**/one-style.css', route => {
+    intercepted = true;
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        'custom': 'value'
+      }
+    });
+  });
+  const [serverRequest] = await Promise.all([
+    server.waitForRequest('/one-style.css'),
+    page.goto(server.PREFIX + '/preload.html')
+  ]);
+  expect(serverRequest.headers['custom']).toBe('value');
+  await page.waitForFunction(() => (window as any).preloadedStyles);
+  expect(intercepted).toBe(true);
+  const color = await page.evaluate(() => window.getComputedStyle(document.body).backgroundColor);
+  expect(color).toBe('rgb(255, 192, 203)');
 });

@@ -1,21 +1,11 @@
-import { PlaywrightTestConfig, devices } from '@playwright/test';
+import { type PlaywrightTestConfig, devices } from '@playwright/experimental-ct-vue';
 
 const config: PlaywrightTestConfig = {
   testDir: 'src',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? [
-    ['html', { open: 'never' }],
-  ] : [
-    ['html', { open: 'on-failure' }]
-  ],
-  webServer: {
-    url: 'http://localhost:3000/tests.html',
-    command: 'npm run dev',
-    reuseExistingServer: !process.env.CI,
-  },
+  reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3000/tests.html',
     trace: 'on-first-retry',
   },
   projects: [

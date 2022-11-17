@@ -15,19 +15,41 @@
  */
 
 import type { TestError } from '../types/testReporter';
-import type { Config, TestStatus } from './types';
+import type { ConfigCLIOverrides } from './runner';
+import type { TestStatus } from './types';
 
 export type SerializedLoaderData = {
-  defaultConfig: Config;
-  overrides: Config;
-  configFile: { file: string } | { configDir: string };
+  configFile: string | undefined;
+  configDir: string;
+  configCLIOverrides: ConfigCLIOverrides;
 };
+
+export type TtyParams = {
+  rows: number | undefined;
+  columns: number | undefined;
+  colorDepth: number;
+};
+
+export type WorkerIsolation =
+  'isolate-projects' |  // create new worker for new project type
+  'isolate-pools';      // create new worker for new worker fixture pool digest
+
+
 export type WorkerInitParams = {
+  workerIsolation: WorkerIsolation;
   workerIndex: number;
   parallelIndex: number;
   repeatEachIndex: number;
-  projectIndex: number;
+  projectId: string;
   loader: SerializedLoaderData;
+  stdoutParams: TtyParams;
+  stderrParams: TtyParams;
+};
+
+export type WatchTestResolvedPayload = {
+  testId: string;
+  title: string;
+  location: { file: string, line: number, column: number };
 };
 
 export type TestBeginPayload = {
@@ -60,6 +82,7 @@ export type StepBeginPayload = {
 export type StepEndPayload = {
   testId: string;
   stepId: string;
+  refinedTitle?: string;
   wallTime: number;  // milliseconds since unix epoch
   error?: TestError;
 };
@@ -72,11 +95,13 @@ export type TestEntry = {
 export type RunPayload = {
   file: string;
   entries: TestEntry[];
+  watchMode: boolean;
 };
 
 export type DonePayload = {
   fatalErrors: TestError[];
   skipTestsDueToSetupFailure: string[];  // test ids
+  fatalUnknownTestIds?: string[];
 };
 
 export type TestOutputPayload = {

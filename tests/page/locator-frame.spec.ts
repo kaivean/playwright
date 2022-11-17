@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import { test as it, expect } from './pageTest';
 
 async function routeIframe(page: Page) {
@@ -30,11 +30,12 @@ async function routeIframe(page: Page) {
       body: `
         <html>
           <div>
-            <button>Hello iframe</button>
+            <button data-testid="buttonId">Hello iframe</button>
             <iframe src="iframe-2.html"></iframe>
           </div>
           <span>1</span>
           <span>2</span>
+          <label for=target>Name</label><input id=target type=text placeholder=Placeholder title=Title alt=Alternative>
         </html>`,
       contentType: 'text/html'
     }).catch(() => {});
@@ -96,8 +97,8 @@ it('should work for $ and $$', async ({ page, server }) => {
 
 it('should wait for frame', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
-  const error = await page.frameLocator('iframe').locator('span').click({ timeout: 300 }).catch(e => e);
-  expect(error.message).toContain('waiting for frame "iframe"');
+  const error = await page.locator('body').frameLocator('iframe').locator('span').click({ timeout: 1000 }).catch(e => e);
+  expect(error.message).toContain(`waiting for locator('body').frameLocator('iframe')`);
 });
 
 it('should wait for frame 2', async ({ page, server }) => {
@@ -106,7 +107,9 @@ it('should wait for frame 2', async ({ page, server }) => {
   await page.frameLocator('iframe').locator('button').click();
 });
 
-it('should wait for frame to go', async ({ page, server }) => {
+it('should wait for frame to go', async ({ page, server, isAndroid }) => {
+  it.fixme(isAndroid);
+
   await routeIframe(page);
   await page.goto(server.EMPTY_PAGE);
   setTimeout(() => page.$eval('iframe', e => e.remove()).catch(() => {}), 300);
@@ -222,7 +225,7 @@ it('locator.frameLocator should throw on ambiguity', async ({ page, server }) =>
   await page.goto(server.EMPTY_PAGE);
   const button = page.locator('body').frameLocator('iframe').locator('button');
   const error = await button.waitFor().catch(e => e);
-  expect(error.message).toContain('Error: strict mode violation: "body >> iframe" resolved to 3 elements');
+  expect(error.message).toContain(`Error: strict mode violation: locator('body').locator('iframe') resolved to 3 elements`);
 });
 
 it('locator.frameLocator should not throw on first/last/nth', async ({ page, server }) => {
@@ -234,4 +237,23 @@ it('locator.frameLocator should not throw on first/last/nth', async ({ page, ser
   await expect(button2).toHaveText('Hello from iframe-2.html');
   const button3 = page.locator('body').frameLocator('iframe').last().locator('button');
   await expect(button3).toHaveText('Hello from iframe-3.html');
+});
+
+it('getBy coverage', async ({ page, server }) => {
+  await routeIframe(page);
+  await page.goto(server.EMPTY_PAGE);
+  const button1 = page.frameLocator('iframe').getByRole('button');
+  const button2 = page.frameLocator('iframe').getByText('Hello');
+  const button3 = page.frameLocator('iframe').getByTestId('buttonId');
+  await expect(button1).toHaveText('Hello iframe');
+  await expect(button2).toHaveText('Hello iframe');
+  await expect(button3).toHaveText('Hello iframe');
+  const input1 = page.frameLocator('iframe').getByLabel('Name');
+  await expect(input1).toHaveValue('');
+  const input2 = page.frameLocator('iframe').getByPlaceholder('Placeholder');
+  await expect(input2).toHaveValue('');
+  const input3 = page.frameLocator('iframe').getByAltText('Alternative');
+  await expect(input3).toHaveValue('');
+  const input4 = page.frameLocator('iframe').getByTitle('Title');
+  await expect(input4).toHaveValue('');
 });

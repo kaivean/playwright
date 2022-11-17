@@ -1,4 +1,5 @@
 # class: PlaywrightAssertions
+* since: v1.17
 
 Playwright gives you Web-First Assertions with convenience methods for creating assertions that will wait and retry until the expected condition is met.
 
@@ -9,7 +10,7 @@ import { test, expect } from '@playwright/test';
 
 test('status becomes submitted', async ({ page }) => {
   // ...
-  await page.click('#submit-button')
+  await page.locator('#submit-button').click()
   await expect(page.locator('.status')).toHaveText('Submitted');
 });
 ```
@@ -19,7 +20,7 @@ from playwright.async_api import Page, expect
 
 async def test_status_becomes_submitted(page: Page) -> None:
     # ..
-    await page.click("#submit-button")
+    await page.locator("#submit-button").click()
     await expect(page.locator(".status")).to_have_text("Submitted")
 ```
 
@@ -28,7 +29,7 @@ from playwright.sync_api import Page, expect
 
 def test_status_becomes_submitted(page: Page) -> None:
     # ..
-    page.click("#submit-button")
+    page.locator("#submit-button").click()
     expect(page.locator(".status")).to_have_text("Submitted")
 ```
 
@@ -41,7 +42,7 @@ public class TestExample {
   @Test
   void statusBecomesSubmitted() {
     ...
-    page.click("#submit-button");
+    page.locator("#submit-button").click();
     assertThat(page.locator(".status")).hasText("Submitted");
   }
 }
@@ -52,15 +53,16 @@ using System.Threading.Tasks;
 using Microsoft.Playwright.NUnit;
 using NUnit.Framework;
 
-namespace Playwright.TestingHarnessTest.NUnit
+namespace PlaywrightTests;
+
+[TestFixture]
+public class ExampleTests : PageTest
 {
-    public class ExampleTests : PageTest
+    [Test]
+    public async Task StatusBecomesSubmitted()
     {
-        [Test]
-        public async Task StatusBecomesSubmitted()
-        {
-            await Expect(Page.Locator(".status")).ToHaveTextAsync("Submitted");
-        }
+        await Page.Locator("#submit-button").ClickAsync();
+        await Expect(Page.Locator(".status")).ToHaveTextAsync("Submitted");
     }
 }
 ```
@@ -72,7 +74,8 @@ reached. You can pass this timeout as an option.
 By default, the timeout for assertions is set to 5 seconds.
 
 ## method: PlaywrightAssertions.expectAPIResponse
-* langs: js, java, python
+* since: v1.18
+* langs:
   - alias-java: assertThat
   - alias-python: expect
   - alias-js: expect
@@ -86,11 +89,13 @@ PlaywrightAssertions.assertThat(response).isOK();
 ```
 
 ### param: PlaywrightAssertions.expectAPIResponse.response
+* since: v1.18
 - `response` <[APIResponse]>
 
 [APIResponse] object to use for assertions.
 
 ## method: PlaywrightAssertions.expectLocator
+* since: v1.18
 * langs:
   - alias-java: assertThat
   - alias-python: expect
@@ -109,11 +114,13 @@ await Expect(locator).ToBeVisibleAsync();
 ```
 
 ### param: PlaywrightAssertions.expectLocator.locator
+* since: v1.18
 - `locator` <[Locator]>
 
 [Locator] object to use for assertions.
 
 ## method: PlaywrightAssertions.expectPage
+* since: v1.18
 * langs:
   - alias-java: assertThat
   - alias-python: expect
@@ -132,6 +139,23 @@ await Expect(page).ToHaveTitleAsync("News");
 ```
 
 ### param: PlaywrightAssertions.expectPage.page
+* since: v1.18
 - `page` <[Page]>
 
 [Page] object to use for assertions.
+
+## method: PlaywrightAssertions.setDefaultAssertionTimeout
+* since: v1.25
+* langs: java
+
+Changes default timeout for Playwright assertions from 5 seconds to the specified value.
+
+```java
+PlaywrightAssertions.setDefaultAssertionTimeout(30_000);
+```
+
+### param: PlaywrightAssertions.setDefaultAssertionTimeout.timeout
+* since: v1.25
+- `timeout` <[float]>
+
+Timeout in milliseconds.

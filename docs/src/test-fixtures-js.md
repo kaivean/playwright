@@ -3,17 +3,13 @@ id: test-fixtures
 title: "Advanced: fixtures"
 ---
 
-<!-- TOC -->
-
-## Introduction to fixtures
-
 Playwright Test is based on the concept of test fixtures. Test fixtures are used to establish environment for each test, giving the test everything it needs and nothing else. Test fixtures are isolated between tests. With fixtures, you can group tests based on their meaning, instead of their common setup.
 
 ### Built-in fixtures
 
 You have already used test fixtures in your first test.
 
-```js js-flavor=js
+```js tab=js-js
 const { test, expect } = require('@playwright/test');
 
 test('basic test', async ({ page }) => {
@@ -23,7 +19,7 @@ test('basic test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test, expect } from '@playwright/test';
 
 test('basic test', async ({ page }) => {
@@ -48,7 +44,7 @@ Here is a list of the pre-defined fixtures that you are likely to use most of th
 
 Here is how typical test environment setup differs between traditional test style and the fixture-based one.
 
-We assume a `TodoPage` class that helps interacting with a "todo list" page of the web app, following the [Page Object Model](./test-pom.md) pattern. It uses Playwright's `page` internally.
+We assume a `TodoPage` class that helps interacting with a "todo list" page of the web app, following the [Page Object Model](./pom.md) pattern. It uses Playwright's `page` internally.
 
 ```js
 // todo.spec.js
@@ -91,7 +87,7 @@ Fixtures have a number of advantages over before/after hooks:
 - Fixtures are **flexible**. Tests can use any combinations of the fixtures to tailor precise environment they need, without affecting other tests.
 - Fixtures simplify **grouping**. You no longer need to wrap tests in `describe`s that set up environment, and are free to group your tests by their meaning instead.
 
-```js js-flavor=js
+```js tab=js-js
 // todo.spec.js
 const base = require('@playwright/test');
 const { TodoPage } = require('./todo-page');
@@ -119,7 +115,7 @@ test('should remove an item', async ({ todoPage }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test as base } from '@playwright/test';
 import { TodoPage } from './todo-page';
@@ -151,9 +147,9 @@ test('should remove an item', async ({ todoPage }) => {
 
 To create your own fixture, use [`method: Test.extend`] to create a new `test` object that will include it.
 
-Below we create two fixtures `todoPage` and `settingsPage` that follow the [Page Object Model](./test-pom.md) pattern.
+Below we create two fixtures `todoPage` and `settingsPage` that follow the [Page Object Model](./pom.md) pattern.
 
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const base = require('@playwright/test');
 const { TodoPage } = require('./todo-page');
@@ -183,7 +179,7 @@ exports.test = base.test.extend({
 exports.expect = base.expect;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import { test as base } from '@playwright/test';
 import { TodoPage } from './todo-page';
@@ -219,13 +215,17 @@ export const test = base.extend<MyFixtures>({
 export { expect } from '@playwright/test';
 ```
 
+:::note
+Custom fixture names should start with a letter or underscore, and can contain only letters, numbers, underscores.
+:::
+
 ## Using a fixture
 
 Just mention fixture in your test function argument, and test runner will take care of it. Fixtures are also available in hooks and other fixtures. If you use TypeScript, fixtures will have the right type.
 
 Below we use the `todoPage` and `settingsPage` fixtures defined above.
 
-```js js-flavor=js
+```js tab=js-js
 const { test, expect } = require('./my-test');
 
 test.beforeEach(async ({ settingsPage }) => {
@@ -238,7 +238,7 @@ test('basic test', async ({ todoPage, page }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test, expect } from './my-test';
 
 test.beforeEach(async ({ settingsPage }) => {
@@ -255,7 +255,7 @@ test('basic test', async ({ todoPage, page }) => {
 
 In addition to creating your own fixtures, you can also override existing fixtures to fit your needs. Consider the following example which overrides the `page` fixture by automatically navigating to some `baseURL`:
 
-```js js-flavor=js
+```js tab=js-js
 const base = require('@playwright/test');
 
 exports.test = base.test.extend({
@@ -266,7 +266,7 @@ exports.test = base.test.extend({
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test as base } from '@playwright/test';
 
 export const test = base.extend({
@@ -279,13 +279,13 @@ export const test = base.extend({
 
 Notice that in this example, the `page` fixture is able to depend on other built-in fixtures such as [`property: TestOptions.baseURL`]. We can now configure `baseURL` in the configuration file, or locally in the test file with [`method: Test.use`].
 
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 
 test.use({ baseURL: 'https://playwright.dev' });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 
 test.use({ baseURL: 'https://playwright.dev' });
@@ -293,7 +293,7 @@ test.use({ baseURL: 'https://playwright.dev' });
 
 Fixtures can also be overridden where the base fixture is completely replaced with something different. For example, we could override the [`property: TestOptions.storageState`] fixture to provide our own data.
 
-```js js-flavor=js
+```js tab=js-js
 const base = require('@playwright/test');
 
 exports.test = base.test.extend({
@@ -304,7 +304,7 @@ exports.test = base.test.extend({
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test as base } from '@playwright/test';
 
 export const test = base.extend({
@@ -321,7 +321,7 @@ Playwright Test uses [worker processes](./test-parallel.md) to run test files. S
 
 Below we'll create an `account` fixture that will be shared by all tests in the same worker, and override the `page` fixture to login into this account for each test. To generate unique accounts, we'll use the [`property: WorkerInfo.workerIndex`] that is available to any test or fixture. Note the tuple-like syntax for the worker fixture - we have to pass `{scope: 'worker'}` so that test runner sets up this fixture once per worker.
 
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const base = require('@playwright/test');
 
@@ -334,9 +334,9 @@ exports.test = base.test.extend({
     // Create the account with Playwright.
     const page = await browser.newPage();
     await page.goto('/signup');
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('text=Sign up').click();
+    await page.getByLabel('User Name').fill(username);
+    await page.getByLabel('Password').fill(password);
+    await page.getByText('Sign up').click();
     // Make sure everything is ok.
     await expect(page.locator('#result')).toHaveText('Success');
     // Do not forget to cleanup.
@@ -348,10 +348,11 @@ exports.test = base.test.extend({
 
   page: async ({ page, account }, use) => {
     // Sign in with our account.
+    const { username, password } = account;
     await page.goto('/signin');
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('text=Sign in').click();
+    await page.getByLabel('User Name').fill(username);
+    await page.getByLabel('Password').fill(password);
+    await page.getByText('Sign in').click();
     await expect(page.locator('#userinfo')).toHaveText(username);
 
     // Use signed-in page in the test.
@@ -361,7 +362,7 @@ exports.test = base.test.extend({
 exports.expect = base.expect;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import { test as base } from '@playwright/test';
 
@@ -380,9 +381,9 @@ export const test = base.extend<{}, { account: Account }>({
     // Create the account with Playwright.
     const page = await browser.newPage();
     await page.goto('/signup');
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('text=Sign up').click();
+    await page.getByLabel('User Name').fill(username);
+    await page.getByLabel('Password').fill(password);
+    await page.getByText('Sign up').click();
     // Make sure everything is ok.
     await expect(page.locator('#result')).toHaveText('Success');
     // Do not forget to cleanup.
@@ -394,10 +395,11 @@ export const test = base.extend<{}, { account: Account }>({
 
   page: async ({ page, account }, use) => {
     // Sign in with our account.
+    const { username, password } = account;
     await page.goto('/signin');
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('text=Sign in').click();
+    await page.getByLabel('User Name').fill(username);
+    await page.getByLabel('Password').fill(password);
+    await page.getByText('Sign in').click();
     await expect(page.locator('#userinfo')).toHaveText(username);
 
     // Use signed-in page in the test.
@@ -413,7 +415,7 @@ Automatic fixtures are set up for each test/worker, even when the test does not 
 
 Here is an example fixture that automatically attaches debug logs when the test fails, so we can later review the logs in the reporter. Note how it uses [TestInfo] object that is available in each test/fixture to retrieve metadata about the test being run.
 
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const debug = require('debug');
 const fs = require('fs');
@@ -439,7 +441,7 @@ exports.test = base.test.extend({
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import * as debug from 'debug';
 import * as fs from 'fs';
@@ -470,7 +472,7 @@ export { expect } from '@playwright/test';
 
 By default, fixture shares timeout with the test. However, for slow fixtures, especially [worker-scoped](#worker-scoped-fixtures) ones, it is convenient to have a separate timeout. This way you can keep the overall test timeout small, and give the slow fixture more time.
 
-```js js-flavor=js
+```js tab=js-js
 const { test: base, expect } = require('@playwright/test');
 
 const test = base.extend({
@@ -485,7 +487,7 @@ test('example test', async ({ slowFixture }) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test as base, expect } from '@playwright/test';
 
 const test = base.extend<{ slowFixture: string }>({
@@ -512,7 +514,7 @@ Playwright Test supports running multiple test projects that can be separately c
 Below we'll create a `defaultItem` option in addition to the `todoPage` fixture from other examples. This option will be set in configuration file. Note the tuple syntax and `{ option: true }` argument.
 
 
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const base = require('@playwright/test');
 const { TodoPage } = require('./todo-page');
@@ -534,7 +536,7 @@ exports.test = base.test.extend({
 exports.expect = base.expect;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import { test as base } from '@playwright/test';
 import { TodoPage } from './todo-page';
@@ -567,7 +569,7 @@ export { expect } from '@playwright/test';
 
 We can now use `todoPage` fixture as usual, and set the `defaultItem` option in the config file.
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 
@@ -588,9 +590,9 @@ const config = {
 module.exports = config;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 import { MyOptions } from './my-test';
 
 const config: PlaywrightTestConfig<MyOptions> = {
@@ -607,3 +609,144 @@ const config: PlaywrightTestConfig<MyOptions> = {
 };
 export default config;
 ```
+
+## Execution order
+
+Each fixture has a setup and teardown phase separated by the `await use()` call in the fixture. Setup is executed before the fixture is used by the test/hook, and teardown is executed when the fixture will not be used by the test/hook anymore.
+
+Fixtures follow these rules to determine the execution order:
+* When fixture A depends on fixture B: B is always set up before A and teared down after A.
+* Non-automatic fixtures are executed lazily, only when the test/hook needs them.
+* Test-scoped fixtures are teared down after each test, while worker-scoped fixtures are only teared down when the worker process executing tests is shutdown.
+
+Consider the following example:
+
+```js tab=js-js
+const { test: base } = require('@playwright/test');
+
+const test = base.extend({
+  workerFixture: [async ({ browser }) => {
+    // workerFixture setup...
+    await use('workerFixture');
+    // workerFixture teardown...
+  }, { scope: 'worker' }],
+
+  autoWorkerFixture: [async ({ browser }) => {
+    // autoWorkerFixture setup...
+    await use('autoWorkerFixture');
+    // autoWorkerFixture teardown...
+  }, { scope: 'worker', auto: true }],
+
+  testFixture: [async ({ page, workerFixture }) => {
+    // testFixture setup...
+    await use('testFixture');
+    // testFixture teardown...
+  }, { scope: 'test' }],
+
+  autoTestFixture: [async () => {
+    // autoTestFixture setup...
+    await use('autoTestFixture');
+    // autoTestFixture teardown...
+  }, { scope: 'test', auto: true }],
+
+  unusedFixture: [async ({ page }) => {
+    // unusedFixture setup...
+    await use('unusedFixture');
+    // unusedFixture teardown...
+  }, { scope: 'test' }],
+});
+
+test.beforeAll(async () => { /* ... */ });
+test.beforeEach(async ({ page }) => { /* ... */ });
+test('first test', async ({ page }) => { /* ... */ });
+test('second test', async ({ testFixture }) => { /* ... */ });
+test.afterEach(async () => { /* ... */ });
+test.afterAll(async () => { /* ... */ });
+```
+
+```js tab=js-ts
+import { test as base } from '@playwright/test';
+
+const test = base.extend<{
+  testFixture: string,
+  autoTestFixture: string,
+  unusedFixture: string,
+}, {
+  workerFixture: string,
+  autoWorkerFixture: string,
+}>({
+  workerFixture: [async ({ browser }) => {
+    // workerFixture setup...
+    await use('workerFixture');
+    // workerFixture teardown...
+  }, { scope: 'worker' }],
+
+  autoWorkerFixture: [async ({ browser }) => {
+    // autoWorkerFixture setup...
+    await use('autoWorkerFixture');
+    // autoWorkerFixture teardown...
+  }, { scope: 'worker', auto: true }],
+
+  testFixture: [async ({ page, workerFixture }) => {
+    // testFixture setup...
+    await use('testFixture');
+    // testFixture teardown...
+  }, { scope: 'test' }],
+
+  autoTestFixture: [async () => {
+    // autoTestFixture setup...
+    await use('autoTestFixture');
+    // autoTestFixture teardown...
+  }, { scope: 'test', auto: true }],
+
+  unusedFixture: [async ({ page }) => {
+    // unusedFixture setup...
+    await use('unusedFixture');
+    // unusedFixture teardown...
+  }, { scope: 'test' }],
+});
+
+test.beforeAll(async () => { /* ... */ });
+test.beforeEach(async ({ page }) => { /* ... */ });
+test('first test', async ({ page }) => { /* ... */ });
+test('second test', async ({ testFixture }) => { /* ... */ });
+test.afterEach(async () => { /* ... */ });
+test.afterAll(async () => { /* ... */ });
+```
+
+Normally, if all tests pass and no errors are thrown, the order of execution is as following.
+* worker setup and `beforeAll` section:
+  * `browser` setup because it is required by `autoWorkerFixture`.
+  * `autoWorkerFixture` setup because automatic worker fixtures are always set up before anything else.
+  * `beforeAll` runs.
+* `first test` section:
+  * `autoTestFixture` setup because automatic test fixtures are always set up before test and `beforeEach` hooks.
+  * `page` setup because it is required in `beforeEach` hook.
+  * `beforeEach` runs.
+  * `first test` runs.
+  * `afterEach` runs.
+  * `page` teardown because it is a test-scoped fixture and should be teared down after the test finishes.
+  * `autoTestFixture` teardown because it is a test-scoped fixture and should be teared down after the test finishes.
+* `second test` section:
+  * `autoTestFixture` setup because automatic test fixtures are always set up before test and `beforeEach` hooks.
+  * `page` setup because it is required in `beforeEach` hook.
+  * `beforeEach` runs.
+  * `workerFixture` setup because it is required by `testFixture` that is required by the `second test`.
+  * `testFixture` setup because it is required by the `second test`.
+  * `second test` runs.
+  * `afterEach` runs.
+  * `testFixture` teardown because it is a test-scoped fixture and should be teared down after the test finishes.
+  * `page` teardown because it is a test-scoped fixture and should be teared down after the test finishes.
+  * `autoTestFixture` teardown because it is a test-scoped fixture and should be teared down after the test finishes.
+* `afterAll` and worker teardown section:
+  * `afterAll` runs.
+  * `workerFixture` teardown because it is a workers-scoped fixture and should be teared down once at the end.
+  * `autoWorkerFixture` teardown because it is a workers-scoped fixture and should be teared down once at the end.
+  * `browser` teardown because it is a workers-scoped fixture and should be teared down once at the end.
+
+A few observations:
+* `page` and `autoTestFixture` are set up and teared down for each test, as test-scoped fixtures.
+* `unusedFixture` is never set up because it is not used by any tests/hooks.
+* `testFixture` depends on `workerFixture` and triggers its setup.
+* `workerFixture` is lazily set up before the second test, but teared down once during worker shutdown, as a worker-scoped fixture.
+* `autoWorkerFixture` is set up for `beforeAll` hook, but `autoTestFixture` is not.

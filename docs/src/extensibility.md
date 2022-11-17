@@ -46,14 +46,14 @@ const button = page.locator('tag=button');
 await button.click();
 
 // We can combine it with other selector engines using `>>` combinator.
-await page.click('tag=div >> span >> "Click me"');
+await page.locator('tag=div >> span >> "Click me"').click();
 
 // We can use it in any methods supporting selectors.
 const buttonCount = await page.locator('tag=button').count();
 ```
 
 ```java
-// Must be a script that evaluates to a selector engine instance.
+// Must be a script that evaluates to a selector engine instance.  The script is evaluated in the page context.
 String createTagNameEngine = "{\n" +
   "  // Returns the first element matching given selector in the root's subtree.\n" +
   "  query(root, selector) {\n" +
@@ -74,7 +74,7 @@ Locator button = page.locator("tag=button");
 button.click();
 
 // We can combine it with other selector engines using ">>" combinator.
-page.click("tag=div >> span >> \"Click me\"");
+page.locator("tag=div >> span >> \"Click me\"").click();
 
 // We can use it in any methods supporting selectors.
 int buttonCount = (int) page.locator("tag=button").count();
@@ -103,7 +103,7 @@ button = page.locator("tag=button")
 await button.click()
 
 # we can combine it with other selector engines using `>>` combinator.
-await page.click("tag=div >> span >> "click me"")
+await page.locator("tag=div >> span >> \"click me\"").click()
 
 # we can use it in any methods supporting selectors.
 button_count = await page.locator("tag=button").count()
@@ -132,7 +132,7 @@ button = page.locator("tag=button")
 button.click()
 
 # we can combine it with other selector engines using `>>` combinator.
-page.click("tag=div >> span >> "click me"")
+page.locator("tag=div >> span >> \"click me\"").click()
 
 # we can use it in any methods supporting selectors.
 button_count = page.locator("tag=button").count()

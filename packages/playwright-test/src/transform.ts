@@ -14,24 +14,26 @@
  * limitations under the License.
  */
 
-import * as crypto from 'crypto';
-import * as os from 'os';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as pirates from 'pirates';
-import * as sourceMapSupport from 'source-map-support';
-import * as url from 'url';
+import crypto from 'crypto';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { sourceMapSupport, pirates } from './utilsBundle';
+import url from 'url';
 import type { Location } from './types';
-import { tsConfigLoader, TsConfigLoaderResult } from './third_party/tsconfig-loader';
+import type { TsConfigLoaderResult } from './third_party/tsconfig-loader';
+import { tsConfigLoader } from './third_party/tsconfig-loader';
 import Module from 'module';
+import type { BabelTransformFunction } from './babelBundle';
 
-const version = 8;
+const version = 13;
 const cacheDir = process.env.PWTEST_CACHE_DIR || path.join(os.tmpdir(), 'playwright-transform-cache');
 const sourceMaps: Map<string, string> = new Map();
 
 type ParsedTsConfigData = {
   absoluteBaseUrl: string;
   paths: { key: string, values: string[] }[];
+  allowJs: boolean;
 };
 const cachedTSConfigs = new Map<string, ParsedTsConfigData | undefined>();
 
@@ -72,14 +74,17 @@ function validateTsConfig(tsconfig: TsConfigLoaderResult): ParsedTsConfigData | 
   // Make 'baseUrl' absolute, because it is relative to the tsconfig.json, not to cwd.
   const absoluteBaseUrl = path.resolve(path.dirname(tsconfig.tsConfigPath), tsconfig.baseUrl);
   const paths = tsconfig.paths || { '*': ['*'] };
-  return { absoluteBaseUrl, paths: Object.entries(paths).map(([key, values]) => ({ key, values })) };
+  return {
+    allowJs: tsconfig.allowJs,
+    absoluteBaseUrl,
+    paths: Object.entries(paths).map(([key, values]) => ({ key, values }))
+  };
 }
 
 function loadAndValidateTsconfigForFile(file: string): ParsedTsConfigData | undefined {
   const cwd = path.dirname(file);
   if (!cachedTSConfigs.has(cwd)) {
     const loaded = tsConfigLoader({
-      getEnv: (name: string) => process.env[name],
       cwd
     });
     cachedTSConfigs.set(cwd, validateTsConfig(loaded));
@@ -93,100 +98,106 @@ const scriptPreprocessor = process.env.PW_TEST_SOURCE_TRANSFORM ?
 const builtins = new Set(Module.builtinModules);
 
 export function resolveHook(filename: string, specifier: string): string | undefined {
-  if (builtins.has(specifier))
+  if (specifier.startsWith('node:') || builtins.has(specifier))
     return;
+  if (belongsToNodeModules(filename))
+    return;
+
+  if (isRelativeSpecifier(specifier))
+    return js2ts(path.resolve(path.dirname(filename), specifier));
+
   const isTypeScript = filename.endsWith('.ts') || filename.endsWith('.tsx');
-  if (!isTypeScript)
-    return;
   const tsconfig = loadAndValidateTsconfigForFile(filename);
-  if (!tsconfig)
-    return;
-  for (const { key, values } of tsconfig.paths) {
-    const keyHasStar = key[key.length - 1] === '*';
-    const matches = specifier.startsWith(keyHasStar ? key.substring(0, key.length - 1) : key);
-    if (!matches)
-      continue;
-    for (const value of values) {
-      const valueHasStar = value[value.length - 1] === '*';
-      let candidate = valueHasStar ? value.substring(0, value.length - 1) : value;
-      if (valueHasStar && keyHasStar)
-        candidate += specifier.substring(key.length - 1);
-      candidate = path.resolve(tsconfig.absoluteBaseUrl, candidate.replace(/\//g, path.sep));
-      for (const ext of ['', '.js', '.ts', '.mjs', '.cjs', '.jsx', '.tsx']) {
-        if (fs.existsSync(candidate + ext))
-          return candidate;
+  if (tsconfig && (isTypeScript || tsconfig.allowJs)) {
+    let longestPrefixLength = -1;
+    let pathMatchedByLongestPrefix: string | undefined;
+
+    for (const { key, values } of tsconfig.paths) {
+      let matchedPartOfSpecifier = specifier;
+
+      const [keyPrefix, keySuffix] = key.split('*');
+      if (key.includes('*')) {
+        // * If pattern contains '*' then to match pattern "<prefix>*<suffix>" module name must start with the <prefix> and end with <suffix>.
+        // * <MatchedStar> denotes part of the module name between <prefix> and <suffix>.
+        // * If module name can be matches with multiple patterns then pattern with the longest prefix will be picked.
+        // https://github.com/microsoft/TypeScript/blob/f82d0cb3299c04093e3835bc7e29f5b40475f586/src/compiler/moduleNameResolver.ts#L1049
+        if (keyPrefix) {
+          if (!specifier.startsWith(keyPrefix))
+            continue;
+          matchedPartOfSpecifier = matchedPartOfSpecifier.substring(keyPrefix.length, matchedPartOfSpecifier.length);
+        }
+        if (keySuffix) {
+          if (!specifier.endsWith(keySuffix))
+            continue;
+          matchedPartOfSpecifier = matchedPartOfSpecifier.substring(0, matchedPartOfSpecifier.length - keySuffix.length);
+        }
+      } else {
+        if (specifier !== key)
+          continue;
+        matchedPartOfSpecifier = specifier;
+      }
+
+      if (keyPrefix.length <= longestPrefixLength)
+        continue;
+
+      for (const value of values) {
+        let candidate: string = value;
+
+        if (value.includes('*'))
+          candidate = candidate.replace('*', matchedPartOfSpecifier);
+        candidate = path.resolve(tsconfig.absoluteBaseUrl, candidate.replace(/\//g, path.sep));
+        const ts = js2ts(candidate);
+        if (ts) {
+          longestPrefixLength = keyPrefix.length;
+          pathMatchedByLongestPrefix = ts;
+        } else {
+          for (const ext of ['', '.js', '.ts', '.mjs', '.cjs', '.jsx', '.tsx', '.cjs', '.mts', '.cts']) {
+            if (fs.existsSync(candidate + ext)) {
+              longestPrefixLength = keyPrefix.length;
+              pathMatchedByLongestPrefix = candidate + ext;
+            }
+          }
+        }
       }
     }
+    if (pathMatchedByLongestPrefix)
+      return pathMatchedByLongestPrefix;
+  }
+
+  return js2ts(path.resolve(path.dirname(filename), specifier));
+}
+
+export function js2ts(resolved: string): string | undefined {
+  const match = resolved.match(/(.*)(\.js|\.jsx|\.mjs)$/);
+  if (match) {
+    const tsResolved = match[1] + match[2].replace('j', 't');
+    if (!fs.existsSync(resolved) && fs.existsSync(tsResolved))
+      return tsResolved;
   }
 }
 
-export function transformHook(code: string, filename: string, isModule = false): string {
-  if (isComponentImport(filename))
-    return componentStub();
-
+export function transformHook(code: string, filename: string, moduleUrl?: string): string {
   // If we are not TypeScript and there is no applicable preprocessor - bail out.
+  const isModule = !!moduleUrl;
   const isTypeScript = filename.endsWith('.ts') || filename.endsWith('.tsx');
   const hasPreprocessor =
       process.env.PW_TEST_SOURCE_TRANSFORM &&
       process.env.PW_TEST_SOURCE_TRANSFORM_SCOPE &&
       process.env.PW_TEST_SOURCE_TRANSFORM_SCOPE.split(pathSeparator).some(f => filename.startsWith(f));
 
-  if (!isTypeScript && !hasPreprocessor)
-    return code;
-
   const cachePath = calculateCachePath(code, filename, isModule);
   const codePath = cachePath + '.js';
   const sourceMapPath = cachePath + '.map';
-  sourceMaps.set(filename, sourceMapPath);
+  sourceMaps.set(moduleUrl || filename, sourceMapPath);
   if (!process.env.PW_IGNORE_COMPILE_CACHE && fs.existsSync(codePath))
     return fs.readFileSync(codePath, 'utf8');
   // We don't use any browserslist data, but babel checks it anyway.
   // Silence the annoying warning.
   process.env.BROWSERSLIST_IGNORE_OLD_DATA = 'true';
-  const babel: typeof import('@babel/core') = require('@babel/core');
-  const plugins = [];
-
-  if (isTypeScript) {
-    plugins.push(
-        [require.resolve('@babel/plugin-proposal-class-properties')],
-        [require.resolve('@babel/plugin-proposal-numeric-separator')],
-        [require.resolve('@babel/plugin-proposal-logical-assignment-operators')],
-        [require.resolve('@babel/plugin-proposal-nullish-coalescing-operator')],
-        [require.resolve('@babel/plugin-proposal-optional-chaining')],
-        [require.resolve('@babel/plugin-proposal-private-methods')],
-        [require.resolve('@babel/plugin-syntax-json-strings')],
-        [require.resolve('@babel/plugin-syntax-optional-catch-binding')],
-        [require.resolve('@babel/plugin-syntax-async-generators')],
-        [require.resolve('@babel/plugin-syntax-object-rest-spread')],
-        [require.resolve('@babel/plugin-proposal-export-namespace-from')]
-    );
-
-    if (!isModule) {
-      plugins.push([require.resolve('@babel/plugin-transform-modules-commonjs')]);
-      plugins.push([require.resolve('@babel/plugin-proposal-dynamic-import')]);
-    }
-  }
-
-  plugins.unshift([require.resolve('./tsxTransform')]);
-
-  if (hasPreprocessor)
-    plugins.push([scriptPreprocessor]);
 
   try {
-    const result = babel.transformFileSync(filename, {
-      babelrc: false,
-      configFile: false,
-      assumptions: {
-        // Without this, babel defines a top level function that
-        // breaks playwright evaluates.
-        setPublicClassFields: true,
-      },
-      presets: [
-        [require.resolve('@babel/preset-typescript'), { onlyRemoveTypeImports: true }],
-      ],
-      plugins,
-      sourceMaps: 'both',
-    } as babel.TransformOptions)!;
+    const { babelTransform }: { babelTransform: BabelTransformFunction } = require('./babelBundle');
+    const result = babelTransform(filename, isTypeScript, isModule, hasPreprocessor ? scriptPreprocessor : undefined, [require.resolve('./tsxTransform')]);
     if (result.code) {
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
       if (result.map)
@@ -215,11 +226,11 @@ export function installTransform(): () => void {
   }
   (Module as any)._resolveFilename = resolveFilename;
 
-  const exts = ['.ts', '.tsx'];
-  // When script preprocessor is engaged, we transpile JS as well.
-  if (scriptPreprocessor)
-    exts.push('.js', '.mjs');
-  const revertPirates = pirates.addHook((code: string, filename: string) => transformHook(code, filename), { exts });
+  const revertPirates = pirates.addHook((code: string, filename: string) => {
+    if (belongsToNodeModules(filename))
+      return code;
+    return transformHook(code, filename);
+  }, { exts: ['.ts', '.tsx', '.js', '.jsx', '.mjs'] });
 
   return () => {
     reverted = true;
@@ -252,21 +263,20 @@ export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Lo
   };
 }
 
+// This will catch the playwright-test package as well
+const kPlaywrightInternalPrefix = path.resolve(__dirname, '../../playwright');
+const kPlaywrightCoveragePrefix = path.resolve(__dirname, '../../../tests/config/coverage.js');
 
-let currentlyLoadingTestFile: string | null = null;
-
-export function setCurrentlyLoadingTestFile(file: string | null) {
-  currentlyLoadingTestFile = file;
+export function belongsToNodeModules(file: string) {
+  if (file.includes(`${path.sep}node_modules${path.sep}`))
+    return true;
+  if (file.startsWith(kPlaywrightInternalPrefix))
+    return true;
+  if (file.startsWith(kPlaywrightCoveragePrefix))
+    return true;
+  return false;
 }
 
-function isComponentImport(filename: string): boolean {
-  if (filename === currentlyLoadingTestFile)
-    return false;
-  return filename.endsWith('.tsx') || filename.endsWith('.jsx');
-}
-
-function componentStub(): string {
-  return `module.exports = new Proxy({}, {
-    get: (obj, prop) => prop
-  });`;
+function isRelativeSpecifier(specifier: string) {
+  return specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../');
 }

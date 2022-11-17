@@ -14,99 +14,25 @@
  * limitations under the License.
  */
 
-import colors from 'colors/safe';
+import { colors } from 'playwright-core/lib/utilsBundle';
 import fs from 'fs';
-import open from 'open';
+import { open } from '../utilsBundle';
 import path from 'path';
-import { Transform, TransformCallback } from 'stream';
-import { FullConfig, Suite, Reporter } from '../../types/testReporter';
+import type { TransformCallback } from 'stream';
+import { Transform } from 'stream';
+import type { FullConfig, Suite } from '../../types/testReporter';
 import { HttpServer } from 'playwright-core/lib/utils/httpServer';
-import { calculateSha1, removeFolders } from 'playwright-core/lib/utils/utils';
-import RawReporter, { JsonAttachment, JsonReport, JsonSuite, JsonTestCase, JsonTestResult, JsonTestStep } from './raw';
-import assert from 'assert';
-import yazl from 'yazl';
+import { assert, calculateSha1 } from 'playwright-core/lib/utils';
+import { copyFileAndMakeWritable, removeFolders } from 'playwright-core/lib/utils/fileUtils';
+import type { JsonAttachment, JsonReport, JsonSuite, JsonTestCase, JsonTestResult, JsonTestStep } from './raw';
+import RawReporter from './raw';
 import { stripAnsiEscapes } from './base';
-
-export type Stats = {
-  total: number;
-  expected: number;
-  unexpected: number;
-  flaky: number;
-  skipped: number;
-  ok: boolean;
-  duration: number;
-};
-
-export type Location = {
-  file: string;
-  line: number;
-  column: number;
-};
-
-export type HTMLReport = {
-  attachments: TestAttachment[];
-  files: TestFileSummary[];
-  stats: Stats;
-  projectNames: string[];
-};
-
-export type TestFile = {
-  fileId: string;
-  fileName: string;
-  tests: TestCase[];
-};
-
-export type TestFileSummary = {
-  fileId: string;
-  fileName: string;
-  tests: TestCaseSummary[];
-  stats: Stats;
-};
-
-export type TestCaseSummary = {
-  testId: string,
-  title: string;
-  path: string[];
-  projectName: string;
-  location: Location;
-  annotations: { type: string, description?: string }[];
-  outcome: 'skipped' | 'expected' | 'unexpected' | 'flaky';
-  duration: number;
-  ok: boolean;
-};
-
-export type TestCase = TestCaseSummary & {
-  results: TestResult[];
-};
-
-export type TestAttachment = {
-  name: string;
-  body?: string;
-  path?: string;
-  contentType: string;
-};
-
-
-export type TestResult = {
-  retry: number;
-  startTime: string;
-  duration: number;
-  steps: TestStep[];
-  errors: string[];
-  attachments: TestAttachment[];
-  status: 'passed' | 'failed' | 'timedOut' | 'skipped';
-};
-
-export type TestStep = {
-  title: string;
-  startTime: string;
-  duration: number;
-  location?: Location;
-  snippet?: string;
-  error?: string;
-  steps: TestStep[];
-  count: number;
-};
+import { getPackageJsonPath, sanitizeForFilePath } from '../util';
+import type { FullConfigInternal, Metadata, ReporterInternal } from '../types';
+import type { ZipFile } from 'playwright-core/lib/zipBundle';
+import { yazl } from 'playwright-core/lib/zipBundle';
+import { mime } from 'playwright-core/lib/utilsBundle';
+import type { HTMLReport, Stats, TestAttachment, TestCase, TestCaseSummary, TestFile, TestFileSummary, TestResult, TestStep } from '@html-reporter/types';
 
 type TestEntry = {
   testCase: TestCase;
@@ -115,16 +41,24 @@ type TestEntry = {
 
 const kMissingContentType = 'x-playwright/missing';
 
-class HtmlReporter implements Reporter {
-  private config!: FullConfig;
-  private suite!: Suite;
-  private _outputFolder: string | undefined;
-  private _open: 'always' | 'never' | 'on-failure';
+type HtmlReportOpenOption = 'always' | 'never' | 'on-failure';
+type HtmlReporterOptions = {
+  outputFolder?: string,
+  open?: HtmlReportOpenOption,
+  host?: string,
+  port?: number,
+};
 
-  constructor(options: { outputFolder?: string, open?: 'always' | 'never' | 'on-failure' } = {}) {
-    // TODO: resolve relative to config.
-    this._outputFolder = options.outputFolder;
-    this._open = process.env.PW_TEST_HTML_REPORT_OPEN as any || options.open || 'on-failure';
+class HtmlReporter implements ReporterInternal {
+  private config!: FullConfigInternal;
+  private suite!: Suite;
+  private _options: HtmlReporterOptions;
+  private _outputFolder!: string;
+  private _open: string | undefined;
+  private _buildResult: { ok: boolean, singleTestId: string | undefined } | undefined;
+
+  constructor(options: HtmlReporterOptions = {}) {
+    this._options = options;
   }
 
   printsToStdio() {
@@ -132,8 +66,37 @@ class HtmlReporter implements Reporter {
   }
 
   onBegin(config: FullConfig, suite: Suite) {
-    this.config = config;
+    this.config = config as FullConfigInternal;
+    const { outputFolder, open } = this._resolveOptions();
+    this._outputFolder = outputFolder;
+    this._open = open;
+    const reportedWarnings = new Set<string>();
+    for (const project of config.projects) {
+      if (outputFolder.startsWith(project.outputDir) || project.outputDir.startsWith(outputFolder)) {
+        const key = outputFolder + '|' + project.outputDir;
+        if (reportedWarnings.has(key))
+          continue;
+        reportedWarnings.add(key);
+        console.log(colors.red(`Configuration Error: HTML reporter output folder clashes with the tests output folder:`));
+        console.log(`
+    html reporter folder: ${colors.bold(outputFolder)}
+    test results folder: ${colors.bold(project.outputDir)}`);
+        console.log('');
+        console.log(`HTML reporter will clear its output directory prior to being generated, which will lead to the artifact loss.
+`);
+      }
+    }
     this.suite = suite;
+  }
+
+  _resolveOptions(): { outputFolder: string, open: HtmlReportOpenOption } {
+    let { outputFolder } = this._options;
+    if (outputFolder)
+      outputFolder = path.resolve(this.config._configDir, outputFolder);
+    return {
+      outputFolder: reportFolderFromEnv() ?? outputFolder ?? defaultReportFolder(this.config._configDir),
+      open: process.env.PW_TEST_HTML_REPORT_OPEN as any || this._options.open || 'on-failure',
+    };
   }
 
   async onEnd() {
@@ -143,42 +106,51 @@ class HtmlReporter implements Reporter {
       const report = rawReporter.generateProjectReport(this.config, suite);
       return report;
     });
-    const reportFolder = htmlReportFolder(this._outputFolder);
-    await removeFolders([reportFolder]);
-    const builder = new HtmlBuilder(reportFolder);
-    const { ok, singleTestId } = await builder.build(new RawReporter().generateAttachments(this.config), reports);
+    await removeFolders([this._outputFolder]);
+    const builder = new HtmlBuilder(this._outputFolder);
+    this._buildResult = await builder.build(this.config.metadata, reports);
+  }
 
+  async _onExit() {
     if (process.env.CI)
       return;
 
+    const { ok, singleTestId } = this._buildResult!;
     const shouldOpen = this._open === 'always' || (!ok && this._open === 'on-failure');
     if (shouldOpen) {
-      await showHTMLReport(reportFolder, singleTestId);
+      await showHTMLReport(this._outputFolder, this._options.host, this._options.port, singleTestId);
     } else {
-      const outputFolderPath = htmlReportFolder(this._outputFolder) === defaultReportFolder() ? '' : ' ' + path.relative(process.cwd(), htmlReportFolder(this._outputFolder));
+      const relativeReportPath = this._outputFolder === standaloneDefaultFolder() ? '' : ' ' + path.relative(process.cwd(), this._outputFolder);
       console.log('');
       console.log('To open last HTML report run:');
       console.log(colors.cyan(`
-  npx playwright show-report${outputFolderPath}
+  npx playwright show-report${relativeReportPath}
 `));
     }
   }
 }
 
-export function htmlReportFolder(outputFolder?: string): string {
+function reportFolderFromEnv(): string | undefined {
   if (process.env[`PLAYWRIGHT_HTML_REPORT`])
     return path.resolve(process.cwd(), process.env[`PLAYWRIGHT_HTML_REPORT`]);
-  if (outputFolder)
-    return outputFolder;
-  return defaultReportFolder();
+  return undefined;
 }
 
-function defaultReportFolder(): string {
-  return path.resolve(process.cwd(), 'playwright-report');
+function defaultReportFolder(searchForPackageJson: string): string {
+  let basePath = getPackageJsonPath(searchForPackageJson);
+  if (basePath)
+    basePath = path.dirname(basePath);
+  else
+    basePath = process.cwd();
+  return path.resolve(basePath, 'playwright-report');
 }
 
-export async function showHTMLReport(reportFolder: string | undefined, testId?: string) {
-  const folder = reportFolder || htmlReportFolder();
+function standaloneDefaultFolder(): string {
+  return reportFolderFromEnv() ?? defaultReportFolder(process.cwd());
+}
+
+export async function showHTMLReport(reportFolder: string | undefined, host: string = 'localhost', port?: number, testId?: string) {
+  const folder = reportFolder ?? standaloneDefaultFolder();
   try {
     assert(fs.statSync(folder).isDirectory());
   } catch (e) {
@@ -187,12 +159,12 @@ export async function showHTMLReport(reportFolder: string | undefined, testId?: 
     return;
   }
   const server = startHtmlReportServer(folder);
-  let url = await server.start(9323);
+  let url = await server.start({ port, host, preferredPort: port ? undefined : 9323 });
   console.log('');
   console.log(colors.cyan(`  Serving HTML report at ${url}. Press Ctrl+C to quit.`));
   if (testId)
     url += `#?testId=${testId}`;
-  open(url);
+  await open(url, { wait: true }).catch(() => console.log(`Failed to open browser on ${url}`));
   await new Promise(() => {});
 }
 
@@ -220,16 +192,16 @@ class HtmlBuilder {
   private _reportFolder: string;
   private _tests = new Map<string, JsonTestCase>();
   private _testPath = new Map<string, string[]>();
-  private _dataZipFile: yazl.ZipFile;
+  private _dataZipFile: ZipFile;
   private _hasTraces = false;
 
   constructor(outputDir: string) {
-    this._reportFolder = path.resolve(process.cwd(), outputDir);
+    this._reportFolder = outputDir;
     fs.mkdirSync(this._reportFolder, { recursive: true });
     this._dataZipFile = new yazl.ZipFile();
   }
 
-  async build(testReportAttachments: JsonAttachment[], rawReports: JsonReport[]): Promise<{ ok: boolean, singleTestId: string | undefined }> {
+  async build(metadata: Metadata, rawReports: JsonReport[]): Promise<{ ok: boolean, singleTestId: string | undefined }> {
 
     const data = new Map<string, { testFile: TestFile, testFileSummary: TestFileSummary }>();
     for (const projectJson of rawReports) {
@@ -285,7 +257,7 @@ class HtmlBuilder {
       this._addDataFile(fileId + '.json', testFile);
     }
     const htmlReport: HTMLReport = {
-      attachments: this._serializeAttachments(testReportAttachments),
+      metadata,
       files: [...data.values()].map(e => e.testFileSummary),
       projectNames: rawReports.map(r => r.project.name),
       stats: [...data.values()].reduce((a, e) => addStats(a, e.testFileSummary.stats), emptyStats())
@@ -300,7 +272,7 @@ class HtmlBuilder {
 
     // Copy app.
     const appFolder = path.join(require.resolve('playwright-core'), '..', 'lib', 'webpack', 'htmlReport');
-    fs.copyFileSync(path.join(appFolder, 'index.html'), path.join(this._reportFolder, 'index.html'));
+    await copyFileAndMakeWritable(path.join(appFolder, 'index.html'), path.join(this._reportFolder, 'index.html'));
 
     // Copy trace viewer.
     if (this._hasTraces) {
@@ -310,7 +282,7 @@ class HtmlBuilder {
       for (const file of fs.readdirSync(traceViewerFolder)) {
         if (file.endsWith('.map'))
           continue;
-        fs.copyFileSync(path.join(traceViewerFolder, file), path.join(traceViewerTargetFolder, file));
+        await copyFileAndMakeWritable(path.join(traceViewerFolder, file), path.join(traceViewerTargetFolder, file));
       }
     }
 
@@ -352,6 +324,8 @@ class HtmlBuilder {
     path = [...path.slice(1)];
     this._testPath.set(test.testId, path);
 
+    const results = test.results.map(r => this._createTestResult(r));
+
     return {
       testCase: {
         testId: test.testId,
@@ -362,7 +336,7 @@ class HtmlBuilder {
         annotations: test.annotations,
         outcome: test.outcome,
         path,
-        results: test.results.map(r => this._createTestResult(r)),
+        results,
         ok: test.outcome === 'expected' || test.outcome === 'flaky',
       },
       testCaseSummary: {
@@ -375,6 +349,9 @@ class HtmlBuilder {
         outcome: test.outcome,
         path,
         ok: test.outcome === 'expected' || test.outcome === 'flaky',
+        results: results.map(result => {
+          return { attachments: result.attachments.map(a => ({ name: a.name, contentType: a.contentType, path: a.path })) };
+        }),
       },
     };
   }
@@ -437,13 +414,13 @@ class HtmlBuilder {
         }
 
         fs.mkdirSync(path.join(this._reportFolder, 'data'), { recursive: true });
-        const sha1 = calculateSha1(a.body) + '.dat';
+        const extension = sanitizeForFilePath(path.extname(a.name).replace(/^\./, '')) || mime.getExtension(a.contentType) || 'dat';
+        const sha1 = calculateSha1(a.body) + '.' + extension;
         fs.writeFileSync(path.join(this._reportFolder, 'data', sha1), a.body);
         return {
           name: a.name,
           contentType: a.contentType,
           path: 'data/' + sha1,
-          body: a.body,
         };
       }
 

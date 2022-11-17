@@ -101,7 +101,6 @@ class PageAgent {
       helper.addObserver(this._filePickerShown.bind(this), 'juggler-file-picker-shown'),
       helper.addEventListener(this._messageManager, 'DOMContentLoaded', this._onDOMContentLoaded.bind(this)),
       helper.addObserver(this._onDocumentOpenLoad.bind(this), 'juggler-document-open-loaded'),
-      helper.addEventListener(this._messageManager, 'error', this._onError.bind(this)),
       helper.on(this._frameTree, 'load', this._onLoad.bind(this)),
       helper.on(this._frameTree, 'frameattached', this._onFrameAttached.bind(this)),
       helper.on(this._frameTree, 'framedetached', this._onFrameDetached.bind(this)),
@@ -129,6 +128,7 @@ class PageAgent {
         });
       }),
       this._runtime.events.onConsoleMessage(msg => this._browserPage.emit('runtimeConsole', msg)),
+      this._runtime.events.onRuntimeError(this._onRuntimeError.bind(this)),
       this._runtime.events.onExecutionContextCreated(this._onExecutionContextCreated.bind(this)),
       this._runtime.events.onExecutionContextDestroyed(this._onExecutionContextDestroyed.bind(this)),
       this._runtime.events.onBindingCalled(this._onBindingCalled.bind(this)),
@@ -139,7 +139,6 @@ class PageAgent {
         describeNode: this._describeNode.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchMouseEvent: this._dispatchMouseEvent.bind(this),
-        dispatchWheelEvent: this._dispatchWheelEvent.bind(this),
         dispatchTouchEvent: this._dispatchTouchEvent.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getContentQuads: this._getContentQuads.bind(this),
@@ -149,7 +148,6 @@ class PageAgent {
         insertText: this._insertText.bind(this),
         navigate: this._navigate.bind(this),
         reload: this._reload.bind(this),
-        screenshot: this._screenshot.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setCacheDisabled: this._setCacheDisabled.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -274,15 +272,11 @@ class PageAgent {
     });
   }
 
-  _onError(errorEvent) {
-    const docShell = errorEvent.target.ownerGlobal.docShell;
-    const frame = this._frameTree.frameForDocShell(docShell);
-    if (!frame)
-      return;
+  _onRuntimeError({ executionContext, message, stack }) {
     this._browserPage.emit('pageUncaughtError', {
-      frameId: frame.id(),
-      message: errorEvent.message,
-      stack: errorEvent.error && typeof errorEvent.error.stack === 'string' ? errorEvent.error.stack : '',
+      frameId: executionContext.auxData().frameId,
+      message: message.toString(),
+      stack: stack.toString(),
     });
   }
 
@@ -457,7 +451,7 @@ class PageAgent {
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject.getBoxQuads)
       throw new Error('RemoteObject is not a node');
-    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document}).map(quad => {
+    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document, recurseWhenNoFrame: true}).map(quad => {
       return {
         p1: {x: quad.p1.x, y: quad.p1.y},
         p2: {x: quad.p2.x, y: quad.p2.y},
@@ -523,16 +517,6 @@ class PageAgent {
       y2 = Math.max(boundingBox.y + boundingBox.height, y2);
     }
     return {x: x1, y: y1, width: x2 - x1, height: y2 - y1};
-  }
-
-  async _screenshot({mimeType, clip, omitDeviceScaleFactor}) {
-    const content = this._messageManager.content;
-    if (clip) {
-      const data = takeScreenshot(content, clip.x, clip.y, clip.width, clip.height, mimeType, omitDeviceScaleFactor);
-      return {data};
-    }
-    const data = takeScreenshot(content, content.scrollX, content.scrollY, content.innerWidth, content.innerHeight, mimeType, omitDeviceScaleFactor);
-    return {data};
   }
 
   async _dispatchKeyEvent({type, keyCode, code, key, repeat, location, text}) {
@@ -727,8 +711,8 @@ class PageAgent {
         false /*aIgnoreRootScrollFrame*/,
         undefined /*pressure*/,
         undefined /*inputSource*/,
-        undefined /*isDOMEventSynthesized*/,
-        undefined /*isWidgetEventSynthesized*/,
+        true /*isDOMEventSynthesized*/,
+        false /*isWidgetEventSynthesized*/,
         buttons);
       obs.removeObserver(trapDrag, 'on-datatransfer-available');
 
@@ -758,26 +742,6 @@ class PageAgent {
     } else {
       this._cancelDragIfNeeded();
     }
-  }
-
-  async _dispatchWheelEvent({x, y, button, deltaX, deltaY, deltaZ, modifiers }) {
-    const deltaMode = 0; // WheelEvent.DOM_DELTA_PIXEL
-    const lineOrPageDeltaX = deltaX > 0 ? Math.floor(deltaX) : Math.ceil(deltaX);
-    const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
-
-    const frame = this._frameTree.mainFrame();
-
-    frame.domWindow().windowUtils.sendWheelEvent(
-      x,
-      y,
-      deltaX,
-      deltaY,
-      deltaZ,
-      deltaMode,
-      modifiers,
-      lineOrPageDeltaX,
-      lineOrPageDeltaY,
-      0 /* options */);
   }
 
   async _insertText({text}) {
@@ -869,7 +833,6 @@ class PageAgent {
         'focused',
         'pressed',
         'focusable',
-        'haspopup',
         'required',
         'invalid',
         'modal',
@@ -906,7 +869,7 @@ class PageAgent {
         if (numericalProperty in attributes)
           tree[numericalProperty] = parseFloat(attributes[numericalProperty]);
       }
-      for (const stringProperty of ['tag', 'roledescription', 'valuetext', 'orientation', 'autocomplete', 'keyshortcuts']) {
+      for (const stringProperty of ['tag', 'roledescription', 'valuetext', 'orientation', 'autocomplete', 'keyshortcuts', 'haspopup']) {
         if (stringProperty in attributes)
           tree[stringProperty] = attributes[stringProperty];
       }
@@ -925,27 +888,6 @@ class PageAgent {
     };
   }
 }
-
-function takeScreenshot(win, left, top, width, height, mimeType, omitDeviceScaleFactor) {
-  const MAX_SKIA_DIMENSIONS = 32767;
-
-  const scale = omitDeviceScaleFactor ? 1 : win.devicePixelRatio;
-  const canvasWidth = width * scale;
-  const canvasHeight = height * scale;
-
-  if (canvasWidth > MAX_SKIA_DIMENSIONS || canvasHeight > MAX_SKIA_DIMENSIONS)
-    throw new Error('Cannot take screenshot larger than ' + MAX_SKIA_DIMENSIONS);
-
-  const canvas = win.document.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-
-  let ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
-  ctx.drawWindow(win, left, top, width, height, 'rgb(255,255,255)', ctx.DRAWWINDOW_DRAW_CARET);
-  const dataURL = canvas.toDataURL(mimeType);
-  return dataURL.substring(dataURL.indexOf(',') + 1);
-};
 
 var EXPORTED_SYMBOLS = ['PageAgent'];
 this.PageAgent = PageAgent;

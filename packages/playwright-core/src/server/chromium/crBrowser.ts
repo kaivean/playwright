@@ -15,21 +15,25 @@
  * limitations under the License.
  */
 
-import { Browser, BrowserOptions } from '../browser';
+import type { BrowserOptions } from '../browser';
+import { Browser } from '../browser';
 import { assertBrowserContextIsNotOwned, BrowserContext, verifyGeolocation } from '../browserContext';
-import { assert } from '../../utils/utils';
+import { assert } from '../../utils';
 import * as network from '../network';
-import { Page, PageBinding, PageDelegate, Worker } from '../page';
+import type { PageBinding, PageDelegate, Worker } from '../page';
+import { Page } from '../page';
 import { Frame } from '../frames';
-import { Dialog } from '../dialog';
-import { ConnectionTransport } from '../transport';
-import * as types from '../types';
-import { ConnectionEvents, CRConnection, CRSession } from './crConnection';
+import type { Dialog } from '../dialog';
+import type { ConnectionTransport } from '../transport';
+import type * as types from '../types';
+import type * as channels from '@protocol/channels';
+import type { CRSession } from './crConnection';
+import { ConnectionEvents, CRConnection } from './crConnection';
 import { CRPage } from './crPage';
 import { readProtocolStream } from './crProtocolHelper';
-import { Protocol } from './protocol';
-import { CRExecutionContext } from './crExecutionContext';
-import { CRDevTools } from './crDevTools';
+import type { Protocol } from './protocol';
+import type { CRDevTools } from './crDevTools';
+import { CRServiceWorker } from './crServiceWorker';
 
 export class CRBrowser extends Browser {
   readonly _connection: CRConnection;
@@ -92,7 +96,7 @@ export class CRBrowser extends Browser {
     this._session.on('Browser.downloadProgress', this._onDownloadProgress.bind(this));
   }
 
-  async doCreateNewContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
+  async doCreateNewContext(options: channels.BrowserNewContextParams): Promise<BrowserContext> {
     let proxyBypassList = undefined;
     if (options.proxy) {
       if (process.env.PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK)
@@ -157,7 +161,9 @@ export class CRBrowser extends Browser {
       return;
     }
 
-    if (targetInfo.type === 'other' || !context) {
+    const treatOtherAsPage = targetInfo.type === 'other' && process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+
+    if (!context || (targetInfo.type === 'other' && !treatOtherAsPage)) {
       if (waitingForDebugger) {
         // Ideally, detaching should resume any target, but there is a bug in the backend.
         session._sendMayFail('Runtime.runIfWaitingForDebugger').then(() => {
@@ -177,9 +183,9 @@ export class CRBrowser extends Browser {
       return;
     }
 
-    if (targetInfo.type === 'page') {
+    if (targetInfo.type === 'page' || treatOtherAsPage) {
       const opener = targetInfo.openerId ? this._crPages.get(targetInfo.openerId) || null : null;
-      const crPage = new CRPage(session, targetInfo.targetId, context, opener, { hasUIWindow: true, isBackgroundPage: false });
+      const crPage = new CRPage(session, targetInfo.targetId, context, opener, { hasUIWindow: targetInfo.type === 'page', isBackgroundPage: false });
       this._crPages.set(targetInfo.targetId, crPage);
       return;
     }
@@ -301,21 +307,6 @@ export class CRBrowser extends Browser {
   }
 }
 
-class CRServiceWorker extends Worker {
-  readonly _browserContext: CRBrowserContext;
-
-  constructor(browserContext: CRBrowserContext, session: CRSession, url: string) {
-    super(browserContext, url);
-    this._browserContext = browserContext;
-    session.once('Runtime.executionContextCreated', event => {
-      this._createExecutionContext(new CRExecutionContext(session, event.context));
-    });
-    // This might fail if the target is closed before we receive all execution contexts.
-    session.send('Runtime.enable', {}).catch(e => {});
-    session.send('Runtime.runIfWaitingForDebugger').catch(e => {});
-  }
-}
-
 export class CRBrowserContext extends BrowserContext {
   static CREvents = {
     BackgroundPage: 'backgroundpage',
@@ -323,17 +314,15 @@ export class CRBrowserContext extends BrowserContext {
   };
 
   declare readonly _browser: CRBrowser;
-  readonly _evaluateOnNewDocumentSources: string[];
 
-  constructor(browser: CRBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
+  constructor(browser: CRBrowser, browserContextId: string | undefined, options: channels.BrowserNewContextParams) {
     super(browser, options, browserContextId);
-    this._evaluateOnNewDocumentSources = [];
     this._authenticateProxyViaCredentials();
   }
 
   override async _initialize() {
     assert(!Array.from(this._browser._crPages.values()).some(page => page._browserContext === this));
-    const promises: Promise<any>[] = [ super._initialize() ];
+    const promises: Promise<any>[] = [super._initialize()];
     if (this._browser.options.name !== 'electron' && this._browser.options.name !== 'clank') {
       promises.push(this._browser._session.send('Browser.setDownloadBehavior', {
         behavior: this._options.acceptDownloads ? 'allowAndName' : 'deny',
@@ -342,18 +331,15 @@ export class CRBrowserContext extends BrowserContext {
         eventsEnabled: true,
       }));
     }
-    if (this._options.permissions)
-      promises.push(this.grantPermissions(this._options.permissions));
     await Promise.all(promises);
   }
 
+  private _crPages() {
+    return [...this._browser._crPages.values()].filter(crPage => crPage._browserContext === this);
+  }
+
   pages(): Page[] {
-    const result: Page[] = [];
-    for (const crPage of this._browser._crPages.values()) {
-      if (crPage._browserContext === this && crPage._initializedPage)
-        result.push(crPage._initializedPage);
-    }
-    return result;
+    return this._crPages().map(crPage => crPage._initializedPage).filter(Boolean) as Page[];
   }
 
   async newPageDelegate(): Promise<PageDelegate> {
@@ -377,12 +363,12 @@ export class CRBrowserContext extends BrowserContext {
           newKeys.delete(key);
       }
       assert(newKeys.size === 1);
-      [ targetId ] = [...newKeys];
+      [targetId] = [...newKeys];
     }
     return this._browser._crPages.get(targetId)!;
   }
 
-  async _doCookies(urls: string[]): Promise<types.NetworkCookie[]> {
+  async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
     const { cookies } = await this._browser._session.send('Storage.getCookies', { browserContextId: this._browserContextId });
     return network.filterCookies(cookies.map(c => {
       const copy: any = { sameSite: 'Lax', ...c };
@@ -392,11 +378,11 @@ export class CRBrowserContext extends BrowserContext {
       delete copy.sameParty;
       delete copy.sourceScheme;
       delete copy.sourcePort;
-      return copy as types.NetworkCookie;
+      return copy as channels.NetworkCookie;
     }), urls);
   }
 
-  async addCookies(cookies: types.SetNetworkCookieParam[]) {
+  async addCookies(cookies: channels.SetNetworkCookie[]) {
     await this._browser._session.send('Storage.setCookies', { cookies: network.rewriteCookies(cookies), browserContextId: this._browserContextId });
   }
 
@@ -404,7 +390,7 @@ export class CRBrowserContext extends BrowserContext {
     await this._browser._session.send('Storage.clearCookies', { browserContextId: this._browserContextId });
   }
 
-  async _doGrantPermissions(origin: string, permissions: string[]) {
+  async doGrantPermissions(origin: string, permissions: string[]) {
     const webPermissionToProtocol = new Map<string, Protocol.Browser.PermissionType>([
       ['geolocation', 'geolocation'],
       ['midi', 'midi'],
@@ -432,7 +418,7 @@ export class CRBrowserContext extends BrowserContext {
     await this._browser._session.send('Browser.grantPermissions', { origin: origin === '*' ? undefined : origin, browserContextId: this._browserContextId, permissions: filtered });
   }
 
-  async _doClearPermissions() {
+  async doClearPermissions() {
     await this._browser._session.send('Browser.resetPermissions', { browserContextId: this._browserContextId });
   }
 
@@ -447,50 +433,79 @@ export class CRBrowserContext extends BrowserContext {
     this._options.extraHTTPHeaders = headers;
     for (const page of this.pages())
       await (page._delegate as CRPage).updateExtraHTTPHeaders();
+    for (const sw of this.serviceWorkers())
+      await (sw as CRServiceWorker).updateExtraHTTPHeaders(false);
+  }
+
+  async setUserAgent(userAgent: string | undefined): Promise<void> {
+    this._options.userAgent = userAgent;
+    for (const page of this.pages())
+      await (page._delegate as CRPage).updateUserAgent();
+    // TODO: service workers don't have Emulation domain?
   }
 
   async setOffline(offline: boolean): Promise<void> {
     this._options.offline = offline;
     for (const page of this.pages())
       await (page._delegate as CRPage).updateOffline();
+    for (const sw of this.serviceWorkers())
+      await (sw as CRServiceWorker).updateOffline(false);
   }
 
-  async _doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
+  async doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
     this._options.httpCredentials = httpCredentials;
     for (const page of this.pages())
       await (page._delegate as CRPage).updateHttpCredentials();
+    for (const sw of this.serviceWorkers())
+      await (sw as CRServiceWorker).updateHttpCredentials(false);
   }
 
-  async _doAddInitScript(source: string) {
-    this._evaluateOnNewDocumentSources.push(source);
+  async doAddInitScript(source: string) {
     for (const page of this.pages())
-      await (page._delegate as CRPage).evaluateOnNewDocument(source);
+      await (page._delegate as CRPage).addInitScript(source);
   }
 
-  async _doExposeBinding(binding: PageBinding) {
+  async doRemoveInitScripts() {
+    for (const page of this.pages())
+      await (page._delegate as CRPage).removeInitScripts();
+  }
+
+  async doExposeBinding(binding: PageBinding) {
     for (const page of this.pages())
       await (page._delegate as CRPage).exposeBinding(binding);
   }
 
-  async _doUpdateRequestInterception(): Promise<void> {
+  async doRemoveExposedBindings() {
     for (const page of this.pages())
-      await (page._delegate as CRPage).updateRequestInterception();
+      await (page._delegate as CRPage).removeExposedBindings();
   }
 
-  async _doClose() {
-    assert(this._browserContextId);
+  async doUpdateRequestInterception(): Promise<void> {
+    for (const page of this.pages())
+      await (page._delegate as CRPage).updateRequestInterception();
+    for (const sw of this.serviceWorkers())
+      await (sw as CRServiceWorker).updateRequestInterception();
+  }
+
+  async doClose() {
     // Headful chrome cannot dispose browser context with opened 'beforeunload'
     // dialogs, so we should close all that are currently opened.
     // We also won't get new ones since `Target.disposeBrowserContext` does not trigger
     // beforeunload.
     const openedBeforeUnloadDialogs: Dialog[] = [];
-    for (const crPage of this._browser._crPages.values()) {
-      if (crPage._browserContext !== this)
-        continue;
+    for (const crPage of this._crPages()) {
       const dialogs = [...crPage._page._frameManager._openedDialogs].filter(dialog => dialog.type() === 'beforeunload');
       openedBeforeUnloadDialogs.push(...dialogs);
     }
     await Promise.all(openedBeforeUnloadDialogs.map(dialog => dialog.dismiss()));
+
+    if (!this._browserContextId) {
+      await Promise.all(this._crPages().map(crPage => crPage._mainFrameSession._stopVideoRecording()));
+      // Closing persistent context should close the browser.
+      await this._browser.close();
+      return;
+    }
+
     await this._browser._session.send('Target.disposeBrowserContext', { browserContextId: this._browserContextId });
     this._browser._contexts.delete(this._browserContextId);
     for (const [targetId, serviceWorker] of this._browser._serviceWorkers) {
@@ -505,7 +520,7 @@ export class CRBrowserContext extends BrowserContext {
     }
   }
 
-  _onClosePersistent() {
+  onClosePersistent() {
     // When persistent context is closed, we do not necessary get Target.detachedFromTarget
     // for all the background pages.
     for (const [targetId, backgroundPage] of this._browser._backgroundPages.entries()) {
@@ -516,7 +531,7 @@ export class CRBrowserContext extends BrowserContext {
     }
   }
 
-  async _doCancelDownload(guid: string) {
+  async cancelDownload(guid: string) {
     // The upstream CDP method is implemented in a way that no explicit error would be given
     // regarding the requested `guid`, even if the download is in a state not suitable for
     // cancellation (finished, cancelled, etc.) or the guid is invalid at all.

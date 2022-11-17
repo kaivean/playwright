@@ -17,6 +17,14 @@
 
 ### Getting Code
 
+Make sure you're running Node.js 14+ and NPM 8+, to verify and upgrade NPM do:
+
+```bash
+node --version
+npm --version
+npm i -g npm@latest
+```
+
 1. Clone this repository
 
 ```bash
@@ -27,7 +35,7 @@ cd playwright
 2. Install dependencies
 
 ```bash
-npm install
+npm ci
 ```
 
 3. Build Playwright
@@ -114,6 +122,12 @@ To run the documentation linter, use:
 npm run doc
 ```
 
+To build the documentation site locally and test how your changes will look in practice:
+
+1. Clone the [microsoft/playwright.dev](https://github.com/microsoft/playwright.dev) repo
+1. Follow [the playwright.dev README instructions to "roll docs"](https://github.com/microsoft/playwright.dev/#roll-docs) against your local `playwright` repo with your changes in progress
+1. Follow [the playwright.dev README instructions to "run dev server"](https://github.com/microsoft/playwright.dev/#run-dev-server) to view your changes
+
 ### Adding New Dependencies
 
 For all dependencies (both installation and development):
@@ -171,7 +185,7 @@ it.skip('should work', async ({server, page}) => {
 - To run tests in non-headless (headed) mode:
 
 ```bash
-HEADFUL=1 npm run ctest
+npm run ctest -- --headed
 ```
 
 - To run tests with custom browser executable, specify `CRPATH`, `WKPATH` or `FFPATH` env variable that points to browser executable:
@@ -183,7 +197,7 @@ CRPATH=<path-to-executable> npm run ctest
 - To run tests in slow-mode:
 
 ```bash
-HEADFUL=1 SLOW_MO=500 npm run wtest
+SLOW_MO=500 npm run wtest -- --headed
 ```
 
 - When should a test be marked with `skip` or `fail`?

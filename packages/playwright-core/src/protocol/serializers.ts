@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-import { TimeoutError } from '../utils/errors';
-import { SerializedError, SerializedValue } from './channels';
+import { TimeoutError } from '../common/errors';
+import type { SerializedError, SerializedValue } from '@protocol/channels';
 
 export function serializeError(e: any): SerializedError {
   if (isError(e))
     return { error: { message: e.message, stack: e.stack, name: e.name } };
-  return { value: serializeValue(e, value => ({ fallThrough: value }), new Set()) };
+  return { value: serializeValue(e, value => ({ fallThrough: value })) };
 }
 
 export function parseError(error: SerializedError): Error {
@@ -41,6 +41,12 @@ export function parseError(error: SerializedError): Error {
 }
 
 export function parseSerializedValue(value: SerializedValue, handles: any[] | undefined): any {
+  return innerParseSerializedValue(value, handles, new Map());
+}
+
+function innerParseSerializedValue(value: SerializedValue, handles: any[] | undefined, refs: Map<number, object>): any {
+  if (value.ref !== undefined)
+    return refs.get(value.ref);
   if (value.n !== undefined)
     return value.n;
   if (value.s !== undefined)
@@ -63,14 +69,23 @@ export function parseSerializedValue(value: SerializedValue, handles: any[] | un
   }
   if (value.d !== undefined)
     return new Date(value.d);
+  if (value.u !== undefined)
+    return new URL(value.u);
   if (value.r !== undefined)
     return new RegExp(value.r.p, value.r.f);
-  if (value.a !== undefined)
-    return value.a.map((a: any) => parseSerializedValue(a, handles));
+
+  if (value.a !== undefined) {
+    const result: any[] = [];
+    refs.set(value.id!, result);
+    for (const v of value.a)
+      result.push(innerParseSerializedValue(v, handles, refs));
+    return result;
+  }
   if (value.o !== undefined) {
     const result: any = {};
+    refs.set(value.id!, result);
     for (const { k, v } of value.o)
-      result[k] = parseSerializedValue(v, handles);
+      result[k] = innerParseSerializedValue(v, handles, refs);
     return result;
   }
   if (value.h !== undefined) {
@@ -82,15 +97,22 @@ export function parseSerializedValue(value: SerializedValue, handles: any[] | un
 }
 
 export type HandleOrValue = { h: number } | { fallThrough: any };
-export function serializeValue(value: any, handleSerializer: (value: any) => HandleOrValue, visited: Set<any>): SerializedValue {
+type VisitorInfo = {
+  visited: Map<object, number>;
+  lastId: number;
+};
+
+export function serializeValue(value: any, handleSerializer: (value: any) => HandleOrValue): SerializedValue {
+  return innerSerializeValue(value, handleSerializer, { lastId: 0, visited: new Map() });
+}
+
+function innerSerializeValue(value: any, handleSerializer: (value: any) => HandleOrValue, visitorInfo: VisitorInfo): SerializedValue {
   const handle = handleSerializer(value);
   if ('fallThrough' in handle)
     value = handle.fallThrough;
   else
     return handle;
 
-  if (visited.has(value))
-    throw new Error('Argument is a circular structure');
   if (typeof value === 'symbol')
     return { v: 'undefined' };
   if (Object.is(value, undefined))
@@ -113,7 +135,7 @@ export function serializeValue(value: any, handleSerializer: (value: any) => Han
     return { s: value };
   if (isError(value)) {
     const error = value;
-    if ('captureStackTrace' in global.Error) {
+    if ('captureStackTrace' in globalThis.Error) {
       // v8
       return { s: error.stack || '' };
     }
@@ -121,23 +143,30 @@ export function serializeValue(value: any, handleSerializer: (value: any) => Han
   }
   if (isDate(value))
     return { d: value.toJSON() };
+  if (isURL(value))
+    return { u: value.toJSON() };
   if (isRegExp(value))
     return { r: { p: value.source, f: value.flags } };
+
+  const id = visitorInfo.visited.get(value);
+  if (id)
+    return { ref: id };
+
   if (Array.isArray(value)) {
     const a = [];
-    visited.add(value);
+    const id = ++visitorInfo.lastId;
+    visitorInfo.visited.set(value, id);
     for (let i = 0; i < value.length; ++i)
-      a.push(serializeValue(value[i], handleSerializer, visited));
-    visited.delete(value);
-    return { a };
+      a.push(innerSerializeValue(value[i], handleSerializer, visitorInfo));
+    return { a, id };
   }
   if (typeof value === 'object') {
     const o: { k: string, v: SerializedValue }[] = [];
-    visited.add(value);
+    const id = ++visitorInfo.lastId;
+    visitorInfo.visited.set(value, id);
     for (const name of Object.keys(value))
-      o.push({ k: name, v: serializeValue(value[name], handleSerializer, visited) });
-    visited.delete(value);
-    return { o };
+      o.push({ k: name, v: innerSerializeValue(value[name], handleSerializer, visitorInfo) });
+    return { o, id };
   }
   throw new Error('Unexpected value');
 }
@@ -150,6 +179,11 @@ function isDate(obj: any): obj is Date {
   return obj instanceof Date || Object.prototype.toString.call(obj) === '[object Date]';
 }
 
+function isURL(obj: any): obj is URL {
+  return obj instanceof URL || Object.prototype.toString.call(obj) === '[object URL]';
+}
+
 function isError(obj: any): obj is Error {
-  return obj instanceof Error || obj?.__proto__?.name === 'Error' || (obj?.__proto__ && isError(obj.__proto__));
+  const proto = obj ? Object.getPrototypeOf(obj) : null;
+  return obj instanceof Error || proto?.name === 'Error' || (proto && isError(proto));
 }

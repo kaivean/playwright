@@ -5,6 +5,15 @@
     "lib": ["esnext", "dom", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
+      /*
+        The following two serve different purposes:
+         - @foo is for importing types only,
+         - foo/lib means require dependency
+      */
+      "@html-reporter/*": ["./packages/html-reporter/src/*"],
+      "@protocol/*": ["./packages/protocol/src/*"],
+      "@recorder/*": ["./packages/recorder/src/*"],
+      "@trace/*": ["./packages/trace/src/*"],
       "playwright-core/lib/*": ["./packages/playwright-core/src/*"]
     },
     "esModuleInterop": true,
@@ -20,5 +29,14 @@
   "include": ["packages"],
   "exclude": [
     "packages/*/lib",
+    "packages/html-reporter",
+    "packages/playwright-ct-react",
+    "packages/playwright-ct-solid",
+    "packages/playwright-ct-svelte",
+    "packages/playwright-ct-vue",
+    "packages/playwright-ct-vue2",
+    "packages/recorder",
+    "packages/trace-viewer",
+    "packages/web",
   ],
 }

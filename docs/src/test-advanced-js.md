@@ -3,8 +3,6 @@ id: test-advanced
 title: "Advanced: configuration"
 ---
 
-<!-- TOC -->
-
 ## Configuration object
 
 Configuration file exports a single [TestConfig] object. See [TestConfig] properties for available configuration options.
@@ -13,9 +11,9 @@ Note that each [test project](#projects) can provide its own [options][TestProje
 
 Here is an example that defines a common timeout and two projects. The "Smoke" project runs a small subset of tests without retries, and "Default" project runs all other tests with retries.
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
   timeout: 60000, // Timeout is shared between all tests.
   projects: [
@@ -34,7 +32,7 @@ const config: PlaywrightTestConfig = {
 export default config;
 ```
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
@@ -66,7 +64,7 @@ Test functions, fixtures and hooks receive a [TestInfo] parameter that provides 
 See [TestInfo] methods and properties for all available information and utilities.
 
 Here is an example test that saves information to a file using [TestInfo].
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 const { test } = require('@playwright/test');
 
@@ -78,7 +76,7 @@ test('my test needs a file', async ({ table }, testInfo) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test } from '@playwright/test';
 
@@ -91,7 +89,7 @@ test('my test needs a file', async ({ table }, testInfo) => {
 ```
 
 Here is an example fixture that automatically saves debug logs when the test fails.
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const debug = require('debug');
 const fs = require('fs');
@@ -113,7 +111,7 @@ exports.test = base.test.extend({
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import * as debug from 'debug';
 import * as fs from 'fs';
@@ -140,7 +138,7 @@ export const test = base.extend<{ saveLogs: void }>({
 To launch a server during the tests, use the `webServer` option in the [configuration file](#configuration-object).
 
 If `port` is specified in the config, test runner will wait for `127.0.0.1:port` or `::1:port` to be available before running the tests.
-If `url` is specified in the config, test runner will wait for that `url` to return 2xx response before running the tests.
+If `url` is specified in the config, test runner will wait for that `url` to return a 2xx, 3xx, 400, 401, 402, or 403 response before running the tests.
 
 For continuous integration, you may want to use the `reuseExistingServer: !process.env.CI` option which does not use an existing server on the CI. To see the stdout, you can set the `DEBUG=pw:webserver` environment variable.
 
@@ -150,9 +148,9 @@ The `port` (but not the `url`) gets passed over to Playwright as a [`property: T
 It is also recommended to specify [`property: TestOptions.baseURL`] in the config, so that tests could use relative urls.
 :::
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
   webServer: {
     command: 'npm run start',
@@ -167,7 +165,7 @@ const config: PlaywrightTestConfig = {
 export default config;
 ```
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
@@ -187,7 +185,7 @@ module.exports = config;
 
 Now you can use a relative path when navigating the page:
 
-```js js-flavor=ts
+```js tab=js-ts
 // test.spec.ts
 import { test } from '@playwright/test';
 test('test', async ({ page }) => {
@@ -197,7 +195,7 @@ test('test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=js
+```js tab=js-js
 // test.spec.js
 const { test } = require('@playwright/test');
 test('test', async ({ page }) => {
@@ -207,15 +205,17 @@ test('test', async ({ page }) => {
 });
 ```
 
+Multiple web servers (or background processes) can be launched simultaneously by providing an array of `webServer` configurations. See [`property: TestConfig.webServer`] for additional examples and documentation.
+
 ## Global setup and teardown
 
 To set something up once before running all tests, use `globalSetup` option in the [configuration file](#configuration-object). Global setup file must export a single function that takes a config object. This function will be run once before all the tests.
 
-Similarly, use `globalTeardown` to run something once after all the tests. Alternatively, let `globalSetup` return a function that will be used as a global teardown. You can pass data such as port number, authentication tokens, etc. from your global setup to your tests using environment.
+Similarly, use `globalTeardown` to run something once after all the tests. Alternatively, let `globalSetup` return a function that will be used as a global teardown. You can pass data such as port number, authentication tokens, etc. from your global setup to your tests using environment variables.
 
 Here is a global setup example that authenticates once and reuses authentication state in tests. It uses `baseURL` and `storageState` options from the configuration file.
 
-```js js-flavor=js
+```js tab=js-js
 // global-setup.js
 const { chromium } = require('@playwright/test');
 
@@ -224,15 +224,15 @@ module.exports = async config => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto(baseURL);
-  await page.fill('input[name="user"]', 'user');
-  await page.fill('input[name="password"]', 'password');
-  await page.click('text=Sign in');
+  await page.getByLabel('User Name').fill('user');
+  await page.getByLabel('Password').fill('password');
+  await page.getByText('Sign in').click();
   await page.context().storageState({ path: storageState });
   await browser.close();
 };
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // global-setup.ts
 import { chromium, FullConfig } from '@playwright/test';
 
@@ -241,9 +241,9 @@ async function globalSetup(config: FullConfig) {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto(baseURL!);
-  await page.fill('input[name="user"]', 'user');
-  await page.fill('input[name="password"]', 'password');
-  await page.click('text=Sign in');
+  await page.getByLabel('User Name').fill('user');
+  await page.getByLabel('Password').fill('password');
+  await page.getByText('Sign in').click();
   await page.context().storageState({ path: storageState as string });
   await browser.close();
 }
@@ -253,7 +253,7 @@ export default globalSetup;
 
 Specify `globalSetup`, `baseURL` and `storageState` in the configuration file.
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
@@ -267,9 +267,9 @@ const config = {
 module.exports = config;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 
 const config: PlaywrightTestConfig = {
   globalSetup: require.resolve('./global-setup'),
@@ -283,7 +283,7 @@ export default config;
 
 Tests start already authenticated because we specify `storageState` that was populated by global setup.
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test } from '@playwright/test';
 
 test('test', async ({ page }) => {
@@ -292,13 +292,135 @@ test('test', async ({ page }) => {
 });
 ```
 
-```js js-flavor=js
+```js tab=js-js
 const { test } = require('@playwright/test');
 
 test('test', async ({ page }) => {
   await page.goto('/');
   // You are signed in!
 });
+```
+
+You can make arbitrary data available in your tests from your global setup file by setting them as environment variables via `process.env`.
+
+```js tab=js-js
+// global-setup.js
+module.exports = async config => {
+  process.env.FOO = 'some data';
+  // Or a more complicated data structure as JSON:
+  process.env.BAR = JSON.stringify({ some: 'data' });
+};
+```
+
+```js tab=js-ts
+// global-setup.ts
+import { FullConfig } from '@playwright/test';
+
+async function globalSetup(config: FullConfig) {
+  process.env.FOO = 'some data';
+  // Or a more complicated data structure as JSON:
+  process.env.BAR = JSON.stringify({ some: 'data' });
+}
+
+export default globalSetup;
+```
+
+Tests have access to the `process.env` properties set in the global setup.
+
+```js tab=js-ts
+import { test } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  // environment variables which are set in globalSetup are only available inside test().
+  const { FOO, BAR } = process.env;
+
+  // FOO and BAR properties are populated.
+  expect(FOO).toEqual('some data');
+
+  const complexData = JSON.parse(BAR);
+  expect(BAR).toEqual({ some: 'data' });
+});
+```
+
+```js tab=js-js
+const { test } = require('@playwright/test');
+
+test('test', async ({ page }) => {
+  // environment variables which are set in globalSetup are only available inside test().
+  const { FOO, BAR } = process.env;
+
+  // FOO and BAR properties are populated.
+  expect(FOO).toEqual('some data');
+
+  const complexData = JSON.parse(BAR);
+  expect(BAR).toEqual({ some: 'data' });
+});
+```
+
+### Capturing trace of failures during global setup
+
+In some instances, it may be useful to capture a trace of failures encountered during the global setup. In order to do this, you must [start tracing](./api/class-tracing.md#tracing-start) in your setup, and you must ensure that you [stop tracing](./api/class-tracing.md#tracing-stop) if an error occurs before that error is thrown. This can be achieved by wrapping your setup in a `try...catch` block.  Here is an example that expands the global setup example to capture a trace.
+
+```js tab=js-js
+// global-setup.js
+const { chromium } = require('@playwright/test');
+
+module.exports = async config => {
+  const { baseURL, storageState } = config.projects[0].use;
+  const browser = await chromium.launch();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    await page.goto(baseURL);
+    await page.getByLabel('User Name').fill('user');
+    await page.getByLabel('Password').fill('password');
+    await page.getByText('Sign in').click();
+    await context.storageState({ path: storageState });
+    await context.tracing.stop({
+      path: './test-results/setup-trace.zip',
+    })
+    await browser.close();
+  } catch (error) {
+    await context.tracing.stop({
+      path: './test-results/failed-setup-trace.zip',
+    });
+    await browser.close();
+    throw error;
+  }
+};
+```
+
+```js tab=js-ts
+// global-setup.ts
+import { chromium, FullConfig } from '@playwright/test';
+
+async function globalSetup(config: FullConfig) {
+  const { baseURL, storageState } = config.projects[0].use;
+  const browser = await chromium.launch();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    await page.goto(baseURL!);
+    await page.getByLabel('User Name').fill('user');
+    await page.getByLabel('Password').fill('password');
+    await page.getByText('Sign in').click();
+    await context.storageState({ path: storageState as string });
+    await context.tracing.stop({
+      path: './test-results/setup-trace.zip',
+    })
+    await page.close();
+  } catch (error) {
+    await context.tracing.stop({
+      path: './test-results/failed-setup-trace.zip',
+    });
+    await page.close();
+    throw error;
+  }
+}
+
+export default globalSetup;
 ```
 
 ## Projects
@@ -308,7 +430,7 @@ Playwright Test supports running multiple test projects at the same time. This i
 ### Same tests, different configuration
 
 Here is an example that runs the same tests in different browsers:
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 const { devices } = require('@playwright/test');
@@ -334,9 +456,9 @@ const config = {
 module.exports = config;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig, devices } from '@playwright/test';
+import { type PlaywrightTestConfig, devices } from '@playwright/test';
 
 const config: PlaywrightTestConfig = {
   projects: [
@@ -372,9 +494,9 @@ Each project can be configured separately, and run different set of tests with d
 
 Here is an example that runs projects with different tests and configurations. The "Smoke" project runs a small subset of tests without retries, and "Default" project runs all other tests with retries.
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
   timeout: 60000, // Timeout is shared between all tests.
   projects: [
@@ -393,7 +515,7 @@ const config: PlaywrightTestConfig = {
 export default config;
 ```
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
@@ -436,7 +558,7 @@ Worker-scoped fixtures receive a [WorkerInfo] parameter that describes the curre
 
 Consider an example where we run a new http server per worker process, and use `workerIndex` to produce a unique port number:
 
-```js js-flavor=js
+```js tab=js-js
 // my-test.js
 const base = require('@playwright/test');
 const http = require('http');
@@ -459,7 +581,7 @@ exports.test = base.test.extend({
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // my-test.ts
 import { test as base } from '@playwright/test';
 import * as http from 'http';
@@ -487,7 +609,7 @@ export const test = base.extend<{}, { server: http.Server }>({
 Playwright Test uses [`expect` library](https://jestjs.io/docs/expect) under the hood which has the functionality to extend it with [custom matchers](https://jestjs.io/docs/expect#expectextendmatchers).
 
 In this example we add a custom `toBeWithinRange` function in the configuration file.
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 const { expect } = require('@playwright/test');
 
@@ -511,7 +633,7 @@ expect.extend({
 module.exports = {};
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
 import { expect, PlaywrightTestConfig } from '@playwright/test';
 
@@ -537,7 +659,7 @@ export default config;
 ```
 
 Now we can use `toBeWithinRange` in the test.
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 const { test, expect } = require('@playwright/test');
 
@@ -547,7 +669,7 @@ test('numeric ranges', () => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 import { test, expect } from '@playwright/test';
 
@@ -557,13 +679,17 @@ test('numeric ranges', () => {
 });
 ```
 
-For TypeScript, also add the following to `global.d.ts`. You don't need it for JavaScript.
+For TypeScript, also add the following to your [`global.d.ts`](https://www.typescriptlang.org/docs/handbook/declaration-files/templates/global-d-ts.html). If it does not exist, you need to create it inside your repository. Make sure that your `global.d.ts` gets included inside your `tsconfig.json` via the `include` or `compilerOptions.typeRoots` option so that your IDE will pick it up.
+
+You don't need it for JavaScript.
 
 ```js
 // global.d.ts
+export {};
+
 declare global {
  namespace PlaywrightTest {
-    interface Matchers<R> {
+    interface Matchers<R, T> {
       toBeWithinRange(a: number, b: number): R;
     }
   }

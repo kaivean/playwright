@@ -14,31 +14,34 @@
  * limitations under the License.
  */
 
-import debug from 'debug';
-import * as types from '../types';
+import { debug } from '../../utilsBundle';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import * as stream from 'stream';
-import * as ws from 'ws';
-import { createGuid, makeWaitForNextTask, removeFolders } from '../../utils/utils';
-import { BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
-import { BrowserContext, validateBrowserContextOptions } from '../browserContext';
+import type * as stream from 'stream';
+import { wsReceiver, wsSender } from '../../utilsBundle';
+import { createGuid, makeWaitForNextTask, isUnderTest } from '../../utils';
+import { removeFolders } from '../../utils/fileUtils';
+import type { BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
+import type { BrowserContext } from '../browserContext';
+import { validateBrowserContextOptions } from '../browserContext';
 import { ProgressController } from '../progress';
 import { CRBrowser } from '../chromium/crBrowser';
 import { helper } from '../helper';
 import { PipeTransport } from '../../protocol/transport';
-import { RecentLogsCollector } from '../../utils/debugLogger';
+import { RecentLogsCollector } from '../../common/debugLogger';
 import { gracefullyCloseSet } from '../../utils/processLauncher';
-import { TimeoutSettings } from '../../utils/timeoutSettings';
-import { AndroidWebView } from '../../protocol/channels';
+import { TimeoutSettings } from '../../common/timeoutSettings';
+import type * as channels from '@protocol/channels';
 import { SdkObject, serverSideCallMetadata } from '../instrumentation';
+import { chromiumSwitches } from '../chromium/chromiumSwitches';
+import { registry } from '../registry';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
 export interface Backend {
-  devices(options: types.AndroidDeviceOptions): Promise<DeviceBackend[]>;
+  devices(options: channels.AndroidDevicesOptions): Promise<DeviceBackend[]>;
 }
 
 export interface DeviceBackend {
@@ -73,14 +76,14 @@ export class Android extends SdkObject {
     this._timeoutSettings.setDefaultTimeout(timeout);
   }
 
-  async devices(options: types.AndroidDeviceOptions): Promise<AndroidDevice[]> {
+  async devices(options: channels.AndroidDevicesOptions): Promise<AndroidDevice[]> {
     const devices = (await this._backend.devices(options)).filter(d => d.status === 'device');
     const newSerials = new Set<string>();
     for (const d of devices) {
       newSerials.add(d.serial);
       if (this._devices.has(d.serial))
         continue;
-      const device = await AndroidDevice.create(this, d);
+      const device = await AndroidDevice.create(this, d, options);
       this._devices.set(d.serial, device);
     }
     for (const d of this._devices.keys()) {
@@ -99,36 +102,38 @@ export class AndroidDevice extends SdkObject {
   readonly _backend: DeviceBackend;
   readonly model: string;
   readonly serial: string;
+  private _options: channels.AndroidDevicesOptions;
   private _driverPromise: Promise<PipeTransport> | undefined;
   private _lastId = 0;
   private _callbacks = new Map<number, { fulfill: (result: any) => void, reject: (error: Error) => void }>();
   private _pollingWebViews: NodeJS.Timeout | undefined;
   readonly _timeoutSettings: TimeoutSettings;
-  private _webViews = new Map<number, AndroidWebView>();
+  private _webViews = new Map<string, channels.AndroidWebView>();
 
   static Events = {
     WebViewAdded: 'webViewAdded',
     WebViewRemoved: 'webViewRemoved',
-    Closed: 'closed'
+    Close: 'close',
   };
 
   private _browserConnections = new Set<AndroidBrowser>();
-  private _android: Android;
+  readonly _android: Android;
   private _isClosed = false;
 
-  constructor(android: Android, backend: DeviceBackend, model: string) {
+  constructor(android: Android, backend: DeviceBackend, model: string, options: channels.AndroidDevicesOptions) {
     super(android, 'android-device');
     this._android = android;
     this._backend = backend;
     this.model = model;
     this.serial = backend.serial;
+    this._options = options;
     this._timeoutSettings = new TimeoutSettings(android._timeoutSettings);
   }
 
-  static async create(android: Android, backend: DeviceBackend): Promise<AndroidDevice> {
+  static async create(android: Android, backend: DeviceBackend, options: channels.AndroidDevicesOptions): Promise<AndroidDevice> {
     await backend.init();
     const model = await backend.runCommand('shell:getprop ro.product.model');
-    const device = new AndroidDevice(android, backend, model.toString().trim());
+    const device = new AndroidDevice(android, backend, model.toString().trim(), options);
     await device._init();
     return device;
   }
@@ -136,7 +141,11 @@ export class AndroidDevice extends SdkObject {
   async _init() {
     await this._refreshWebViews();
     const poll = () => {
-      this._pollingWebViews = setTimeout(() => this._refreshWebViews().then(poll).catch(() => {}), 500);
+      this._pollingWebViews = setTimeout(() => this._refreshWebViews()
+          .then(poll)
+          .catch(() => {
+            this.close().catch(() => {});
+          }), 500);
     };
     poll();
   }
@@ -159,7 +168,9 @@ export class AndroidDevice extends SdkObject {
     return await this._backend.runCommand(`shell:screencap -p`);
   }
 
-  private async _driver(): Promise<PipeTransport> {
+  private async _driver(): Promise<PipeTransport | undefined> {
+    if (this._isClosed)
+      return;
     if (!this._driverPromise)
       this._driverPromise = this._installDriver();
     return this._driverPromise;
@@ -169,13 +180,23 @@ export class AndroidDevice extends SdkObject {
     debug('pw:android')('Stopping the old driver');
     await this.shell(`am force-stop com.microsoft.playwright.androiddriver`);
 
-    debug('pw:android')('Uninstalling the old driver');
-    await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
-    await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
+    // uninstall and install driver on every excution
+    if (!this._options.omitDriverInstall) {
+      debug('pw:android')('Uninstalling the old driver');
+      await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
+      await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
 
-    debug('pw:android')('Installing the new driver');
-    for (const file of ['android-driver.apk', 'android-driver-target.apk'])
-      await this.installApk(await fs.promises.readFile(require.resolve(`../../../bin/${file}`)));
+      debug('pw:android')('Installing the new driver');
+      const executable = registry.findExecutable('android')!;
+      for (const file of ['android-driver.apk', 'android-driver-target.apk']) {
+        const fullName = path.join(executable.directory!, file);
+        if (!fs.existsSync(fullName))
+          throw new Error('Please install Android driver apk using `npx playwright install android`');
+        await this.installApk(await fs.promises.readFile(fullName));
+      }
+    } else {
+      debug('pw:android')('Skipping the driver installation');
+    }
 
     debug('pw:android')('Starting the new driver');
     this.shell('am instrument -w com.microsoft.playwright.androiddriver.test/androidx.test.runner.AndroidJUnitRunner').catch(e => debug('pw:android')(e));
@@ -214,6 +235,8 @@ export class AndroidDevice extends SdkObject {
     // Patch the timeout in!
     params.timeout = this._timeoutSettings.timeout(params);
     const driver = await this._driver();
+    if (!driver)
+      throw new Error('Device is closed');
     const id = ++this._lastId;
     const result = new Promise((fulfill, reject) => this._callbacks.set(id, { fulfill, reject }));
     driver.send(JSON.stringify({ id, method, params }));
@@ -221,6 +244,8 @@ export class AndroidDevice extends SdkObject {
   }
 
   async close() {
+    if (this._isClosed)
+      return;
     this._isClosed = true;
     if (this._pollingWebViews)
       clearTimeout(this._pollingWebViews);
@@ -228,33 +253,38 @@ export class AndroidDevice extends SdkObject {
       await connection.close();
     if (this._driverPromise) {
       const driver = await this._driver();
-      driver.close();
+      driver?.close();
     }
     await this._backend.close();
     this._android._deviceClosed(this);
-    this.emit(AndroidDevice.Events.Closed);
+    this.emit(AndroidDevice.Events.Close);
   }
 
-  async launchBrowser(pkg: string = 'com.android.chrome', options: types.BrowserContextOptions): Promise<BrowserContext> {
+  async launchBrowser(pkg: string = 'com.android.chrome', options: channels.BrowserNewContextParams): Promise<BrowserContext> {
     debug('pw:android')('Force-stopping', pkg);
     await this._backend.runCommand(`shell:am force-stop ${pkg}`);
-
-    const socketName = 'playwright-' + createGuid();
-    const commandLine = `_ --disable-fre --no-default-browser-check --no-first-run --remote-debugging-socket-name=${socketName}`;
+    const socketName = isUnderTest() ? 'webview_devtools_remote_playwright_test' : ('playwright-' + createGuid());
+    const commandLine = [
+      '_',
+      '--disable-fre',
+      '--no-default-browser-check',
+      `--remote-debugging-socket-name=${socketName}`,
+      ...chromiumSwitches,
+    ].join(' ');
     debug('pw:android')('Starting', pkg, commandLine);
     await this._backend.runCommand(`shell:echo "${commandLine}" > /data/local/tmp/chrome-command-line`);
-    await this._backend.runCommand(`shell:am start -n ${pkg}/com.google.android.apps.chrome.Main about:blank`);
+    await this._backend.runCommand(`shell:am start -a android.intent.action.VIEW -d about:blank ${pkg}`);
     return await this._connectToBrowser(socketName, options);
   }
 
-  async connectToWebView(pid: number): Promise<BrowserContext> {
-    const webView = this._webViews.get(pid);
+  async connectToWebView(socketName: string): Promise<BrowserContext> {
+    const webView = this._webViews.get(socketName);
     if (!webView)
       throw new Error('WebView has been closed');
-    return await this._connectToBrowser(`webview_devtools_remote_${pid}`);
+    return await this._connectToBrowser(socketName);
   }
 
-  private async _connectToBrowser(socketName: string, options: types.BrowserContextOptions = {}): Promise<BrowserContext> {
+  private async _connectToBrowser(socketName: string, options: channels.BrowserNewContextParams = {}): Promise<BrowserContext> {
     const socket = await this._waitForLocalAbstract(socketName);
     const androidBrowser = new AndroidBrowser(this, socket);
     await androidBrowser._init();
@@ -283,7 +313,8 @@ export class AndroidDevice extends SdkObject {
       browserProcess: new ClankBrowserProcess(androidBrowser),
       proxy: options.proxy,
       protocolLogger: helper.debugProtocolLogger(),
-      browserLogsCollector: new RecentLogsCollector()
+      browserLogsCollector: new RecentLogsCollector(),
+      originalLaunchOptions: {},
     };
     validateBrowserContextOptions(options, browserOptions);
 
@@ -296,7 +327,7 @@ export class AndroidDevice extends SdkObject {
     return defaultContext;
   }
 
-  webViews(): AndroidWebView[] {
+  webViews(): channels.AndroidWebView[] {
     return [...this._webViews.values()];
   }
 
@@ -336,46 +367,58 @@ export class AndroidDevice extends SdkObject {
   }
 
   private async _refreshWebViews() {
+    // possible socketName, eg: webview_devtools_remote_32327, webview_devtools_remote_32327_zeus, webview_devtools_remote_zeus
     const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep webview_devtools_remote`)).toString().split('\n');
     if (this._isClosed)
       return;
 
-    const newPids = new Set<number>();
+    const socketNames = new Set<string>();
     for (const line of sockets) {
-      const match = line.match(/[^@]+@webview_devtools_remote_(\d+)/);
-      if (!match)
-        continue;
-      const pid = +match[1];
-      newPids.add(pid);
-    }
-    for (const pid of newPids) {
-      if (this._webViews.has(pid))
+      const matchSocketName = line.match(/[^@]+@(.*?webview_devtools_remote_?.*)/);
+      if (!matchSocketName)
         continue;
 
-      const procs = (await this._backend.runCommand(`shell:ps -A | grep ${pid}`)).toString().split('\n');
+      const socketName = matchSocketName[1];
+      socketNames.add(socketName);
+      if (this._webViews.has(socketName))
+        continue;
+
+      // possible line: 0000000000000000: 00000002 00000000 00010000 0001 01 5841881 @webview_devtools_remote_zeus
+      // the result: match[1] = ''
+      const match = line.match(/[^@]+@.*?webview_devtools_remote_?(\d*)/);
+      let pid = -1;
+      if (match && match[1])
+        pid = +match[1];
+
+      const pkg = await this._extractPkg(pid);
       if (this._isClosed)
         return;
-      let pkg = '';
-      for (const proc of procs) {
-        const match = proc.match(/[^\s]+\s+(\d+).*$/);
-        if (!match)
-          continue;
-        const p = match[1];
-        if (+p !== pid)
-          continue;
-        pkg = proc.substring(proc.lastIndexOf(' ') + 1);
-      }
-      const webView = { pid, pkg };
-      this._webViews.set(pid, webView);
+
+      const webView = { pid, pkg, socketName };
+      this._webViews.set(socketName, webView);
       this.emit(AndroidDevice.Events.WebViewAdded, webView);
     }
-
     for (const p of this._webViews.keys()) {
-      if (!newPids.has(p)) {
+      if (!socketNames.has(p)) {
         this._webViews.delete(p);
         this.emit(AndroidDevice.Events.WebViewRemoved, p);
       }
     }
+  }
+
+  private async _extractPkg(pid: number) {
+    let pkg = '';
+    if (pid === -1)
+      return pkg;
+
+    const procs = (await this._backend.runCommand(`shell:ps -A | grep ${pid}`)).toString().split('\n');
+    for (const proc of procs) {
+      const match = proc.match(/[^\s]+\s+(\d+).*$/);
+      if (!match)
+        continue;
+      pkg = proc.substring(proc.lastIndexOf(' ') + 1);
+    }
+    return pkg;
   }
 }
 
@@ -398,7 +441,7 @@ class AndroidBrowser extends EventEmitter {
           this.onclose();
       });
     });
-    this._receiver = new (ws as any).Receiver() as stream.Writable;
+    this._receiver = new wsReceiver() as stream.Writable;
     this._receiver.on('message', message => {
       this._waitForNextTask(() => {
         if (this.onmessage)
@@ -432,7 +475,7 @@ Sec-WebSocket-Version: 13\r
 }
 
 function encodeWebFrame(data: string): Buffer {
-  return (ws as any).Sender.frame(Buffer.from(data), {
+  return wsSender.frame(Buffer.from(data), {
     opcode: 1,
     mask: true,
     fin: true,
@@ -456,3 +499,5 @@ class ClankBrowserProcess implements BrowserProcess {
     await this._browser.close();
   }
 }
+
+

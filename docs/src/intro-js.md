@@ -1,372 +1,104 @@
 ---
 id: intro
-title: "Getting started"
+title: "Installation"
 ---
 
-Playwright can either be used as a part of the Playwright Test test runner (this guide), or as a [Playwright Library](./library.md).
+Playwright Test was created specifically to accommodate the needs of end-to-end testing. Playwright supports all modern rendering engines including Chromium, WebKit, and Firefox. Test on Windows, Linux, and macOS, locally or on CI, headless or headed with native mobile emulation of Google Chrome for Android and Mobile Safari.
 
-Playwright Test was created specifically to accommodate the needs of the end-to-end testing. It does everything you would expect from the regular test runner, and more. Playwright test allows to:
+**You will learn**
 
-- Run tests across all browsers.
-- Execute tests in parallel.
-- Enjoy context isolation out of the box.
-- Capture videos, screenshots and other artifacts on failure.
-- Integrate your POMs as extensible fixtures.
+- [How to install Playwright](/intro.md#installing-playwright)
+- [What's Installed](/intro.md#whats-installed)
+- [How to run the example test](/intro.md#running-the-example-test)
+- [How to open the HTML test report](/intro.md#html-test-reports)
 
-<br/>
 
-<!-- TOC -->
-- [Release notes](./release-notes.md)
+## Installing Playwright
 
-<br/>
+Get started by installing Playwright using npm or yarn. Alternatively you can also get started and run your tests using the [VS Code Extension](./getting-started-vscode.md).
 
-## Installation
-
-Playwright has its own test runner for end-to-end tests, we call it Playwright Test.
-
-### Using init command
-
-The easiest way to get started with Playwright Test is to run the init command.
+<Tabs
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
 
 ```bash
-# Run from your project's root directory
 npm init playwright@latest
-# Or create a new project
-npm init playwright@latest new-project
 ```
 
-This will create a configuration file, optionally add examples, a GitHub Action workflow and a first test `example.spec.ts`. You can now jump directly to [writing assertions](#writing-assertions) section.
+</TabItem>
 
-### Manually
-
-Add dependency and install browsers.
+<TabItem value="yarn">
 
 ```bash
-npm i -D @playwright/test
-# install supported browsers
-npx playwright install
+yarn create playwright
 ```
 
-You can optionally install only selected browsers, see [install browsers](./cli.md#install-browsers) for more details. Or you can install no browsers at all and use existing [browser channels](./browsers.md).
-
-## First test
-
-Create `tests/example.spec.js` (or `tests/example.spec.ts` for TypeScript) to define your test.
-
-```js js-flavor=js
-const { test, expect } = require('@playwright/test');
-
-test('basic test', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-  const title = page.locator('.navbar__inner .navbar__title');
-  await expect(title).toHaveText('Playwright');
-});
-```
-
-```js js-flavor=ts
-import { test, expect } from '@playwright/test';
-
-test('basic test', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-  const title = page.locator('.navbar__inner .navbar__title');
-  await expect(title).toHaveText('Playwright');
-});
-```
-
-Now run your tests, assuming that test files are in the `tests` directory.
+</TabItem>
+  
+<TabItem value="pnpm">
 
 ```bash
-npx playwright test
+pnpm dlx create-playwright
 ```
 
-Playwright Test just ran a test using Chromium browser, in a headless manner. Let's tell it to use headed browser:
+</TabItem>
+</Tabs>
+
+
+Run the install command and select the following to get started:
+ - Choose between TypeScript or JavaScript (default is TypeScript)
+ - Name of your Tests folder (default is tests or e2e if you already have a tests folder in your project)
+ - Add a GitHub Actions workflow to easily run tests on CI
+
+
+## What's Installed
+
+Playwright will download the browsers needed as well as create the following files.
 
 ```bash
-npx playwright test --headed
+playwright.config.ts
+package.json
+package-lock.json
+tests/
+  example.spec.ts
+tests-examples/
+  demo-todo-app.spec.ts
 ```
 
-## Configuration file
+The [playwright.config](./test-configuration.md) is where you can add configuration for Playwright including modifying which browsers you would like to run Playwright on. If you are running tests inside an already existing project then dependencies will be added directly to your `package.json`.
+ 
+The `tests` folder contains a basic example test to help you get started with testing. For a more detailed example check out the `tests-examples` folder which contains tests written to test a todo app.
 
-To enjoy all the features that Playwright Test has to offer, you would want to create a configuration file `playwright.config.ts` (or `playwright.config.js`). It allows you to run tests in multiple browsers configured as you'd like.
+## Running the Example Test
 
-Here is an example configuration that runs every test in Chromium, Firefox and WebKit, by creating a "project" for each browser configuration. It also specifies [two retries](./test-retries.md) and [tracing](./trace-viewer.md) options.
-
-```js js-flavor=js
-// playwright.config.js
-// @ts-check
-const { devices } = require('@playwright/test');
-
-/** @type {import('@playwright/test').PlaywrightTestConfig} */
-const config = {
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  use: {
-    trace: 'on-first-retry',
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-  ],
-};
-
-module.exports = config;
-```
-
-```js js-flavor=ts
-// playwright.config.ts
-import { PlaywrightTestConfig, devices } from '@playwright/test';
-
-const config: PlaywrightTestConfig = {
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  use: {
-    trace: 'on-first-retry',
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-  ],
-};
-export default config;
-```
-
-Look for more options in the [configuration section](./test-configuration.md).
-
-Now you can run tests in multiple browsers by default.
+By default tests will be run on all 3 browsers, chromium, firefox and webkit using 3 workers. This can be configured in the [playwright.config file](./test-configuration.md). Tests are run in headless mode meaning no browser will open up when running the tests. Results of the tests and test logs will be shown in the terminal.
 
 ```bash
 npx playwright test
-
-Running 5 tests using 5 workers
-
-  ✓ [chromium] › example.spec.ts:3:1 › basic test (2s)
-  ✓ [firefox] › example.spec.ts:3:1 › basic test (2s)
-  ✓ [webkit] › example.spec.ts:3:1 › basic test (2s)
 ```
 
-Use `--project` command line option to run a single project.
+See our doc on [Running Tests](./running-tests.md) to learn more about running tests in headed mode, running multiple tests, running specific tests etc.
+
+## HTML Test Reports
+
+Once your test has finished running a [HTML Reporter](./test-reporters.md#html-reporter) will have been created which shows you a full report of your tests allowing you to filter the report by browsers, passed tests, failed tests, skipped tests and flaky tests. You can click on each test and explore the test's errors as well as each step of the test. By default, the HTML report is opened automatically if some of the tests failed.
 
 ```bash
-npx playwright test --project=firefox
-
-Running 1 test using 1 worker
-
-  ✓ [firefox] › example.spec.ts:3:1 › basic test (2s)
+npx playwright show-report
 ```
 
-## Writing assertions
-
-Playwright Test uses [expect](https://jestjs.io/docs/expect) library for test assertions. It extends it with the Playwright-specific matchers to achieve greater testing ergonomics.
-
-Learn more about [test assertions here](./test-assertions.md).
-
-Here is a quick example of using them:
+<img width="739" alt="HTML Reporter" src="https://user-images.githubusercontent.com/13063165/181803518-1f554349-f72a-4ad3-a7aa-4d3d1b4cad13.png" />
 
 
-```js js-flavor=js
-// example.spec.js
-const { test, expect } = require('@playwright/test');
+## What's next
 
-test('my test', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-
-  // Expect a title "to contain" a substring.
-  await expect(page).toHaveTitle(/Playwright/);
-
-  // Expect an attribute "to be strictly equal" to the value.
-  await expect(page.locator('text=Get Started').first()).toHaveAttribute('href', '/docs/intro');
-
-  await page.click('text=Get Started');
-  // Expect some text to be visible on the page.
-  await expect(page.locator('text=Introduction').first()).toBeVisible();
-});
-```
-
-```js js-flavor=ts
-// example.spec.ts
-import { test, expect } from '@playwright/test';
-
-test('my test', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-
-  // Expect a title "to contain" a substring.
-  await expect(page).toHaveTitle(/Playwright/);
-
-  // Expect an attribute "to be strictly equal" to the value.
-  await expect(page.locator('text=Get Started').first()).toHaveAttribute('href', '/docs/intro');
-
-  await page.click('text=Get Started');
-  // Expect some text to be visible on the page.
-  await expect(page.locator('text=Introduction').first()).toBeVisible();
-});
-```
-
-## Using test fixtures
-
-You noticed an argument `{ page }` that the test above has access to:
-
-```js js-flavor=js
-test('basic test', async ({ page }) => {
-  ...
-```
-
-```js js-flavor=ts
-test('basic test', async ({ page }) => {
-  ...
-```
-
-We call these arguments `fixtures`. Fixtures are objects that are created for each test run. Playwright Test comes loaded with those fixtures, and you can add your own fixtures as well. When running tests, Playwright Test looks at each test declaration, analyses the set of fixtures the test needs and prepares those fixtures specifically for the test.
-
-Here is a list of the pre-defined fixtures that you are likely to use most of the time:
-
-|Fixture    |Type             |Description                      |
-|:----------|:----------------|:--------------------------------|
-|page       |[Page]           |Isolated page for this test run. |
-|context    |[BrowserContext] |Isolated context for this test run. The `page` fixture belongs to this context as well. Learn how to [configure context](./test-configuration.md). |
-|browser    |[Browser]        |Browsers are shared across tests to optimize resources. Learn how to [configure browser](./test-configuration.md). |
-|browserName|[string]         |The name of the browser currently running the test. Either `chromium`, `firefox` or `webkit`.|
-
-## Using test hooks
-
-You can use `test.beforeAll` and `test.afterAll` hooks to set up and tear down resources shared between tests.
-And you can use `test.beforeEach` and `test.afterEach` hooks to set up and tear down resources for each test individually.
-
-```js js-flavor=js
-// example.spec.js
-const { test, expect } = require('@playwright/test');
-
-test.describe('feature foo', () => {
-  test.beforeEach(async ({ page }) => {
-    // Go to the starting url before each test.
-    await page.goto('https://playwright.dev/');
-  });
-
-  test('my test', async ({ page }) => {
-    // Assertions use the expect API.
-    await expect(page).toHaveURL('https://playwright.dev/');
-  });
-});
-```
-
-```js js-flavor=ts
-// example.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('feature foo', () => {
-  test.beforeEach(async ({ page }) => {
-    // Go to the starting url before each test.
-    await page.goto('https://playwright.dev/');
-  });
-
-  test('my test', async ({ page }) => {
-    // Assertions use the expect API.
-    await expect(page).toHaveURL('https://playwright.dev/');
-  });
-});
-```
-
-
-## Command line
-
-Following are the usual command line patterns. Learn more about the [command line](./test-cli.md).
-
-- Run all the tests
-  ```bash
-  npx playwright test
-  ```
-
-- Run a single test file
-  ```bash
-  npx playwright test tests/todo-page.spec.ts
-  ```
-
-- Run a set of test files
-  ```bash
-  npx playwright test tests/todo-page/ tests/landing-page/
-  ```
-
-- Run files that have `my-spec` or `my-spec-2` in the file name
-  ```bash
-  npx playwright test my-spec my-spec-2
-  ```
-
-- Run the test with the title
-  ```bash
-  npx playwright test -g "add a todo item"
-  ```
-
-- Run tests in headed browsers
-  ```bash
-  npx playwright test --headed
-  ```
-
-- Run tests in a particular configuration (project)
-  ```bash
-  npx playwright test --project=firefox
-  ```
-
-- Disable [parallelization](./test-parallel.md)
-  ```bash
-  npx playwright test --workers=1
-  ```
-
-- Choose a [reporter](./test-reporters.md)
-  ```bash
-  npx playwright test --reporter=dot
-  ```
-
-- Run in debug mode with [Playwright Inspector](./inspector.md)
-  ```bash
-  npx playwright test --debug
-  ```
-
-- Ask for help
-  ```bash
-  npx playwright test --help
-  ```
-
-## Configure NPM scripts
-
-Playwright Test will automatically pick up `playwright.config.js` or `playwright.config.ts`.
-
-```json
-{
-  "scripts": {
-    "test": "playwright test"
-  }
-}
-```
-
-If you put your configuration file in a different place, pass it with `--config` option.
-
-```json
-{
-  "scripts": {
-    "test": "playwright test --config=tests/example.config.js"
-  }
-}
-```
-
-:::note
-  To pass options through npm script, use double dashes: ```npm run test -- --headed```.
-:::
+- [Write tests using web first assertions, page fixtures and locators](./writing-tests.md)
+- [Run single test, multiple tests, headed mode](./running-tests.md)
+- [Generate tests with Codegen](./codegen-intro.md)
+- [See a trace of your tests](./trace-viewer-intro.md)

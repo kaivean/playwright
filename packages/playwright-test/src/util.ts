@@ -14,25 +14,30 @@
  * limitations under the License.
  */
 
+import fs from 'fs';
+import { mime } from 'playwright-core/lib/utilsBundle';
 import util from 'util';
 import path from 'path';
 import url from 'url';
-import colors from 'colors/safe';
+import { colors, debug, minimatch } from 'playwright-core/lib/utilsBundle';
 import type { TestError, Location } from './types';
-import { default as minimatch } from 'minimatch';
-import debug from 'debug';
-import { calculateSha1, isRegExp } from 'playwright-core/lib/utils/utils';
+import { calculateSha1, isRegExp, isString } from 'playwright-core/lib/utils';
 import { isInternalFileName } from 'playwright-core/lib/utils/stackTrace';
 import { currentTestInfo } from './globals';
-import { captureStackTrace as coreCaptureStackTrace, ParsedStackTrace } from 'playwright-core/lib/utils/stackTrace';
+import type { ParsedStackTrace } from 'playwright-core/lib/utils/stackTrace';
+import { captureStackTrace as coreCaptureStackTrace } from 'playwright-core/lib/utils/stackTrace';
 
-export { ParsedStackTrace };
+export type { ParsedStackTrace };
 
 const PLAYWRIGHT_CORE_PATH = path.dirname(require.resolve('playwright-core'));
-const EXPECT_PATH = path.dirname(require.resolve('expect'));
+const EXPECT_PATH = require.resolve('./expectBundle');
+const EXPECT_PATH_IMPL = require.resolve('./expectBundleImpl');
 const PLAYWRIGHT_TEST_PATH = path.join(__dirname, '..');
 
 function filterStackTrace(e: Error) {
+  if (process.env.PWDEBUGIMPL)
+    return;
+
   // This method filters internal stack frames using Error.prepareStackTrace
   // hook. Read more about the hook: https://v8.dev/docs/stack-trace-api
   //
@@ -54,7 +59,6 @@ function filterStackTrace(e: Error) {
         return true;
       return !fileName.startsWith(PLAYWRIGHT_TEST_PATH) &&
              !fileName.startsWith(PLAYWRIGHT_CORE_PATH) &&
-             !fileName.startsWith(EXPECT_PATH) &&
              !isInternalFileName(fileName, functionName);
     }));
   };
@@ -69,7 +73,7 @@ export function captureStackTrace(customApiName?: string): ParsedStackTrace {
   const frameTexts = [];
   for (let i = 0; i < stackTrace.frames.length; ++i) {
     const frame = stackTrace.frames[i];
-    if (frame.file.startsWith(EXPECT_PATH))
+    if (frame.file === EXPECT_PATH || frame.file === EXPECT_PATH_IMPL)
       continue;
     frames.push(frame);
     frameTexts.push(stackTrace.frameTexts[i]);
@@ -95,17 +99,18 @@ export function serializeError(error: Error | any): TestError {
   };
 }
 
-export function monotonicTime(): number {
-  const [seconds, nanoseconds] = process.hrtime();
-  return seconds * 1000 + (nanoseconds / 1000000 | 0);
-}
-
 export type Matcher = (value: string) => boolean;
 
-export type FilePatternFilter = {
-  re: RegExp;
+export type TestFileFilter = {
+  re?: RegExp;
+  exact?: string;
   line: number | null;
+  column: number | null;
 };
+
+export function createFileMatcherFromFilters(filters: TestFileFilter[]): Matcher {
+  return createFileMatcher(filters.map(filter => filter.re || filter.exact || ''));
+}
 
 export function createFileMatcher(patterns: string | RegExp | (string | RegExp)[]): Matcher {
   const reList: RegExp[] = [];
@@ -114,7 +119,7 @@ export function createFileMatcher(patterns: string | RegExp | (string | RegExp)[
     if (isRegExp(pattern)) {
       reList.push(pattern);
     } else {
-      if (!pattern.startsWith('**/') && !pattern.startsWith('**/'))
+      if (!pattern.startsWith('**/'))
         filePatterns.push('**/' + pattern);
       else
         filePatterns.push(pattern);
@@ -247,9 +252,53 @@ export function currentExpectTimeout(options: { timeout?: number }) {
   const testInfo = currentTestInfo();
   if (options.timeout !== undefined)
     return options.timeout;
-  let defaultExpectTimeout = testInfo?.project.expect?.timeout;
+  let defaultExpectTimeout = testInfo?.project._expect?.timeout;
   if (typeof defaultExpectTimeout === 'undefined')
     defaultExpectTimeout = 5000;
   return defaultExpectTimeout;
 }
 
+const folderToPackageJsonPath = new Map<string, string>();
+
+export function getPackageJsonPath(folderPath: string): string {
+  const cached = folderToPackageJsonPath.get(folderPath);
+  if (cached !== undefined)
+    return cached;
+
+  const packageJsonPath = path.join(folderPath, 'package.json');
+  if (fs.existsSync(packageJsonPath)) {
+    folderToPackageJsonPath.set(folderPath, packageJsonPath);
+    return packageJsonPath;
+  }
+
+  const parentFolder = path.dirname(folderPath);
+  if (folderPath === parentFolder) {
+    folderToPackageJsonPath.set(folderPath, '');
+    return '';
+  }
+
+  const result = getPackageJsonPath(parentFolder);
+  folderToPackageJsonPath.set(folderPath, result);
+  return result;
+}
+
+export async function normalizeAndSaveAttachment(outputPath: string, name: string, options: { path?: string, body?: string | Buffer, contentType?: string } = {}): Promise<{ name: string; path?: string | undefined; body?: Buffer | undefined; contentType: string; }>  {
+  if ((options.path !== undefined ? 1 : 0) + (options.body !== undefined ? 1 : 0) !== 1)
+    throw new Error(`Exactly one of "path" and "body" must be specified`);
+  if (options.path !== undefined) {
+    const hash = calculateSha1(options.path);
+
+    if (!isString(name))
+      throw new Error('"name" should be string.');
+
+    const sanitizedNamePrefix = sanitizeForFilePath(name) + '-';
+    const dest = path.join(outputPath, 'attachments', sanitizedNamePrefix + hash + path.extname(options.path));
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.copyFile(options.path, dest);
+    const contentType = options.contentType ?? (mime.getType(path.basename(options.path)) || 'application/octet-stream');
+    return { name, contentType, path: dest };
+  } else {
+    const contentType = options.contentType ?? (typeof options.body === 'string' ? 'text/plain' : 'application/octet-stream');
+    return { name, contentType, body: typeof options.body === 'string' ? Buffer.from(options.body) : options.body };
+  }
+}

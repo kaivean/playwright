@@ -15,27 +15,36 @@
  * limitations under the License.
  */
 
-import colors from 'colors/safe';
-import jpeg from 'jpeg-js';
-import pixelmatch from 'pixelmatch';
+import { colors, jpegjs } from '../utilsBundle';
+import pixelmatch from '../third_party/pixelmatch';
 import { diff_match_patch, DIFF_INSERT, DIFF_DELETE, DIFF_EQUAL } from '../third_party/diff_match_patch';
-
-// Note: we require the pngjs version of pixelmatch to avoid version mismatches.
-const { PNG } = require(require.resolve('pngjs', { paths: [require.resolve('pixelmatch')] })) as typeof import('pngjs');
+import { PNG } from '../utilsBundle';
 
 export type ImageComparatorOptions = { threshold?: number, maxDiffPixels?: number, maxDiffPixelRatio?: number };
 export type ComparatorResult = { diff?: Buffer; errorMessage: string; } | null;
 export type Comparator = (actualBuffer: Buffer | string, expectedBuffer: Buffer, options?: any) => ComparatorResult;
 
+let customPNGComparator: Comparator | undefined;
+if (process.env.PW_CUSTOM_PNG_COMPARATOR) {
+  try {
+    customPNGComparator = require(process.env.PW_CUSTOM_PNG_COMPARATOR);
+    if (typeof customPNGComparator !== 'function')
+      customPNGComparator = undefined;
+  } catch (e) {
+  }
+}
+
 export function getComparator(mimeType: string): Comparator {
   if (mimeType === 'image/png')
-    return compareImages.bind(null, 'image/png');
+    return customPNGComparator ?? compareImages.bind(null, 'image/png');
   if (mimeType === 'image/jpeg')
     return compareImages.bind(null, 'image/jpeg');
   if (mimeType === 'text/plain')
     return compareText;
   return compareBuffersOrStrings;
 }
+
+const JPEG_JS_MAX_BUFFER_SIZE_IN_MB = 5 * 1024; // ~5 GB
 
 function compareBuffersOrStrings(actualBuffer: Buffer | string, expectedBuffer: Buffer): ComparatorResult {
   if (typeof actualBuffer === 'string')
@@ -51,8 +60,8 @@ function compareImages(mimeType: string, actualBuffer: Buffer | string, expected
   if (!actualBuffer || !(actualBuffer instanceof Buffer))
     return { errorMessage: 'Actual result should be a Buffer.' };
 
-  const actual = mimeType === 'image/png' ? PNG.sync.read(actualBuffer) : jpeg.decode(actualBuffer);
-  const expected = mimeType === 'image/png' ? PNG.sync.read(expectedBuffer) : jpeg.decode(expectedBuffer);
+  const actual = mimeType === 'image/png' ? PNG.sync.read(actualBuffer) : jpegjs.decode(actualBuffer, { maxMemoryUsageInMB: JPEG_JS_MAX_BUFFER_SIZE_IN_MB });
+  const expected = mimeType === 'image/png' ? PNG.sync.read(expectedBuffer) : jpegjs.decode(expectedBuffer, { maxMemoryUsageInMB: JPEG_JS_MAX_BUFFER_SIZE_IN_MB });
   if (expected.width !== actual.width || expected.height !== actual.height) {
     return {
       errorMessage: `Expected an image ${expected.width}px by ${expected.height}px, received ${actual.width}px by ${actual.height}px. `

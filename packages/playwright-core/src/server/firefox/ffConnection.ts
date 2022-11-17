@@ -16,12 +16,13 @@
  */
 
 import { EventEmitter } from 'events';
-import { assert } from '../../utils/utils';
-import { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
-import { Protocol } from './protocol';
+import { assert } from '../../utils';
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
+import type { Protocol } from './protocol';
 import { rewriteErrorMessage } from '../../utils/stackTrace';
-import { debugLogger, RecentLogsCollector } from '../../utils/debugLogger';
-import { ProtocolLogger } from '../types';
+import type { RecentLogsCollector } from '../../common/debugLogger';
+import { debugLogger } from '../../common/debugLogger';
+import type { ProtocolLogger } from '../types';
 import { helper } from '../helper';
 import { ProtocolError } from '../protocolError';
 
@@ -57,8 +58,6 @@ export class FFConnection extends EventEmitter {
     this._lastId = 0;
     this._callbacks = new Map();
 
-    this._transport.onmessage = this._onMessage.bind(this);
-    this._transport.onclose = this._onClose.bind(this);
     this._sessions = new Map();
     this._closed = false;
 
@@ -67,6 +66,10 @@ export class FFConnection extends EventEmitter {
     this.off = super.removeListener;
     this.removeListener = super.removeListener;
     this.once = super.once;
+
+    this._transport.onmessage = this._onMessage.bind(this);
+    // onclose should be set last, since it can be immediately called.
+    this._transport.onclose = this._onClose.bind(this);
   }
 
   async send<T extends keyof Protocol.CommandParameters>(

@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
-import { codeFrameColumns } from '@babel/code-frame';
-import colors from 'colors/safe';
+import { colors, ms as milliseconds, parseStackTraceLine } from 'playwright-core/lib/utilsBundle';
 import fs from 'fs';
-import milliseconds from 'ms';
 import path from 'path';
-import StackUtils from 'stack-utils';
-import { FullConfig, TestCase, Suite, TestResult, TestError, Reporter, FullResult, TestStep, Location } from '../../types/testReporter';
-
-const stackUtils = new StackUtils();
+import type { FullConfig, TestCase, Suite, TestResult, TestError, FullResult, TestStep, Location } from '../../types/testReporter';
+import type { FullConfigInternal, ReporterInternal } from '../types';
+import { codeFrameColumns } from '../babelBundle';
 
 export type TestResultOutput = { chunk: string | Buffer, type: 'stdout' | 'stderr' };
 export const kOutputSymbol = Symbol('output');
@@ -41,15 +38,16 @@ type ErrorDetails = {
 type TestSummary = {
   skipped: number;
   expected: number;
-  skippedWithError: TestCase[];
+  interrupted: TestCase[];
   unexpected: TestCase[];
   flaky: TestCase[];
   failuresToPrint: TestCase[];
+  fatalErrors: TestError[];
 };
 
-export class BaseReporter implements Reporter  {
+export class BaseReporter implements ReporterInternal  {
   duration = 0;
-  config!: FullConfig;
+  config!: FullConfigInternal;
   suite!: Suite;
   totalTestCount = 0;
   result!: FullResult;
@@ -57,6 +55,7 @@ export class BaseReporter implements Reporter  {
   private monotonicStartTime: number = 0;
   private _omitFailures: boolean;
   private readonly _ttyWidthForTest: number;
+  private _fatalErrors: TestError[] = [];
 
   constructor(options: { omitFailures?: boolean } = {}) {
     this._omitFailures = options.omitFailures || false;
@@ -65,7 +64,7 @@ export class BaseReporter implements Reporter  {
 
   onBegin(config: FullConfig, suite: Suite) {
     this.monotonicStartTime = monotonicTime();
-    this.config = config;
+    this.config = config as FullConfigInternal;
     this.suite = suite;
     this.totalTestCount = suite.allTests().length;
   }
@@ -99,7 +98,8 @@ export class BaseReporter implements Reporter  {
   }
 
   onError(error: TestError) {
-    console.log('\n' + formatError(this.config, error, colors.enabled).message);
+    if (!(error as any).__isNotAFatalError)
+      this._fatalErrors.push(error);
   }
 
   async onEnd(result: FullResult) {
@@ -107,19 +107,23 @@ export class BaseReporter implements Reporter  {
     this.result = result;
   }
 
-  protected fitToScreen(line: string, suffix?: string): string {
-    const ttyWidth = this._ttyWidthForTest || process.stdout.columns || 0;
+  protected ttyWidth() {
+    return this._ttyWidthForTest || process.stdout.columns || 0;
+  }
+
+  protected fitToScreen(line: string, prefix?: string): string {
+    const ttyWidth = this.ttyWidth();
     if (!ttyWidth) {
       // Guard against the case where we cannot determine available width.
       return line;
     }
-    return fitToWidth(line, ttyWidth, suffix);
+    return fitToWidth(line, ttyWidth, prefix);
   }
 
   protected generateStartingMessage() {
-    const jobs = Math.min(this.config.workers, (this.config as any).__testGroupsCount);
+    const jobs = Math.min(this.config.workers, this.config._maxConcurrentTestGroups);
     const shardDetails = this.config.shard ? `, shard ${this.config.shard.current} of ${this.config.shard.total}` : '';
-    return `\nRunning ${this.totalTestCount} test${this.totalTestCount > 1 ? 's' : ''} using ${jobs} worker${jobs > 1 ? 's' : ''}${shardDetails}`;
+    return `\nRunning ${this.totalTestCount} test${this.totalTestCount !== 1 ? 's' : ''} using ${jobs} worker${jobs !== 1 ? 's' : ''}${shardDetails}`;
   }
 
   protected getSlowTests(): [string, number][] {
@@ -129,15 +133,20 @@ export class BaseReporter implements Reporter  {
     fileDurations.sort((a, b) => b[1] - a[1]);
     const count = Math.min(fileDurations.length, this.config.reportSlowTests.max || Number.POSITIVE_INFINITY);
     const threshold =  this.config.reportSlowTests.threshold;
-    return fileDurations.filter(([,duration]) => duration > threshold).slice(0, count);
+    return fileDurations.filter(([, duration]) => duration > threshold).slice(0, count);
   }
 
-  protected generateSummaryMessage({ skipped, expected, unexpected, flaky }: TestSummary) {
+  protected generateSummaryMessage({ skipped, expected, interrupted, unexpected, flaky, fatalErrors }: TestSummary) {
     const tokens: string[] = [];
     if (unexpected.length) {
       tokens.push(colors.red(`  ${unexpected.length} failed`));
       for (const test of unexpected)
         tokens.push(colors.red(formatTestHeader(this.config, test, '    ')));
+    }
+    if (interrupted.length) {
+      tokens.push(colors.yellow(`  ${interrupted.length} interrupted`));
+      for (const test of interrupted)
+        tokens.push(colors.yellow(formatTestHeader(this.config, test, '    ')));
     }
     if (flaky.length) {
       tokens.push(colors.yellow(`  ${flaky.length} flaky`));
@@ -150,6 +159,8 @@ export class BaseReporter implements Reporter  {
       tokens.push(colors.green(`  ${expected} passed`) + colors.dim(` (${milliseconds(this.duration)})`));
     if (this.result.status === 'timedout')
       tokens.push(colors.red(`  Timed out waiting ${this.config.globalTimeout / 1000}s for the entire test run`));
+    if (fatalErrors.length)
+      tokens.push(colors.red(`  ${fatalErrors.length === 1 ? '1 error was not a part of any test' : fatalErrors.length + ' errors were not a part of any test'}, see above for details`));
 
     return tokens.join('\n');
   }
@@ -157,16 +168,21 @@ export class BaseReporter implements Reporter  {
   protected generateSummary(): TestSummary {
     let skipped = 0;
     let expected = 0;
-    const skippedWithError: TestCase[] = [];
+    const interrupted: TestCase[] = [];
+    const interruptedToPrint: TestCase[] = [];
     const unexpected: TestCase[] = [];
     const flaky: TestCase[] = [];
 
     this.suite.allTests().forEach(test => {
       switch (test.outcome()) {
         case 'skipped': {
-          ++skipped;
-          if (test.results.some(result => !!result.error))
-            skippedWithError.push(test);
+          if (test.results.some(result => result.status === 'interrupted')) {
+            if (test.results.some(result => !!result.error))
+              interruptedToPrint.push(test);
+            interrupted.push(test);
+          } else {
+            ++skipped;
+          }
           break;
         }
         case 'expected': ++expected; break;
@@ -175,14 +191,15 @@ export class BaseReporter implements Reporter  {
       }
     });
 
-    const failuresToPrint = [...unexpected, ...flaky, ...skippedWithError];
+    const failuresToPrint = [...unexpected, ...flaky, ...interruptedToPrint];
     return {
       skipped,
       expected,
-      skippedWithError,
+      interrupted,
       unexpected,
       flaky,
-      failuresToPrint
+      failuresToPrint,
+      fatalErrors: this._fatalErrors,
     };
   }
 
@@ -311,6 +328,11 @@ export function formatResultFailure(config: FullConfig, test: TestCase, result: 
       message: indent(colors.red(`Expected to fail, but passed.`), initialIndent),
     });
   }
+  if (result.status === 'interrupted') {
+    errorDetails.push({
+      message: indent(colors.red(`Test was interrupted.`), initialIndent),
+    });
+  }
 
   for (const error of result.errors) {
     const formattedError = formatError(config, error, highlightCode, test.location.file);
@@ -330,15 +352,19 @@ function relativeTestPath(config: FullConfig, test: TestCase): string {
   return relativeFilePath(config, test.location.file);
 }
 
-function stepSuffix(step: TestStep | undefined) {
+export function stepSuffix(step: TestStep | undefined) {
   const stepTitles = step ? step.titlePath() : [];
   return stepTitles.map(t => ' › ' + t).join('');
 }
 
-export function formatTestTitle(config: FullConfig, test: TestCase, step?: TestStep): string {
+export function formatTestTitle(config: FullConfig, test: TestCase, step?: TestStep, omitLocation: boolean = false): string {
   // root, project, file, ...describes, test
   const [, projectName, , ...titles] = test.titlePath();
-  const location = `${relativeTestPath(config, test)}:${test.location.line}:${test.location.column}`;
+  let location;
+  if (omitLocation)
+    location = `${relativeTestPath(config, test)}`;
+  else
+    location = `${relativeTestPath(config, test)}:${step?.location?.line ?? test.location.line}:${step?.location?.column ?? test.location.column}`;
   const projectTitle = projectName ? `[${projectName}] › ` : '';
   return `${projectTitle}${location} › ${titles.join(' › ')}${stepSuffix(step)}`;
 }
@@ -354,7 +380,9 @@ export function formatError(config: FullConfig, error: TestError, highlightCode:
   const tokens = [];
   let location: Location | undefined;
   if (stack) {
-    const parsed = prepareErrorStack(stack, file);
+    // Now that we filter out internals from our stack traces, we can safely render
+    // the helper / original exception locations.
+    const parsed = prepareErrorStack(stack);
     tokens.push(parsed.message);
     location = parsed.location;
     if (location) {
@@ -395,15 +423,11 @@ function indent(lines: string, tab: string) {
   return lines.replace(/^(?=.+$)/gm, tab);
 }
 
-export function prepareErrorStack(stack: string, file?: string): {
+export function prepareErrorStack(stack: string): {
   message: string;
   stackLines: string[];
   location?: Location;
 } {
-  if (file) {
-    // Stack will have /private/var/folders instead of /var/folders on Mac.
-    file = fs.realpathSync(file);
-  }
   const lines = stack.split('\n');
   let firstStackLine = lines.findIndex(line => line.startsWith('    at '));
   if (firstStackLine === -1)
@@ -412,14 +436,13 @@ export function prepareErrorStack(stack: string, file?: string): {
   const stackLines = lines.slice(firstStackLine);
   let location: Location | undefined;
   for (const line of stackLines) {
-    const parsed = stackUtils.parseLine(line);
-    if (!parsed || !parsed.file)
+    const { frame: parsed, fileName: resolvedFile } = parseStackTraceLine(line);
+    if (!parsed || !resolvedFile)
       continue;
-    const resolvedFile = path.join(process.cwd(), parsed.file);
-    if (!file || resolvedFile === file) {
-      location = { file: resolvedFile, column: parsed.column || 0, line: parsed.line || 0 };
-      break;
-    }
+    if (belongsToNodeModules(resolvedFile))
+      continue;
+    location = { file: resolvedFile, column: parsed.column || 0, line: parsed.line || 0 };
+    break;
   }
   return { message, stackLines, location };
 }
@@ -429,26 +452,38 @@ function monotonicTime(): number {
   return seconds * 1000 + (nanoseconds / 1000000 | 0);
 }
 
-const ansiRegex = new RegExp('[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))', 'g');
+const ansiRegex = new RegExp('([\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~])))', 'g');
 export function stripAnsiEscapes(str: string): string {
   return str.replace(ansiRegex, '');
 }
 
-// Leaves enough space for the "suffix" to also fit.
-function fitToWidth(line: string, width: number, suffix?: string): string {
-  const suffixLength = suffix ? stripAnsiEscapes(suffix).length : 0;
-  width -= suffixLength;
+// Leaves enough space for the "prefix" to also fit.
+function fitToWidth(line: string, width: number, prefix?: string): string {
+  const prefixLength = prefix ? stripAnsiEscapes(prefix).length : 0;
+  width -= prefixLength;
   if (line.length <= width)
     return line;
-  let m;
-  let ansiLen = 0;
-  ansiRegex.lastIndex = 0;
-  while ((m = ansiRegex.exec(line)) !== null) {
-    const visibleLen = m.index - ansiLen;
-    if (visibleLen >= width)
-      break;
-    ansiLen += m[0].length;
+
+  // Even items are plain text, odd items are control sequences.
+  const parts = line.split(ansiRegex);
+  const taken: string[] = [];
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (i % 2) {
+      // Include all control sequences to preserve formatting.
+      taken.push(parts[i]);
+    } else {
+      let part = parts[i].substring(parts[i].length - width);
+      if (part.length < parts[i].length && part.length > 0) {
+        // Add ellipsis if we are truncating.
+        part = '\u2026' + part.substring(1);
+      }
+      taken.push(part);
+      width -= part.length;
+    }
   }
-  // Truncate and reset all colors.
-  return line.substr(0, width + ansiLen) + '\u001b[0m';
+  return taken.reverse().join('');
+}
+
+function belongsToNodeModules(file: string) {
+  return file.includes(`${path.sep}node_modules${path.sep}`);
 }

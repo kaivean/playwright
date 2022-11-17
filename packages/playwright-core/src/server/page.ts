@@ -15,28 +15,36 @@
  * limitations under the License.
  */
 
-import * as dom from './dom';
+import type * as dom from './dom';
 import * as frames from './frames';
 import * as input from './input';
 import * as js from './javascript';
 import * as network from './network';
-import { Screenshotter, ScreenshotOptions } from './screenshotter';
-import { TimeoutSettings } from '../utils/timeoutSettings';
-import * as types from './types';
+import type * as channels from '@protocol/channels';
+import type { ScreenshotOptions } from './screenshotter';
+import { Screenshotter, validateScreenshotOptions } from './screenshotter';
+import { TimeoutSettings } from '../common/timeoutSettings';
+import type * as types from './types';
 import { BrowserContext } from './browserContext';
 import { ConsoleMessage } from './console';
 import * as accessibility from './accessibility';
 import { FileChooser } from './fileChooser';
-import { Progress, ProgressController } from './progress';
-import { assert, isError } from '../utils/utils';
-import { ManualPromise } from '../utils/async';
-import { debugLogger } from '../utils/debugLogger';
-import { getComparator, ImageComparatorOptions } from '../utils/comparators';
-import { SelectorInfo, Selectors } from './selectors';
-import { CallMetadata, SdkObject } from './instrumentation';
-import { Artifact } from './artifact';
-import { TimeoutOptions } from '../common/types';
-import { isInvalidSelectorError, ParsedSelector } from './common/selectorParser';
+import type { Progress } from './progress';
+import { ProgressController } from './progress';
+import { assert, isError } from '../utils';
+import { ManualPromise } from '../utils/manualPromise';
+import { debugLogger } from '../common/debugLogger';
+import type { ImageComparatorOptions } from '../utils/comparators';
+import { getComparator } from '../utils/comparators';
+import type { SelectorInfo, Selectors } from './selectors';
+import type { CallMetadata } from './instrumentation';
+import { SdkObject } from './instrumentation';
+import type { Artifact } from './artifact';
+import type { TimeoutOptions } from '../common/types';
+import type { ParsedSelector } from './isomorphic/selectorParser';
+import { isInvalidSelectorError } from './isomorphic/selectorParser';
+import { parseEvaluationResultValue, source } from './isomorphic/utilityScriptSerializers';
+import type { SerializedValue } from './isomorphic/utilityScriptSerializers';
 
 export interface PageDelegate {
   readonly rawMouse: input.RawMouse;
@@ -47,7 +55,9 @@ export interface PageDelegate {
   goBack(): Promise<boolean>;
   goForward(): Promise<boolean>;
   exposeBinding(binding: PageBinding): Promise<void>;
-  evaluateOnNewDocument(source: string): Promise<void>;
+  removeExposedBindings(): Promise<void>;
+  addInitScript(source: string): Promise<void>;
+  removeInitScripts(): Promise<void>;
   closePage(runBeforeUnload: boolean): Promise<void>;
   potentiallyUninitializedPage(): Page;
   pageOrError(): Promise<Page | Error>;
@@ -55,20 +65,21 @@ export interface PageDelegate {
   navigateFrame(frame: frames.Frame, url: string, referrer: string | undefined): Promise<frames.GotoResult>;
 
   updateExtraHTTPHeaders(): Promise<void>;
-  setEmulatedSize(emulatedSize: types.EmulatedSize): Promise<void>;
+  updateEmulatedViewportSize(preserveWindowBoundaries?: boolean): Promise<void>;
   updateEmulateMedia(): Promise<void>;
   updateRequestInterception(): Promise<void>;
-  setFileChooserIntercepted(enabled: boolean): Promise<void>;
+  updateFileChooserInterception(): Promise<void>;
   bringToFront(): Promise<void>;
 
   setBackgroundColor(color?: { r: number; g: number; b: number; a: number; }): Promise<void>;
-  takeScreenshot(progress: Progress, format: string, documentRect: types.Rect | undefined, viewportRect: types.Rect | undefined, quality: number | undefined, fitsViewport: boolean, size: 'css' | 'device'): Promise<Buffer>;
+  takeScreenshot(progress: Progress, format: string, documentRect: types.Rect | undefined, viewportRect: types.Rect | undefined, quality: number | undefined, fitsViewport: boolean, scale: 'css' | 'device'): Promise<Buffer>;
 
   isElementHandle(remoteObject: any): boolean;
   adoptElementHandle<T extends Node>(handle: dom.ElementHandle<T>, to: dom.FrameExecutionContext): Promise<dom.ElementHandle<T>>;
   getContentFrame(handle: dom.ElementHandle): Promise<frames.Frame | null>;  // Only called for frame owner elements.
   getOwnerFrame(handle: dom.ElementHandle): Promise<string | null>; // Returns frameId.
   getContentQuads(handle: dom.ElementHandle): Promise<types.Quad[] | null>;
+  setInputFiles(handle: dom.ElementHandle<HTMLInputElement>, files: types.FilePayload[]): Promise<void>;
   setInputFilePaths(handle: dom.ElementHandle<HTMLInputElement>, files: string[]): Promise<void>;
   getBoundingBox(handle: dom.ElementHandle): Promise<types.Rect | null>;
   getFrameElement(frame: frames.Frame): Promise<dom.ElementHandle>;
@@ -76,7 +87,7 @@ export interface PageDelegate {
   setScreencastOptions(options: { width: number, height: number, quality: number } | null): Promise<void>;
 
   getAccessibilityTree(needle?: dom.ElementHandle): Promise<{tree: accessibility.AXNode, needle: accessibility.AXNode | null}>;
-  pdf?: (options?: types.PDFOptions) => Promise<Buffer>;
+  pdf?: (options: channels.PagePdfParams) => Promise<Buffer>;
   coverage?: () => any;
 
   // Work around WebKit's raf issues on Windows.
@@ -87,13 +98,13 @@ export interface PageDelegate {
   readonly cspErrorsAsynchronousForInlineScipts?: boolean;
 }
 
-type PageState = {
-  emulatedSize: { screen: types.Size, viewport: types.Size } | null;
-  mediaType: types.MediaType | null;
-  colorScheme: types.ColorScheme | null;
-  reducedMotion: types.ReducedMotion | null;
-  forcedColors: types.ForcedColors | null;
-  extraHTTPHeaders: types.HeadersArray | null;
+type EmulatedSize = { screen: types.Size, viewport: types.Size };
+
+type EmulatedMedia = {
+  media: types.MediaType;
+  colorScheme: types.ColorScheme;
+  reducedMotion: types.ReducedMotion;
+  forcedColors: types.ForcedColors;
 };
 
 type ExpectScreenshotOptions = {
@@ -116,14 +127,12 @@ export class Page extends SdkObject {
     Dialog: 'dialog',
     Download: 'download',
     FileChooser: 'filechooser',
-    DOMContentLoaded: 'domcontentloaded',
     // Can't use just 'error' due to node.js special treatment of error events.
     // @see https://nodejs.org/api/events.html#events_error_events
     PageError: 'pageerror',
     FrameAttached: 'frameattached',
     FrameDetached: 'framedetached',
     InternalFrameNavigatedToNewDocument: 'internalframenavigatedtonewdocument',
-    Load: 'load',
     ScreencastFrame: 'screencastframe',
     Video: 'video',
     WebSocket: 'websocket',
@@ -142,38 +151,36 @@ export class Page extends SdkObject {
   readonly touchscreen: input.Touchscreen;
   readonly _timeoutSettings: TimeoutSettings;
   readonly _delegate: PageDelegate;
-  readonly _state: PageState;
+  _emulatedSize: EmulatedSize | undefined;
+  private _extraHTTPHeaders: types.HeadersArray | undefined;
+  private _emulatedMedia: Partial<EmulatedMedia> = {};
+  private _interceptFileChooser = false;
   private readonly _pageBindings = new Map<string, PageBinding>();
-  readonly _evaluateOnNewDocumentSources: string[] = [];
+  readonly initScripts: string[] = [];
   readonly _screenshotter: Screenshotter;
   readonly _frameManager: frames.FrameManager;
   readonly accessibility: accessibility.Accessibility;
   private _workers = new Map<string, Worker>();
-  readonly pdf: ((options?: types.PDFOptions) => Promise<Buffer>) | undefined;
+  readonly pdf: ((options: channels.PagePdfParams) => Promise<Buffer>) | undefined;
   readonly coverage: any;
-  private _clientRequestInterceptor: network.RouteHandler | undefined;
-  private _serverRequestInterceptor: network.RouteHandler | undefined;
+  _clientRequestInterceptor: network.RouteHandler | undefined;
+  _serverRequestInterceptor: network.RouteHandler | undefined;
   _ownedContext: BrowserContext | undefined;
-  readonly selectors: Selectors;
+  selectors: Selectors;
   _pageIsError: Error | undefined;
   _video: Artifact | null = null;
   _opener: Page | undefined;
-  private _frameThrottler = new FrameThrottler(10, 200);
   private _isServerSideOnly = false;
+
+  // Aiming at 25 fps by default - each frame is 40ms, but we give some slack with 35ms.
+  // When throttling for tracing, 200ms between frames, except for 10 frames around the action.
+  private _frameThrottler = new FrameThrottler(10, 35, 200);
 
   constructor(delegate: PageDelegate, browserContext: BrowserContext) {
     super(browserContext, 'page');
     this.attribution.page = this;
     this._delegate = delegate;
     this._browserContext = browserContext;
-    this._state = {
-      emulatedSize: browserContext._options.viewport ? { viewport: browserContext._options.viewport, screen: browserContext._options.screen || browserContext._options.viewport } : null,
-      mediaType: null,
-      colorScheme: browserContext._options.colorScheme !== undefined  ? browserContext._options.colorScheme : 'light',
-      reducedMotion: browserContext._options.reducedMotion !== undefined  ? browserContext._options.reducedMotion : 'no-preference',
-      forcedColors: browserContext._options.forcedColors !== undefined  ? browserContext._options.forcedColors : 'none',
-      extraHTTPHeaders: null,
-    };
     this.accessibility = new accessibility.Accessibility(delegate.getAccessibilityTree.bind(delegate));
     this.keyboard = new input.Keyboard(delegate.rawKeyboard, this);
     this.mouse = new input.Mouse(delegate.rawMouse, this);
@@ -185,7 +192,6 @@ export class Page extends SdkObject {
       this.pdf = delegate.pdf.bind(delegate);
     this.coverage = delegate.coverage ? delegate.coverage() : null;
     this.selectors = browserContext.selectors();
-    this.instrumentation.onPageOpen(this);
   }
 
   async initOpener(opener: PageDelegate | null) {
@@ -196,7 +202,7 @@ export class Page extends SdkObject {
       this._opener = openerPage;
   }
 
-  reportAsNew(error?: Error) {
+  reportAsNew(error: Error | undefined = undefined, contextEvent: string = BrowserContext.Events.Page) {
     if (error) {
       // Initialization error could have happened because of
       // context/browser closure. Just ignore the page.
@@ -205,12 +211,13 @@ export class Page extends SdkObject {
       this._setIsError(error);
     }
     this._initialized = true;
-    this.emitOnContext(BrowserContext.Events.Page, this);
+    this.emitOnContext(contextEvent, this);
     // I may happen that page initialization finishes after Close event has already been sent,
     // in that case we fire another Close event to ensure that each reported Page will have
     // corresponding Close event after it is reported on the context.
     if (this.isClosed())
       this.emit(Page.Events.Close);
+    this.instrumentation.onPageOpen(this);
   }
 
   initializedOrUndefined() {
@@ -223,6 +230,29 @@ export class Page extends SdkObject {
     this._browserContext.emit(event, ...args);
   }
 
+  async resetForReuse(metadata: CallMetadata) {
+    this.setDefaultNavigationTimeout(undefined);
+    this.setDefaultTimeout(undefined);
+
+    await this._removeExposedBindings();
+    await this._removeInitScripts();
+    await this.setClientRequestInterceptor(undefined);
+    await this._setServerRequestInterceptor(undefined);
+    await this.setFileChooserIntercepted(false);
+    // Re-navigate once init scripts are gone.
+    await this.mainFrame().goto(metadata, 'about:blank');
+    this._emulatedSize = undefined;
+    this._emulatedMedia = {};
+    this._extraHTTPHeaders = undefined;
+    this._interceptFileChooser = false;
+
+    await Promise.all([
+      this._delegate.updateEmulatedViewportSize(true),
+      this._delegate.updateEmulateMedia(),
+      this._delegate.updateFileChooserInterception(),
+    ]);
+  }
+
   async _doSlowMo() {
     const slowMo = this._browserContext._browser.options.slowMo;
     if (!slowMo)
@@ -231,27 +261,26 @@ export class Page extends SdkObject {
   }
 
   _didClose() {
-    this.instrumentation.onPageClose(this);
     this._frameManager.dispose();
-    this._frameThrottler.setEnabled(false);
+    this._frameThrottler.dispose();
     assert(this._closedState !== 'closed', 'Page closed twice');
     this._closedState = 'closed';
     this.emit(Page.Events.Close);
     this._closedPromise.resolve();
+    this.instrumentation.onPageClose(this);
   }
 
   _didCrash() {
-    this.instrumentation.onPageClose(this);
     this._frameManager.dispose();
-    this._frameThrottler.setEnabled(false);
+    this._frameThrottler.dispose();
     this.emit(Page.Events.Crash);
     this._crashedPromise.resolve(new Error('Page crashed'));
+    this.instrumentation.onPageClose(this);
   }
 
   _didDisconnect() {
-    this.instrumentation.onPageClose(this);
     this._frameManager.dispose();
-    this._frameThrottler.setEnabled(false);
+    this._frameThrottler.dispose();
     assert(!this._disconnected, 'Page disconnected twice');
     this._disconnected = true;
     this._disconnectedPromise.resolve(new Error('Page closed'));
@@ -307,9 +336,21 @@ export class Page extends SdkObject {
     await this._delegate.exposeBinding(binding);
   }
 
+  async _removeExposedBindings() {
+    for (const key of this._pageBindings.keys()) {
+      if (!key.startsWith('__pw'))
+        this._pageBindings.delete(key);
+    }
+    await this._delegate.removeExposedBindings();
+  }
+
   setExtraHTTPHeaders(headers: types.HeadersArray) {
-    this._state.extraHTTPHeaders = headers;
+    this._extraHTTPHeaders = headers;
     return this._delegate.updateExtraHTTPHeaders();
+  }
+
+  extraHTTPHeaders(): types.HeadersArray | undefined {
+    return this._extraHTTPHeaders;
   }
 
   async _onBindingCalled(payload: string, context: dom.FrameExecutionContext) {
@@ -329,11 +370,12 @@ export class Page extends SdkObject {
 
   async reload(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
     const controller = new ProgressController(metadata, this);
-    return controller.run(progress => this.mainFrame().raceNavigationAction(async () => {
+    return controller.run(progress => this.mainFrame().raceNavigationAction(progress, options, async () => {
       // Note: waitForNavigation may fail before we get response to reload(),
       // so we should await it immediately.
       const [response] = await Promise.all([
-        this.mainFrame()._waitForNavigation(progress, options),
+        // Reload must be a new document, and should not be confused with a stray pushState.
+        this.mainFrame()._waitForNavigation(progress, true /* requiresNewDocument */, options),
         this._delegate.reload(),
       ]);
       await this._doSlowMo();
@@ -343,11 +385,11 @@ export class Page extends SdkObject {
 
   async goBack(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
     const controller = new ProgressController(metadata, this);
-    return controller.run(progress => this.mainFrame().raceNavigationAction(async () => {
+    return controller.run(progress => this.mainFrame().raceNavigationAction(progress, options, async () => {
       // Note: waitForNavigation may fail before we get response to goBack,
       // so we should catch it immediately.
       let error: Error | undefined;
-      const waitPromise = this.mainFrame()._waitForNavigation(progress, options).catch(e => {
+      const waitPromise = this.mainFrame()._waitForNavigation(progress, false /* requiresNewDocument */, options).catch(e => {
         error = e;
         return null;
       });
@@ -364,11 +406,11 @@ export class Page extends SdkObject {
 
   async goForward(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
     const controller = new ProgressController(metadata, this);
-    return controller.run(progress => this.mainFrame().raceNavigationAction(async () => {
+    return controller.run(progress => this.mainFrame().raceNavigationAction(progress, options, async () => {
       // Note: waitForNavigation may fail before we get response to goForward,
       // so we should catch it immediately.
       let error: Error | undefined;
-      const waitPromise = this.mainFrame()._waitForNavigation(progress, options).catch(e => {
+      const waitPromise = this.mainFrame()._waitForNavigation(progress, false /* requiresNewDocument */, options).catch(e => {
         error = e;
         return null;
       });
@@ -383,43 +425,66 @@ export class Page extends SdkObject {
     }), this._timeoutSettings.navigationTimeout(options));
   }
 
-  async emulateMedia(options: { media?: types.MediaType | null, colorScheme?: types.ColorScheme | null, reducedMotion?: types.ReducedMotion | null, forcedColors?: types.ForcedColors | null }) {
+  async emulateMedia(options: Partial<EmulatedMedia>) {
     if (options.media !== undefined)
-      this._state.mediaType = options.media;
+      this._emulatedMedia.media = options.media;
     if (options.colorScheme !== undefined)
-      this._state.colorScheme = options.colorScheme;
+      this._emulatedMedia.colorScheme = options.colorScheme;
     if (options.reducedMotion !== undefined)
-      this._state.reducedMotion = options.reducedMotion;
+      this._emulatedMedia.reducedMotion = options.reducedMotion;
     if (options.forcedColors !== undefined)
-      this._state.forcedColors = options.forcedColors;
+      this._emulatedMedia.forcedColors = options.forcedColors;
+
     await this._delegate.updateEmulateMedia();
     await this._doSlowMo();
   }
 
+  emulatedMedia(): EmulatedMedia {
+    const contextOptions = this._browserContext._options;
+    return {
+      media: this._emulatedMedia.media || 'no-override',
+      colorScheme: this._emulatedMedia.colorScheme !== undefined ? this._emulatedMedia.colorScheme : contextOptions.colorScheme ?? 'light',
+      reducedMotion: this._emulatedMedia.reducedMotion !== undefined ? this._emulatedMedia.reducedMotion : contextOptions.reducedMotion ?? 'no-preference',
+      forcedColors: this._emulatedMedia.forcedColors !== undefined ? this._emulatedMedia.forcedColors : contextOptions.forcedColors ?? 'none',
+    };
+  }
+
   async setViewportSize(viewportSize: types.Size) {
-    this._state.emulatedSize = { viewport: { ...viewportSize }, screen: { ...viewportSize } };
-    await this._delegate.setEmulatedSize(this._state.emulatedSize);
+    this._emulatedSize = { viewport: { ...viewportSize }, screen: { ...viewportSize } };
+    await this._delegate.updateEmulatedViewportSize();
     await this._doSlowMo();
   }
 
   viewportSize(): types.Size | null {
-    return this._state.emulatedSize?.viewport || null;
+    return this.emulatedSize()?.viewport || null;
+  }
+
+  emulatedSize(): EmulatedSize | null {
+    if (this._emulatedSize)
+      return this._emulatedSize;
+    const contextOptions = this._browserContext._options;
+    return contextOptions.viewport ? { viewport: contextOptions.viewport, screen: contextOptions.screen || contextOptions.viewport } : null;
   }
 
   async bringToFront(): Promise<void> {
     await this._delegate.bringToFront();
   }
 
-  async _addInitScriptExpression(source: string) {
-    this._evaluateOnNewDocumentSources.push(source);
-    await this._delegate.evaluateOnNewDocument(source);
+  async addInitScript(source: string) {
+    this.initScripts.push(source);
+    await this._delegate.addInitScript(source);
   }
 
-  _needsRequestInterception(): boolean {
+  async _removeInitScripts() {
+    this.initScripts.splice(0, this.initScripts.length);
+    await this._delegate.removeInitScripts();
+  }
+
+  needsRequestInterception(): boolean {
     return !!this._clientRequestInterceptor || !!this._serverRequestInterceptor || !!this._browserContext._requestInterceptor;
   }
 
-  async _setClientRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
+  async setClientRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
     this._clientRequestInterceptor = handler;
     await this._delegate.updateRequestInterception();
   }
@@ -427,23 +492,6 @@ export class Page extends SdkObject {
   async _setServerRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
     this._serverRequestInterceptor = handler;
     await this._delegate.updateRequestInterception();
-  }
-
-  _requestStarted(request: network.Request, routeDelegate: network.RouteDelegate) {
-    const route = new network.Route(request, routeDelegate);
-    if (this._serverRequestInterceptor) {
-      this._serverRequestInterceptor(route, request);
-      return;
-    }
-    if (this._clientRequestInterceptor) {
-      this._clientRequestInterceptor(route, request);
-      return;
-    }
-    if (this._browserContext._requestInterceptor) {
-      this._browserContext._requestInterceptor(route, request);
-      return;
-    }
-    route.continue();
   }
 
   async expectScreenshot(metadata: CallMetadata, options: ExpectScreenshotOptions = {}): Promise<{ actual?: Buffer, previous?: Buffer, diff?: Buffer, errorMessage?: string, log?: string[] }> {
@@ -459,6 +507,13 @@ export class Page extends SdkObject {
     const controller = new ProgressController(metadata, this);
     if (!options.expected && options.isNot)
       return { errorMessage: '"not" matcher requires expected result' };
+    try {
+      const format = validateScreenshotOptions(options.screenshotOptions || {});
+      if (format !== 'png')
+        throw new Error('Only PNG screenshots are supported');
+    } catch (error) {
+      return { errorMessage: error.message };
+    }
     let intermediateResult: {
       actual?: Buffer,
       previous?: Buffer,
@@ -531,7 +586,7 @@ export class Page extends SdkObject {
       return {
         log: e.message ? [...metadata.log, e.message] : metadata.log,
         ...intermediateResult,
-        errorMessage: intermediateResult?.errorMessage ?? e.message,
+        errorMessage: e.message,
       };
     });
   }
@@ -562,8 +617,7 @@ export class Page extends SdkObject {
 
   private _setIsError(error: Error) {
     this._pageIsError = error;
-    if (!this._frameManager.mainFrame())
-      this._frameManager.frameAttached('<dummy>', null);
+    this._frameManager.createDummyMainFrameIfNeeded();
   }
 
   isClosed(): boolean {
@@ -590,8 +644,13 @@ export class Page extends SdkObject {
     }
   }
 
-  async _setFileChooserIntercepted(enabled: boolean): Promise<void> {
-    await this._delegate.setFileChooserIntercepted(enabled);
+  async setFileChooserIntercepted(enabled: boolean): Promise<void> {
+    this._interceptFileChooser = enabled;
+    await this._delegate.updateFileChooserInterception();
+  }
+
+  fileChooserIntercepted() {
+    return this._interceptFileChooser;
   }
 
   frameNavigatedToNewDocument(frame: frames.Frame) {
@@ -614,7 +673,7 @@ export class Page extends SdkObject {
 
   setScreencastOptions(options: { width: number, height: number, quality: number } | null) {
     this._delegate.setScreencastOptions(options).catch(e => debugLogger.log('error', e));
-    this._frameThrottler.setEnabled(!!options);
+    this._frameThrottler.setThrottlingEnabled(!!options);
   }
 
   throttleScreencastFrameAck(ack: () => void) {
@@ -685,6 +744,12 @@ export class Worker extends SdkObject {
   }
 }
 
+type BindingPayload = {
+  name: string;
+  seq: number;
+  serializedArgs?: SerializedValue[],
+};
+
 export class PageBinding {
   readonly name: string;
   readonly playwrightFunction: frames.FunctionWithSource;
@@ -694,12 +759,12 @@ export class PageBinding {
   constructor(name: string, playwrightFunction: frames.FunctionWithSource, needsHandle: boolean) {
     this.name = name;
     this.playwrightFunction = playwrightFunction;
-    this.source = `(${addPageBinding.toString()})(${JSON.stringify(name)}, ${needsHandle})`;
+    this.source = `(${addPageBinding.toString()})(${JSON.stringify(name)}, ${needsHandle}, (${source})())`;
     this.needsHandle = needsHandle;
   }
 
   static async dispatch(page: Page, payload: string, context: dom.FrameExecutionContext) {
-    const { name, seq, args } = JSON.parse(payload);
+    const { name, seq, serializedArgs } = JSON.parse(payload) as BindingPayload;
     try {
       assert(context.world);
       const binding = page.getBinding(name)!;
@@ -708,6 +773,7 @@ export class PageBinding {
         const handle = await context.evaluateHandle(takeHandle, { name, seq }).catch(e => null);
         result = await binding.playwrightFunction({ frame: context.frame, page, context: page._browserContext }, handle);
       } else {
+        const args = serializedArgs!.map(a => parseEvaluationResultValue(a));
         result = await binding.playwrightFunction({ frame: context.frame, page, context: page._browserContext }, ...args);
       }
       context.evaluate(deliverResult, { name, seq, result }).catch(e => debugLogger.log('error', e));
@@ -743,7 +809,7 @@ export class PageBinding {
   }
 }
 
-function addPageBinding(bindingName: string, needsHandle: boolean) {
+function addPageBinding(bindingName: string, needsHandle: boolean, utilityScriptSerializers: ReturnType<typeof source>) {
   const binding = (globalThis as any)[bindingName];
   if (binding.__installed)
     return;
@@ -756,7 +822,7 @@ function addPageBinding(bindingName: string, needsHandle: boolean) {
       callbacks = new Map();
       me['callbacks'] = callbacks;
     }
-    const seq = (me['lastSeq'] || 0) + 1;
+    const seq: number = (me['lastSeq'] || 0) + 1;
     me['lastSeq'] = seq;
     let handles = me['handles'];
     if (!handles) {
@@ -764,12 +830,17 @@ function addPageBinding(bindingName: string, needsHandle: boolean) {
       me['handles'] = handles;
     }
     const promise = new Promise((resolve, reject) => callbacks.set(seq, { resolve, reject }));
+    let payload: BindingPayload;
     if (needsHandle) {
       handles.set(seq, args[0]);
-      binding(JSON.stringify({ name: bindingName, seq }));
+      payload = { name: bindingName, seq };
     } else {
-      binding(JSON.stringify({ name: bindingName, seq, args }));
+      const serializedArgs = args.map(a => utilityScriptSerializers.serializeAsCallArgument(a, v => {
+        return { fallThrough: v };
+      }));
+      payload = { name: bindingName, seq, serializedArgs };
     }
+    binding(JSON.stringify(payload));
     return promise;
   };
   (globalThis as any)[bindingName].__installed = true;
@@ -777,26 +848,30 @@ function addPageBinding(bindingName: string, needsHandle: boolean) {
 
 class FrameThrottler {
   private _acks: (() => void)[] = [];
-  private _interval: number;
+  private _defaultInterval: number;
+  private _throttlingInterval: number;
   private _nonThrottledFrames: number;
   private _budget: number;
-  private _intervalId: NodeJS.Timeout | undefined;
+  private _throttlingEnabled = false;
+  private _timeoutId: NodeJS.Timeout | undefined;
 
-  constructor(nonThrottledFrames: number, interval: number) {
+  constructor(nonThrottledFrames: number, defaultInterval: number, throttlingInterval: number) {
     this._nonThrottledFrames = nonThrottledFrames;
     this._budget = nonThrottledFrames;
-    this._interval = interval;
+    this._defaultInterval = defaultInterval;
+    this._throttlingInterval = throttlingInterval;
+    this._tick();
   }
 
-  setEnabled(enabled: boolean) {
-    if (enabled) {
-      if (this._intervalId)
-        clearInterval(this._intervalId);
-      this._intervalId = setInterval(() => this._tick(), this._interval);
-    } else if (this._intervalId) {
-      clearInterval(this._intervalId);
-      this._intervalId = undefined;
+  dispose() {
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+      this._timeoutId = undefined;
     }
+  }
+
+  setThrottlingEnabled(enabled: boolean) {
+    this._throttlingEnabled = enabled;
   }
 
   recharge() {
@@ -805,26 +880,34 @@ class FrameThrottler {
       ack();
     this._acks = [];
     this._budget = this._nonThrottledFrames;
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+      this._tick();
+    }
   }
 
   ack(ack: () => void) {
-    // Either not engaged or video is also recording, don't throttle.
-    if (!this._intervalId) {
+    if (!this._timeoutId) {
+      // Already disposed.
       ack();
       return;
     }
-
-    // Do we have enough budget to respond w/o throttling?
-    if (--this._budget > 0) {
-      ack();
-      return;
-    }
-
-    // Schedule.
     this._acks.push(ack);
   }
 
   private _tick() {
-    this._acks.shift()?.();
+    const ack = this._acks.shift();
+    if (ack) {
+      --this._budget;
+      ack();
+    }
+
+    if (this._throttlingEnabled && this._budget <= 0) {
+      // Non-throttled frame budget is exceeded. Next ack will be throttled.
+      this._timeoutId = setTimeout(() => this._tick(), this._throttlingInterval);
+    } else {
+      // Either not throttling, or still under budget. Next ack will be after the default timeout.
+      this._timeoutId = setTimeout(() => this._tick(), this._defaultInterval);
+    }
   }
 }

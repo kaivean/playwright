@@ -85,7 +85,36 @@ test('should print an error in a codeframe', async ({ runInlineTest }) => {
   expect(result.output).toContain(`>  7 |         const error = new Error('my-message');`);
 });
 
-test('should not print codeframe from a helper', async ({ runInlineTest }) => {
+test('should filter out node_modules error in a codeframe', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'node_modules/utils/utils.js': `
+      function assert(value) {
+        if (!value)
+          throw new Error('Assertion error');
+      }
+      module.exports = { assert };
+    `,
+    'a.spec.ts': `
+      const { test } = pwt;
+      const { assert } = require('utils/utils.js');
+      test('fail', async ({}) => {
+        assert(false);
+      });
+    `
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+  const output = stripAnsi(result.output);
+  expect(output).toContain('Error: Assertion error');
+  expect(output).toContain('a.spec.ts:7:7 › fail');
+  expect(output).toContain(`   7 |       test('fail', async ({}) => {`);
+  expect(output).toContain(`>  8 |         assert(false);`);
+  expect(output).toContain(`     |         ^`);
+  expect(output).toContain(`utils.js:6`);
+  expect(output).toContain(`a.spec.ts:8:9`);
+});
+
+test('should print codeframe from a helper', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'helper.ts': `
       export function ohMy() {
@@ -105,9 +134,9 @@ test('should not print codeframe from a helper', async ({ runInlineTest }) => {
   expect(result.exitCode).toBe(1);
   expect(result.failed).toBe(1);
   expect(result.output).toContain('Error: oh my');
-  expect(result.output).toContain(`   7 |       test('foobar', async ({}) => {`);
-  expect(result.output).toContain(`>  8 |         ohMy();`);
-  expect(result.output).toContain(`     |         ^`);
+  expect(result.output).toContain(`   4 |       export function ohMy() {`);
+  expect(result.output).toContain(` > 5 |         throw new Error('oh my');`);
+  expect(result.output).toContain(`     |               ^`);
 });
 
 test('should print slow tests', async ({ runInlineTest }) => {
@@ -225,7 +254,7 @@ test('should print flaky timeouts', async ({ runInlineTest }) => {
   }, { retries: '1', reporter: 'list', timeout: '1000' });
   expect(result.exitCode).toBe(0);
   expect(result.flaky).toBe(1);
-  expect(stripAnsi(result.output)).toContain('Timeout of 1000ms exceeded.');
+  expect(stripAnsi(result.output)).toContain('Test timeout of 1000ms exceeded.');
 });
 
 test('should print stack-less errors', async ({ runInlineTest }) => {
@@ -261,8 +290,9 @@ test('should print errors with inconsistent message/stack', async ({ runInlineTe
   });
   expect(result.exitCode).toBe(1);
   expect(result.failed).toBe(1);
-  expect(result.output).toContain('hi!Error: Hello');
-  expect(result.output).toContain('at myTest');
+  const output = stripAnsi(result.output);
+  expect(output).toContain('hi!Error: Hello');
+  expect(output).toContain('function myTest');
 });
 
 test('should print "no tests found" error', async ({ runInlineTest }) => {
@@ -288,4 +318,32 @@ test('should not crash on undefined body with manual attachments', async ({ runI
   expect(stripAnsi(result.output)).not.toContain('Error in reporter');
   expect(result.failed).toBe(1);
   expect(result.exitCode).toBe(1);
+});
+
+test('should report fatal errors at the end', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: [async ({ }, use) => {
+          await use();
+          throw new Error('oh my!');
+        }, { scope: 'worker' }],
+      });
+      test('good', async ({ fixture }) => {
+      });
+    `,
+    'b.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: [async ({ }, use) => {
+          await use();
+          throw new Error('oh my!');
+        }, { scope: 'worker' }],
+      });
+      test('good', async ({ fixture }) => {
+      });
+    `,
+  }, { reporter: 'list' });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(2);
+  expect(stripAnsi(result.output)).toContain('2 errors were not a part of any test, see above for details');
 });

@@ -15,7 +15,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { createGuid } from '../utils/utils';
+import { createGuid } from '../utils';
 import type { APIRequestContext } from './fetch';
 import type { Browser } from './browser';
 import type { BrowserContext } from './browserContext';
@@ -33,20 +33,24 @@ export type Attribution = {
   frame?: Frame;
 };
 
-import { CallMetadata } from '../protocol/callMetadata';
-export { CallMetadata } from '../protocol/callMetadata';
+import type { CallMetadata } from '@protocol/callMetadata';
+export type { CallMetadata } from '@protocol/callMetadata';
+
+export const kTestSdkObjects = new WeakSet<SdkObject>();
 
 export class SdkObject extends EventEmitter {
   guid: string;
   attribution: Attribution;
   instrumentation: Instrumentation;
 
-  protected constructor(parent: SdkObject, guidPrefix?: string, guid?: string) {
+  constructor(parent: SdkObject, guidPrefix?: string, guid?: string) {
     super();
     this.guid = guid || `${guidPrefix || ''}@${createGuid()}`;
     this.setMaxListeners(0);
     this.attribution = { ...parent.attribution };
     this.instrumentation = parent.instrumentation;
+    if (process.env._PW_INTERNAL_COUNT_SDK_OBJECTS)
+      kTestSdkObjects.add(this);
   }
 }
 
@@ -60,6 +64,8 @@ export interface Instrumentation {
   onEvent(sdkObject: SdkObject, metadata: CallMetadata): void;
   onPageOpen(page: Page): void;
   onPageClose(page: Page): void;
+  onBrowserOpen(browser: Browser): void;
+  onBrowserClose(browser: Browser): void;
 }
 
 export interface InstrumentationListener {
@@ -70,6 +76,8 @@ export interface InstrumentationListener {
   onEvent?(sdkObject: SdkObject, metadata: CallMetadata): void;
   onPageOpen?(page: Page): void;
   onPageClose?(page: Page): void;
+  onBrowserOpen?(browser: Browser): void;
+  onBrowserClose?(browser: Browser): void;
 }
 
 export function createInstrumentation(): Instrumentation {

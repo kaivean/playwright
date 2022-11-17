@@ -15,13 +15,14 @@
  * limitations under the License.
  */
 
-import { assert } from '../../utils/utils';
-import { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
-import { Protocol } from './protocol';
+import { assert } from '../../utils';
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
+import type { Protocol } from './protocol';
 import { EventEmitter } from 'events';
 import { rewriteErrorMessage } from '../../utils/stackTrace';
-import { debugLogger, RecentLogsCollector } from '../../utils/debugLogger';
-import { ProtocolLogger } from '../types';
+import type { RecentLogsCollector } from '../../common/debugLogger';
+import { debugLogger } from '../../common/debugLogger';
+import type { ProtocolLogger } from '../types';
 import { helper } from '../helper';
 import { ProtocolError } from '../protocolError';
 
@@ -48,10 +49,11 @@ export class CRConnection extends EventEmitter {
     this._transport = transport;
     this._protocolLogger = protocolLogger;
     this._browserLogsCollector = browserLogsCollector;
-    this._transport.onmessage = this._onMessage.bind(this);
-    this._transport.onclose = this._onClose.bind(this);
     this.rootSession = new CRSession(this, '', 'browser', '');
     this._sessions.set('', this.rootSession);
+    this._transport.onmessage = this._onMessage.bind(this);
+    // onclose should be set last, since it can be immediately called.
+    this._transport.onclose = this._onClose.bind(this);
   }
 
   static fromSession(session: CRSession): CRConnection {
@@ -188,8 +190,10 @@ export class CRSession extends EventEmitter {
         callback.reject(createProtocolError(callback.error, callback.method, object.error));
       else
         callback.resolve(object.result);
+    } else if (object.id && object.error?.code === -32001) {
+      // Message to a closed session, just ignore it.
     } else {
-      assert(!object.id);
+      assert(!object.id, object?.error?.message || undefined);
       Promise.resolve().then(() => {
         if (this._eventListener)
           this._eventListener(object.method!, object.params);

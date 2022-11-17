@@ -14,17 +14,16 @@
  * limitations under the License.
  */
 
-import * as channels from '../protocol/channels';
+import type * as channels from '@protocol/channels';
 import { BrowserContext, prepareBrowserContextParams } from './browserContext';
-import { Page } from './page';
+import type { Page } from './page';
 import { ChannelOwner } from './channelOwner';
 import { Events } from './events';
-import { BrowserContextOptions } from './types';
-import { isSafeCloseError, kBrowserClosedError } from '../utils/errors';
-import * as api from '../../types/types';
+import type { BrowserContextOptions } from './types';
+import { isSafeCloseError, kBrowserClosedError } from '../common/errors';
+import type * as api from '../../types/types';
 import { CDPSession } from './cdpSession';
 import type { BrowserType } from './browserType';
-import { LocalUtils } from './localUtils';
 
 export class Browser extends ChannelOwner<channels.BrowserChannel> implements api.Browser {
   readonly _contexts = new Set<BrowserContext>();
@@ -33,7 +32,6 @@ export class Browser extends ChannelOwner<channels.BrowserChannel> implements ap
   _shouldCloseConnectionOnClose = false;
   private _browserType!: BrowserType;
   readonly _name: string;
-  _localUtils!: LocalUtils;
 
   static from(browser: channels.BrowserChannel): Browser {
     return (browser as any)._object;
@@ -56,15 +54,32 @@ export class Browser extends ChannelOwner<channels.BrowserChannel> implements ap
       context._setBrowserType(browserType);
   }
 
+  browserType(): BrowserType {
+    return this._browserType;
+  }
+
   async newContext(options: BrowserContextOptions = {}): Promise<BrowserContext> {
+    return await this._innerNewContext(options, false);
+  }
+
+  async _newContextForReuse(options: BrowserContextOptions = {}): Promise<BrowserContext> {
+    for (const context of this._contexts) {
+      await this._browserType._onWillCloseContext?.(context);
+      context._onClose();
+    }
+    this._contexts.clear();
+    return await this._innerNewContext(options, true);
+  }
+
+  async _innerNewContext(options: BrowserContextOptions = {}, forReuse: boolean): Promise<BrowserContext> {
     options = { ...this._browserType._defaultContextOptions, ...options };
     const contextOptions = await prepareBrowserContextParams(options);
-    const context = BrowserContext.from((await this._channel.newContext(contextOptions)).context);
+    const response = forReuse ? await this._channel.newContextForReuse(contextOptions) : await this._channel.newContext(contextOptions);
+    const context = BrowserContext.from(response.context);
     context._options = contextOptions;
     this._contexts.add(context);
     context._logger = options.logger || this._logger;
     context._setBrowserType(this._browserType);
-    context.tracing._localUtils = this._localUtils;
     await this._browserType._onDidCreateContext?.(context);
     return context;
   }
@@ -98,7 +113,7 @@ export class Browser extends ChannelOwner<channels.BrowserChannel> implements ap
   }
 
   async stopTracing(): Promise<Buffer> {
-    return Buffer.from((await this._channel.stopTracing()).binary, 'base64');
+    return (await this._channel.stopTracing()).binary;
   }
 
   async close(): Promise<void> {

@@ -14,23 +14,24 @@
  * limitations under the License.
  */
 
-import * as channels from '../protocol/channels';
+import type * as channels from '@protocol/channels';
 import { Frame } from './frame';
-import { Locator } from './locator';
+import type { Locator } from './locator';
 import { JSHandle, serializeArgument, parseResult } from './jsHandle';
-import { ChannelOwner } from './channelOwner';
-import { SelectOption, FilePayload, Rect, SelectOptionOptions } from './types';
+import type { ChannelOwner } from './channelOwner';
+import type { SelectOption, FilePayload, Rect, SelectOptionOptions } from './types';
 import fs from 'fs';
-import * as mime from 'mime';
+import { mime } from '../utilsBundle';
 import path from 'path';
-import { assert, isString, mkdirIfNeeded } from '../utils/utils';
-import * as api from '../../types/types';
-import * as structs from '../../types/structs';
-import { BrowserContext } from './browserContext';
+import { assert, isString } from '../utils';
+import { mkdirIfNeeded } from '../utils/fileUtils';
+import type * as api from '../../types/types';
+import type * as structs from '../../types/structs';
+import type { BrowserContext } from './browserContext';
 import { WritableStream } from './writableStream';
 import { pipeline } from 'stream';
 import { promisify } from 'util';
-import { debugLogger } from '../utils/debugLogger';
+import { debugLogger } from '../common/debugLogger';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -201,12 +202,11 @@ export class ElementHandle<T extends Node = Node> extends JSHandle<T> implements
       }));
     }
     const result = await this._elementChannel.screenshot(copy);
-    const buffer = Buffer.from(result.binary, 'base64');
     if (options.path) {
       await mkdirIfNeeded(options.path);
-      await fs.promises.writeFile(options.path, buffer);
+      await fs.promises.writeFile(options.path, result.binary);
     }
-    return buffer;
+    return result.binary;
   }
 
   async $(selector: string): Promise<ElementHandle<SVGElement | HTMLElement> | null> {
@@ -244,7 +244,7 @@ export function convertSelectOptionValues(values: string | api.ElementHandle | S
   if (values === null)
     return {};
   if (!Array.isArray(values))
-    values = [ values as any ];
+    values = [values as any];
   if (!values.length)
     return {};
   for (let i = 0; i < values.length; i++)
@@ -263,7 +263,7 @@ type InputFilesList = {
   streams?: channels.WritableStreamChannel[];
 };
 export async function convertInputFiles(files: string | FilePayload | string[] | FilePayload[], context: BrowserContext): Promise<InputFilesList> {
-  const items: (string | FilePayload)[] = Array.isArray(files) ? files.slice() : [ files ];
+  const items: (string | FilePayload)[] = Array.isArray(files) ? files.slice() : [files];
 
   const sizeLimit = 50 * 1024 * 1024;
   const hasLargeBuffer = items.find(item => typeof item === 'object' && item.buffer && item.buffer.byteLength > sizeLimit);
@@ -283,20 +283,20 @@ export async function convertInputFiles(files: string | FilePayload | string[] |
       }));
       return { streams };
     }
-    return { localPaths: items as string[] };
+    return { localPaths: items.map(f => path.resolve(f as string)) as string[] };
   }
 
   const filePayloads: SetInputFilesFiles = await Promise.all(items.map(async item => {
     if (typeof item === 'string') {
       return {
         name: path.basename(item),
-        buffer: (await fs.promises.readFile(item)).toString('base64')
+        buffer: await fs.promises.readFile(item)
       };
     } else {
       return {
         name: item.name,
         mimeType: item.mimeType,
-        buffer: item.buffer.toString('base64'),
+        buffer: item.buffer,
       };
     }
   }));

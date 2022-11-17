@@ -15,35 +15,33 @@
  */
 
 import fs from 'fs';
-import * as mime from 'mime';
 import path from 'path';
-import { calculateSha1 } from 'playwright-core/lib/utils/utils';
-import type { FullConfig, FullProject, TestError, TestInfo, TestStatus } from '../types/test';
-import { WorkerInitParams } from './ipc';
-import { Loader } from './loader';
-import { ProjectImpl } from './project';
-import { TestCase } from './test';
+import { monotonicTime } from 'playwright-core/lib/utils';
+import type { Storage, TestError, TestInfo, TestStatus } from '../types/test';
+import type { WorkerInitParams } from './ipc';
+import type { Loader } from './loader';
+import type { TestCase } from './test';
 import { TimeoutManager } from './timeoutManager';
-import { Annotation, TestStepInternal } from './types';
-import { addSuffixToFilePath, getContainedPath, monotonicTime, sanitizeForFilePath, serializeError, trimLongString } from './util';
+import type { Annotation, FullConfigInternal, FullProjectInternal, TestStepInternal } from './types';
+import { getContainedPath, normalizeAndSaveAttachment, sanitizeForFilePath, serializeError, trimLongString } from './util';
 
 export class TestInfoImpl implements TestInfo {
-  private _projectImpl: ProjectImpl;
   private _addStepImpl: (data: Omit<TestStepInternal, 'complete'>) => TestStepInternal;
   readonly _test: TestCase;
   readonly _timeoutManager: TimeoutManager;
   readonly _startTime: number;
   readonly _startWallTime: number;
   private _hasHardError: boolean = false;
-  readonly _screenshotsDir: string;
+  readonly _onTestFailureImmediateCallbacks = new Map<() => Promise<void>, string>(); // fn -> title
+  _didTimeout = false;
 
   // ------------ TestInfo fields ------------
   readonly repeatEachIndex: number;
   readonly retry: number;
   readonly workerIndex: number;
   readonly parallelIndex: number;
-  readonly project: FullProject;
-  config: FullConfig;
+  readonly project: FullProjectInternal;
+  config: FullConfigInternal;
   readonly title: string;
   readonly titlePath: string[];
   readonly file: string;
@@ -61,22 +59,21 @@ export class TestInfoImpl implements TestInfo {
   readonly outputDir: string;
   readonly snapshotDir: string;
   errors: TestError[] = [];
+  currentStep: TestStepInternal | undefined;
+  private readonly _storage: JsonStorage;
 
   get error(): TestError | undefined {
-    return this.errors.length > 0 ? this.errors[0] : undefined;
+    return this.errors[0];
   }
 
   set error(e: TestError | undefined) {
     if (e === undefined)
       throw new Error('Cannot assign testInfo.error undefined value!');
-    if (!this.errors.length)
-      this.errors.push(e);
-    else
-      this.errors[0] = e;
+    this.errors[0] = e;
   }
 
   get timeout(): number {
-    return this._timeoutManager.defaultTimeout();
+    return this._timeoutManager.defaultSlotTimings().timeout;
   }
 
   set timeout(timeout: number) {
@@ -85,12 +82,12 @@ export class TestInfoImpl implements TestInfo {
 
   constructor(
     loader: Loader,
+    project: FullProjectInternal,
     workerParams: WorkerInitParams,
     test: TestCase,
     retry: number,
     addStepImpl: (data: Omit<TestStepInternal, 'complete'>) => TestStepInternal,
   ) {
-    this._projectImpl = loader.projects()[workerParams.projectIndex];
     this._test = test;
     this._addStepImpl = addStepImpl;
     this._startTime = monotonicTime();
@@ -100,7 +97,7 @@ export class TestInfoImpl implements TestInfo {
     this.retry = retry;
     this.workerIndex = workerParams.workerIndex;
     this.parallelIndex =  workerParams.parallelIndex;
-    this.project = this._projectImpl.config;
+    this.project = project;
     this.config = loader.fullConfig();
     this.title = test.title;
     this.titlePath = test.titlePath();
@@ -111,22 +108,16 @@ export class TestInfoImpl implements TestInfo {
     this.expectedStatus = test.expectedStatus;
 
     this._timeoutManager = new TimeoutManager(this.project.timeout);
+    this._storage = new JsonStorage(this);
 
     this.outputDir = (() => {
-      const sameName = loader.projects().filter(project => project.config.name === this.project.name);
-      let uniqueProjectNamePathSegment: string;
-      if (sameName.length > 1)
-        uniqueProjectNamePathSegment = this.project.name + (sameName.indexOf(this._projectImpl) + 1);
-      else
-        uniqueProjectNamePathSegment = this.project.name;
-
       const relativeTestFilePath = path.relative(this.project.testDir, test._requireFile.replace(/\.(spec|test)\.(js|ts|mjs)$/, ''));
       const sanitizedRelativePath = relativeTestFilePath.replace(process.platform === 'win32' ? new RegExp('\\\\', 'g') : new RegExp('/', 'g'), '-');
       const fullTitleWithoutSpec = test.titlePath().slice(1).join(' ');
 
       let testOutputDir = trimLongString(sanitizedRelativePath + '-' + sanitizeForFilePath(fullTitleWithoutSpec));
-      if (uniqueProjectNamePathSegment)
-        testOutputDir += '-' + sanitizeForFilePath(uniqueProjectNamePathSegment);
+      if (project._id)
+        testOutputDir += '-' + sanitizeForFilePath(project._id);
       if (this.retry)
         testOutputDir += '-retry' + this.retry;
       if (this.repeatEachIndex)
@@ -137,10 +128,6 @@ export class TestInfoImpl implements TestInfo {
     this.snapshotDir = (() => {
       const relativeTestFilePath = path.relative(this.project.testDir, test._requireFile);
       return path.join(this.project.snapshotDir, relativeTestFilePath + '-snapshots');
-    })();
-    this._screenshotsDir = (() => {
-      const relativeTestFilePath = path.relative(this.project.testDir, test._requireFile);
-      return path.join(this.project.screenshotsDir, relativeTestFilePath);
     })();
   }
 
@@ -174,11 +161,13 @@ export class TestInfoImpl implements TestInfo {
   async _runWithTimeout(cb: () => Promise<any>): Promise<void> {
     const timeoutError = await this._timeoutManager.runWithTimeout(cb);
     // Do not overwrite existing failure upon hook/teardown timeout.
-    if (timeoutError && this.status === 'passed') {
-      this.status = 'timedOut';
+    if (timeoutError && !this._didTimeout) {
+      this._didTimeout = true;
       this.errors.push(timeoutError);
+      if (this.status === 'passed' || this.status === 'skipped')
+        this.status = 'timedOut';
     }
-    this.duration = monotonicTime() - this._startTime;
+    this.duration = this._timeoutManager.defaultSlotTimings().elapsed | 0;
   }
 
   async _runFn(fn: Function, skips?: 'allowSkips'): Promise<TestError | undefined> {
@@ -209,7 +198,7 @@ export class TestInfoImpl implements TestInfo {
       return;
     if (isHardError)
       this._hasHardError = true;
-    if (this.status === 'passed')
+    if (this.status === 'passed' || this.status === 'skipped')
       this.status = 'failed';
     this.errors.push(error);
   }
@@ -218,30 +207,22 @@ export class TestInfoImpl implements TestInfo {
     const step = this._addStep(stepInfo);
     try {
       const result = await cb();
-      step.complete();
+      step.complete({});
       return result;
     } catch (e) {
-      step.complete(e instanceof SkipError ? undefined : serializeError(e));
+      step.complete({ error: e instanceof SkipError ? undefined : serializeError(e) });
       throw e;
     }
+  }
+
+  _isFailure() {
+    return this.status !== 'skipped' && this.status !== this.expectedStatus;
   }
 
   // ------------ TestInfo methods ------------
 
   async attach(name: string, options: { path?: string, body?: string | Buffer, contentType?: string } = {}) {
-    if ((options.path !== undefined ? 1 : 0) + (options.body !== undefined ? 1 : 0) !== 1)
-      throw new Error(`Exactly one of "path" and "body" must be specified`);
-    if (options.path !== undefined) {
-      const hash = calculateSha1(options.path);
-      const dest = this.outputPath('attachments', hash + path.extname(options.path));
-      await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-      await fs.promises.copyFile(options.path, dest);
-      const contentType = options.contentType ?? (mime.getType(path.basename(options.path)) || 'application/octet-stream');
-      this.attachments.push({ name, contentType, path: dest });
-    } else {
-      const contentType = options.contentType ?? (typeof options.body === 'string' ? 'text/plain' : 'application/octet-stream');
-      this.attachments.push({ name, contentType, body: typeof options.body === 'string' ? Buffer.from(options.body) : options.body });
-    }
+    this.attachments.push(await normalizeAndSaveAttachment(this.outputPath(), name, options));
   }
 
   outputPath(...pathSegments: string[]){
@@ -253,26 +234,31 @@ export class TestInfoImpl implements TestInfo {
     throw new Error(`The outputPath is not allowed outside of the parent directory. Please fix the defined path.\n\n\toutputPath: ${joinedPath}`);
   }
 
-  snapshotPath(...pathSegments: string[]) {
-    let suffix = '';
-    const projectNamePathSegment = sanitizeForFilePath(this.project.name);
-    if (projectNamePathSegment)
-      suffix += '-' + projectNamePathSegment;
-    if (this.snapshotSuffix)
-      suffix += '-' + this.snapshotSuffix;
-    const subPath = addSuffixToFilePath(path.join(...pathSegments), suffix);
-    const snapshotPath =  getContainedPath(this.snapshotDir, subPath);
-    if (snapshotPath)
-      return snapshotPath;
-    throw new Error(`The snapshotPath is not allowed outside of the parent directory. Please fix the defined path.\n\n\tsnapshotPath: ${subPath}`);
+  _fsSanitizedTestName() {
+    const fullTitleWithoutSpec = this.titlePath.slice(1).join(' ');
+    return sanitizeForFilePath(trimLongString(fullTitleWithoutSpec));
   }
 
-  _screenshotPath(...pathSegments: string[]) {
+  snapshotPath(...pathSegments: string[]) {
     const subPath = path.join(...pathSegments);
-    const screenshotPath = getContainedPath(this._screenshotsDir, subPath);
-    if (screenshotPath)
-      return screenshotPath;
-    throw new Error(`Screenshot name "${subPath}" should not point outside of the parent directory.`);
+    const parsedSubPath = path.parse(subPath);
+    const relativeTestFilePath = path.relative(this.project.testDir, this._test._requireFile);
+    const parsedRelativeTestFilePath = path.parse(relativeTestFilePath);
+    const projectNamePathSegment = sanitizeForFilePath(this.project.name);
+
+    const snapshotPath = path.resolve(this.config._configDir, this.project.snapshotPathTemplate
+        .replace(/\{(.)?testDir\}/g, '$1' + this.project.testDir)
+        .replace(/\{(.)?snapshotDir\}/g, '$1' + this.project.snapshotDir)
+        .replace(/\{(.)?snapshotSuffix\}/g, this.snapshotSuffix ? '$1' + this.snapshotSuffix : ''))
+        .replace(/\{(.)?platform\}/g, '$1' + process.platform)
+        .replace(/\{(.)?projectName\}/g, projectNamePathSegment ? '$1' + projectNamePathSegment : '')
+        .replace(/\{(.)?testName\}/g, '$1' + this._fsSanitizedTestName())
+        .replace(/\{(.)?testFileDir\}/g, '$1' + parsedRelativeTestFilePath.dir)
+        .replace(/\{(.)?testFileName\}/g, '$1' + parsedRelativeTestFilePath.base)
+        .replace(/\{(.)?testFilePath\}/g, '$1' + relativeTestFilePath)
+        .replace(/\{(.)?arg\}/g, '$1' + path.join(parsedSubPath.dir, parsedSubPath.name))
+        .replace(/\{(.)?ext\}/g, parsedSubPath.ext ? '$1' + parsedSubPath.ext : '');
+    return path.normalize(snapshotPath);
   }
 
   skip(...args: [arg?: any, description?: string]) {
@@ -294,8 +280,42 @@ export class TestInfoImpl implements TestInfo {
   setTimeout(timeout: number) {
     this._timeoutManager.setTimeout(timeout);
   }
+
+  storage() {
+    return this._storage;
+  }
+}
+
+class JsonStorage implements Storage {
+  constructor(private _testInfo: TestInfoImpl) {
+  }
+
+  private _toFilePath(name: string) {
+    const fileName = sanitizeForFilePath(trimLongString(name)) + '.json';
+    return path.join(this._testInfo.config._storageDir, this._testInfo.project._id, fileName);
+  }
+
+  async get<T>(name: string) {
+    const file = this._toFilePath(name);
+    try {
+      const data = (await fs.promises.readFile(file)).toString('utf-8');
+      return JSON.parse(data) as T;
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  async set<T>(name: string, value: T | undefined) {
+    const file = this._toFilePath(name);
+    if (value === undefined) {
+      await fs.promises.rm(file, { force: true });
+      return;
+    }
+    const data = JSON.stringify(value, undefined, 2);
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(file, data);
+  }
 }
 
 class SkipError extends Error {
 }
-

@@ -17,6 +17,7 @@
 import xml2js from 'xml2js';
 import path from 'path';
 import { test, expect } from './playwright-test-fixtures';
+import fs from 'fs';
 
 test('should render expected', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -105,6 +106,7 @@ test('should render stdout', async ({ runInlineTest }) => {
         console.log(colors.yellow('Hello world'));
         console.log('Hello again');
         console.error('My error');
+        console.error('\\0'); // null control character
         test.expect("abc").toBe('abcd');
       });
     `,
@@ -115,7 +117,8 @@ test('should render stdout', async ({ runInlineTest }) => {
   expect(testcase['system-out'][0]).toContain('[33mHello world[39m\nHello again');
   expect(testcase['system-out'][0]).not.toContain('u00');
   expect(testcase['system-err'][0]).toContain('My error');
-  expect(testcase['failure'][0]['_']).toContain(`> 11 |         test.expect("abc").toBe('abcd');`);
+  expect(testcase['system-err'][0]).not.toContain('\u0000'); // null control character
+  expect(testcase['failure'][0]['_']).toContain(`> 12 |         test.expect("abc").toBe('abcd');`);
   expect(result.exitCode).toBe(1);
 });
 
@@ -138,6 +141,28 @@ test('should render stdout without ansi escapes', async ({ runInlineTest }) => {
   const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
   expect(testcase['system-out'].length).toBe(1);
   expect(testcase['system-out'][0].trim()).toBe('Hello world');
+  expect(result.exitCode).toBe(0);
+});
+
+test('should render, by default, character data as CDATA sections', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = {
+        reporter: [ ['junit'] ],
+      };
+    `,
+    'a.test.ts': `
+      const { test } = pwt;
+      test('one', async ({}) => {
+        process.stdout.write('Hello world &"\\'<>]]>');
+      });
+    `,
+  }, { reporter: '' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['system-out'].length).toBe(1);
+  expect(testcase['system-out'][0].trim()).toBe('Hello world &"\'<>]]&gt;');
+  expect(result.output).toContain(`<system-out>\n<![CDATA[Hello world &"\'<>]]&gt;]]>\n</system-out>`);
   expect(result.exitCode).toBe(0);
 });
 
@@ -190,6 +215,31 @@ test('should report skipped due to sharding', async ({ runInlineTest }) => {
   expect(result.exitCode).toBe(0);
 });
 
+test('should not render projects if they dont exist', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { };
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}) => {
+        expect(1).toBe(1);
+      });
+    `,
+  }, { reporter: 'junit' });
+  const xml = parseXML(result.output);
+  expect(xml['testsuites']['$']['tests']).toBe('1');
+  expect(xml['testsuites']['$']['failures']).toBe('0');
+  expect(xml['testsuites']['testsuite'].length).toBe(1);
+
+  expect(xml['testsuites']['testsuite'][0]['$']['name']).toBe('a.test.js');
+  expect(xml['testsuites']['testsuite'][0]['$']['tests']).toBe('1');
+  expect(xml['testsuites']['testsuite'][0]['$']['failures']).toBe('0');
+  expect(xml['testsuites']['testsuite'][0]['$']['skipped']).toBe('0');
+  expect(xml['testsuites']['testsuite'][0]['testcase'][0]['$']['name']).toBe('one');
+  expect(xml['testsuites']['testsuite'][0]['testcase'][0]['$']['classname']).toContain('a.test.js › one');
+  expect(result.exitCode).toBe(0);
+});
 
 test('should render projects', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -213,14 +263,14 @@ test('should render projects', async ({ runInlineTest }) => {
   expect(xml['testsuites']['testsuite'][0]['$']['failures']).toBe('0');
   expect(xml['testsuites']['testsuite'][0]['$']['skipped']).toBe('0');
   expect(xml['testsuites']['testsuite'][0]['testcase'][0]['$']['name']).toBe('one');
-  expect(xml['testsuites']['testsuite'][0]['testcase'][0]['$']['classname']).toContain('[project1] › a.test.js:6:7 › one');
+  expect(xml['testsuites']['testsuite'][0]['testcase'][0]['$']['classname']).toContain('[project1] › a.test.js › one');
 
   expect(xml['testsuites']['testsuite'][1]['$']['name']).toBe('a.test.js');
   expect(xml['testsuites']['testsuite'][1]['$']['tests']).toBe('1');
   expect(xml['testsuites']['testsuite'][1]['$']['failures']).toBe('0');
   expect(xml['testsuites']['testsuite'][1]['$']['skipped']).toBe('0');
   expect(xml['testsuites']['testsuite'][1]['testcase'][0]['$']['name']).toBe('one');
-  expect(xml['testsuites']['testsuite'][1]['testcase'][0]['$']['classname']).toContain('[project2] › a.test.js:6:7 › one');
+  expect(xml['testsuites']['testsuite'][1]['testcase'][0]['$']['classname']).toContain('[project2] › a.test.js › one');
   expect(result.exitCode).toBe(0);
 });
 
@@ -255,3 +305,183 @@ function parseXML(xml: string): any {
   xml2js.parseString(xml, (err, r) => result = r);
   return result;
 }
+
+test('should not render annotations to custom testcase properties by default', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}, testInfo) => {
+        testInfo.annotations.push({ type: 'unknown_annotation', description: 'unknown' });
+      });2
+    `
+  }, { reporter: 'junit' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['properties']).not.toBeTruthy();
+  expect(result.exitCode).toBe(0);
+});
+
+test('should render text content based annotations to custom testcase properties', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      const xrayOptions = {
+        embedAnnotationsAsProperties: true,
+        textContentAnnotations: ['test_description']
+      }
+      module.exports = {
+        reporter: [ ['junit', xrayOptions] ],
+      };
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}, testInfo) => {
+        testInfo.annotations.push({ type: 'test_description', description: 'sample description' });
+        testInfo.annotations.push({ type: 'unknown_annotation', description: 'unknown' });
+      });
+    `
+  }, { reporter: '' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['properties']).toBeTruthy();
+  expect(testcase['properties'][0]['property'].length).toBe(2);
+  expect(testcase['properties'][0]['property'][0]['$']['name']).toBe('test_description');
+  expect(testcase['properties'][0]['property'][0]['_']).toBe('\nsample description\n');
+  expect(testcase['properties'][0]['property'][1]['$']['name']).toBe('unknown_annotation');
+  expect(testcase['properties'][0]['property'][1]['$']['value']).toBe('unknown');
+  expect(result.exitCode).toBe(0);
+});
+
+test('should render all annotations to testcase value based properties, if requested', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      const xrayOptions = {
+        embedAnnotationsAsProperties: true
+      }
+      module.exports = {
+        reporter: [ ['junit', xrayOptions] ],
+      };
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}, testInfo) => {
+        testInfo.annotations.push({ type: 'test_id', description: '1234' });
+        testInfo.annotations.push({ type: 'test_key', description: 'CALC-2' });
+        testInfo.annotations.push({ type: 'test_summary', description: 'sample summary' });
+        testInfo.annotations.push({ type: 'requirements', description: 'CALC-5,CALC-6' });
+      });
+    `
+  }, { reporter: '' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['properties']).toBeTruthy();
+  expect(testcase['properties'][0]['property'].length).toBe(4);
+  expect(testcase['properties'][0]['property'][0]['$']['name']).toBe('test_id');
+  expect(testcase['properties'][0]['property'][0]['$']['value']).toBe('1234');
+  expect(testcase['properties'][0]['property'][1]['$']['name']).toBe('test_key');
+  expect(testcase['properties'][0]['property'][1]['$']['value']).toBe('CALC-2');
+  expect(testcase['properties'][0]['property'][2]['$']['name']).toBe('test_summary');
+  expect(testcase['properties'][0]['property'][2]['$']['value']).toBe('sample summary');
+  expect(testcase['properties'][0]['property'][3]['$']['name']).toBe('requirements');
+  expect(testcase['properties'][0]['property'][3]['$']['value']).toBe('CALC-5,CALC-6');
+  expect(result.exitCode).toBe(0);
+});
+
+test('should embed attachments to a custom testcase property, if explictly requested', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      const xrayOptions = {
+        embedAttachmentsAsProperty: 'testrun_evidence'
+      }
+      module.exports = {
+        reporter: [ ['junit', xrayOptions] ],
+      };
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}, testInfo) => {
+        const file = testInfo.outputPath('evidence1.txt');
+        require('fs').writeFileSync(file, 'hello', 'utf8');
+        testInfo.attachments.push({ name: 'evidence1.txt', path: file, contentType: 'text/plain' });
+        testInfo.attachments.push({ name: 'evidence2.txt', body: Buffer.from('world'), contentType: 'text/plain' });
+        // await testInfo.attach('evidence1.txt', { path: file, contentType: 'text/plain' });
+        // await testInfo.attach('evidence2.txt', { body: Buffer.from('world'), contentType: 'text/plain' });
+        console.log('log here');
+      });
+    `
+  }, { reporter: '' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['properties']).toBeTruthy();
+  expect(testcase['properties'][0]['property'].length).toBe(1);
+  expect(testcase['properties'][0]['property'][0]['$']['name']).toBe('testrun_evidence');
+  expect(testcase['properties'][0]['property'][0]['item'][0]['$']['name']).toBe('evidence1.txt');
+  expect(testcase['properties'][0]['property'][0]['item'][0]['_']).toBe('\naGVsbG8=\n');
+  expect(testcase['properties'][0]['property'][0]['item'][1]['$']['name']).toBe('evidence2.txt');
+  expect(testcase['properties'][0]['property'][0]['item'][1]['_']).toBe('\nd29ybGQ=\n');
+  expect(testcase['system-out'].length).toBe(1);
+  expect(testcase['system-out'][0].trim()).toBe([
+    `log here`
+  ].join('\n'));
+  expect(result.exitCode).toBe(0);
+});
+
+test('should not embed attachments to a custom testcase property, if not explictly requested', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const { test } = pwt;
+      test('one', async ({}, testInfo) => {
+        const file = testInfo.outputPath('evidence1.txt');
+        require('fs').writeFileSync(file, 'hello', 'utf8');
+        testInfo.attachments.push({ name: 'evidence1.txt', path: file, contentType: 'text/plain' });
+        testInfo.attachments.push({ name: 'evidence2.txt', body: Buffer.from('world'), contentType: 'text/plain' });
+        // await testInfo.attach('evidence1.txt', { path: file, contentType: 'text/plain' });
+        // await testInfo.attach('evidence2.txt', { body: Buffer.from('world'), contentType: 'text/plain' });
+      });
+    `
+  }, { reporter: 'junit' });
+  const xml = parseXML(result.output);
+  const testcase = xml['testsuites']['testsuite'][0]['testcase'][0];
+  expect(testcase['properties']).not.toBeTruthy();
+  expect(result.exitCode).toBe(0);
+});
+
+
+test.describe('report location', () => {
+  test('with config should create report relative to config', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'nested/project/playwright.config.ts': `
+        module.exports = { reporter: [['junit', { outputFile: '../my-report/a.xml' }]] };
+      `,
+      'nested/project/a.test.js': `
+        const { test } = pwt;
+        test('one', async ({}) => {
+          expect(1).toBe(1);
+        });
+      `,
+    }, { reporter: '', config: './nested/project/playwright.config.ts' });
+    expect(result.exitCode).toBe(0);
+    expect(fs.existsSync(testInfo.outputPath(path.join('nested', 'my-report', 'a.xml')))).toBeTruthy();
+  });
+
+  test('with env var should create relative to cwd', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'foo/package.json': `{ "name": "foo" }`,
+      // unused config along "search path"
+      'foo/bar/playwright.config.js': `
+        module.exports = { projects: [ {} ] };
+      `,
+      'foo/bar/baz/tests/a.spec.js': `
+        const { test } = pwt;
+        const fs = require('fs');
+        test('pass', ({}, testInfo) => {
+        });
+      `
+    }, { 'reporter': 'junit' }, { 'PLAYWRIGHT_JUNIT_OUTPUT_NAME': '../my-report.xml' }, {
+      cwd: 'foo/bar/baz/tests',
+      usesCustomOutputDir: true
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.passed).toBe(1);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'my-report.xml'))).toBe(true);
+  });
+});

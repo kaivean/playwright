@@ -51,7 +51,7 @@ it.describe('element screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-element-padding-border.png');
   });
 
-  it('should capture full element when larger than viewport in parallel', async ({ page }) => {
+  it('should capture full element when larger than viewport in parallel', async ({ page, browserName }) => {
     await page.setViewportSize({ width: 500, height: 500 });
 
     await page.setContent(`
@@ -203,18 +203,14 @@ it.describe('element screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-element-bounding-box.png');
   });
 
-  it('should work for an element with fractional dimensions', async ({ page, isElectron }) => {
-    it.fixme(isElectron, 'Scale is wrong');
-
+  it('should work for an element with fractional dimensions', async ({ page }) => {
     await page.setContent('<div style="width:48.51px;height:19.8px;border:1px solid black;"></div>');
     const elementHandle = await page.$('div');
     const screenshot = await elementHandle.screenshot();
     expect(screenshot).toMatchSnapshot('screenshot-element-fractional.png');
   });
 
-  it('should work for an element with an offset', async ({ page, isElectron }) => {
-    it.fixme(isElectron, 'Scale is wrong');
-
+  it('should work for an element with an offset', async ({ page }) => {
     await page.setContent('<div style="position:absolute; top: 10.3px; left: 20.4px;width:50.3px;height:20.2px;border:1px solid black;"></div>');
     const elementHandle = await page.$('div');
     const screenshot = await elementHandle.screenshot();

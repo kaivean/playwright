@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-20.04
     if: github.repository == 'microsoft/playwright'
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
       with:
-        node-version: 16
-    - run: npm i -g npm@7
+        node-version: 14
+    - run: npm i -g npm@8
     - name: Deploy Stable
       run: bash utils/build/deploy-trace-viewer.sh --stable
       env:
-        GH_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GH_SERVICE_ACCOUNT_TOKEN }}
+        GH_SERVICE_ACCOUNT_TOKEN: ${{ secrets.REPOSITORY_DISPATCH_PERSONAL_ACCESS_TOKEN }}

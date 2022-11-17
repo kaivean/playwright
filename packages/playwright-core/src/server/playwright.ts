@@ -16,15 +16,18 @@
 
 import { Android } from './android/android';
 import { AdbBackend } from './android/backendAdb';
-import { PlaywrightOptions } from './browser';
+import type { Browser, PlaywrightOptions } from './browser';
 import { Chromium } from './chromium/chromium';
 import { Electron } from './electron/electron';
 import { Firefox } from './firefox/firefox';
 import { Selectors } from './selectors';
 import { WebKit } from './webkit/webkit';
-import { CallMetadata, createInstrumentation, SdkObject } from './instrumentation';
-import { debugLogger } from '../utils/debugLogger';
-import { Page } from './page';
+import type { CallMetadata } from './instrumentation';
+import { createInstrumentation, SdkObject } from './instrumentation';
+import { debugLogger } from '../common/debugLogger';
+import type { Page } from './page';
+import { DebugController } from './debugController';
+import type { Language } from './isomorphic/locatorGenerators';
 
 export class Playwright extends SdkObject {
   readonly selectors: Selectors;
@@ -34,11 +37,15 @@ export class Playwright extends SdkObject {
   readonly firefox: Firefox;
   readonly webkit: WebKit;
   readonly options: PlaywrightOptions;
+  readonly debugController: DebugController;
   private _allPages = new Set<Page>();
+  private _allBrowsers = new Set<Browser>();
 
-  constructor(sdkLanguage: string, isInternalPlaywright: boolean) {
+  constructor(sdkLanguage: Language, isInternalPlaywright: boolean) {
     super({ attribution: { isInternalPlaywright }, instrumentation: createInstrumentation() } as any, undefined, 'Playwright');
     this.instrumentation.addListener({
+      onBrowserOpen: browser => this._allBrowsers.add(browser),
+      onBrowserClose: browser => this._allBrowsers.delete(browser),
       onPageOpen: page => this._allPages.add(page),
       onPageClose: page => this._allPages.delete(page),
       onCallLog: (sdkObject: SdkObject, metadata: CallMetadata, logName: string, message: string) => {
@@ -56,13 +63,22 @@ export class Playwright extends SdkObject {
     this.electron = new Electron(this.options);
     this.android = new Android(new AdbBackend(), this.options);
     this.selectors = this.options.selectors;
+    this.debugController = new DebugController(this);
   }
 
   async hideHighlight() {
     await Promise.all([...this._allPages].map(p => p.hideHighlight().catch(() => {})));
   }
+
+  allBrowsers(): Browser[] {
+    return [...this._allBrowsers];
+  }
+
+  allPages(): Page[] {
+    return [...this._allPages];
+  }
 }
 
-export function createPlaywright(sdkLanguage: string, isInternalPlaywright: boolean = false) {
+export function createPlaywright(sdkLanguage: Language, isInternalPlaywright: boolean = false) {
   return new Playwright(sdkLanguage, isInternalPlaywright);
 }

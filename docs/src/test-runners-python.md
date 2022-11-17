@@ -1,42 +1,16 @@
 ---
 id: test-runners
-title: "Pytest plugin"
+title: "Pytest Plugin Reference"
 ---
 
-Write end-to-end tests for your web apps with [Pytest](https://docs.pytest.org/en/stable/).
-
-<!-- TOC -->
+Playwright provides a [Pytest](https://docs.pytest.org/en/stable/) plugin to write end-to-end tests. To get started with it, refer to the [getting started guide](./intro.md).
 
 ## Usage
 
-```bash
-pip install pytest-playwright
-```
-
-Use the `page` fixture to write a basic test. See [more examples](#examples).
-
-```py
-# test_my_application.py
-def test_example_is_working(page):
-    page.goto("https://example.com")
-    assert page.inner_text('h1') == 'Example Domain'
-    page.click("text=More information")
-```
-
-To run your tests, use pytest CLI.
+To run your tests, use [Pytest](https://docs.pytest.org/en/stable/) CLI.
 
 ```bash
-# Run tests (Chromium and headless by default)
-pytest
-
-# Run tests in headed mode
-pytest --headed
-
-# Run tests in a different browser (chromium, firefox, webkit)
-pytest --browser firefox
-
-# Run tests in multiple browsers
-pytest --browser chromium --browser webkit
+pytest --browser webkit --headed
 ```
 
 If you want to add the CLI arguments automatically without specifying them, you can use the [pytest.ini](https://docs.pytest.org/en/stable/reference.html#ini-options-ref) file:
@@ -51,7 +25,7 @@ addopts = --headed --browser firefox
 ## CLI arguments
 
 - `--headed`: Run tests in headed mode (default: headless).
-- `--browser`: Run tests in a different browser `chromium`, `firefox`, or `webkit`. It can be specified multiple times (default: all browsers).
+- `--browser`: Run tests in a different browser `chromium`, `firefox`, or `webkit`. It can be specified multiple times (default: `chromium`).
 - `--browser-channel` [Browser channel](./browsers.md) to be used.
 - `--slowmo` Run tests with slow mo.
 - `--device` [Device](./emulation.md) to be emulated.
@@ -84,10 +58,25 @@ def test_my_app_is_working(fixture_name):
 - `browser_channel`: Browser channel as string.
 - `is_chromium`, `is_webkit`, `is_firefox`: Booleans for the respective browser types.
 
-**Customizing fixture options**: For `browser` and `context` fixtures, use the the following fixtures to define custom launch options.
+**Customizing fixture options**: For `browser` and `context` fixtures, use the following fixtures to define custom launch options.
 
 - `browser_type_launch_args`: Override launch arguments for [`method: BrowserType.launch`]. It should return a Dict.
 - `browser_context_args`: Override the options for [`method: Browser.newContext`]. It should return a Dict.
+
+## Parallelism: Running Multiple Tests at Once
+
+If your tests are running on a machine with a lot of CPUs, you can speed up the overall execution time of your test suite by using [`pytest-xdist`](https://pypi.org/project/pytest-xdist/) to run multiple tests at once:
+
+```bash
+# install dependency
+pip install pytest-xdist
+# use the --numprocesses flag
+pytest --numprocesses auto
+```
+
+Depending on the hardware and nature of your tests, you can set `numprocesses` to be anywhere from `2` to the number of CPUs on the machine. If set too high, you may notice unexpected behavior.
+
+See [Running Tests](./running-tests.md) for general information on `pytest` options.
 
 ## Examples
 
@@ -148,7 +137,8 @@ def test_example(page):
 
 ### Configure base-url
 
-Start Pytest with the `base-url` argument.
+Start Pytest with the `base-url` argument. The [`pytest-base-url`](https://github.com/pytest-dev/pytest-base-url) plugin is used
+for that which allows you to set the base url from the config, CLI arg or as a fixture.
 
 ```bash
 pytest --base-url http://localhost:8080
@@ -254,7 +244,7 @@ class MyTest(unittest.TestCase):
 
     def test_foobar(self):
         self.page.goto("https://microsoft.com")
-        self.page.click("#foobar")
+        self.page.locator("#foobar").click()
         assert self.page.evaluate("1 + 1") == 2
 ```
 

@@ -3,7 +3,7 @@ id: test-retries
 title: "Test retry"
 ---
 
-<!-- TOC -->
+Test retries are a way to automatically re-run a test when it fails. This is useful when a test is flaky and fails intermittently. Test retries are configured in the [configuration file](./test-configuration.md).
 
 ## Failures
 
@@ -11,7 +11,7 @@ Playwright Test runs tests in worker processes. These processes are OS processes
 
 Consider the following snippet:
 
-```js js-flavor=js
+```js tab=js-js
 const { test } = require('@playwright/test');
 
 test.describe('suite', () => {
@@ -22,7 +22,7 @@ test.describe('suite', () => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test } from '@playwright/test';
 
 test.describe('suite', () => {
@@ -70,7 +70,7 @@ Playwright Test supports **test retries**. When enabled, failing tests will be r
 npx playwright test --retries=3
 ```
 
-```js js-flavor=js
+```js tab=js-js
 // playwright.config.js
 // @ts-check
 
@@ -83,9 +83,9 @@ const config = {
 module.exports = config;
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // playwright.config.ts
-import { PlaywrightTestConfig } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 
 const config: PlaywrightTestConfig = {
   // Give failing tests 3 retry attempts
@@ -114,7 +114,7 @@ Running 3 tests using 1 worker
 
 You can detect retries at runtime with [`property: TestInfo.retry`], which is accessible to any test, hook or fixture. Here is an example that clears some server-side state before a retry.
 
-```js js-flavor=js
+```js tab=js-js
 const { test, expect } = require('@playwright/test');
 
 test('my test', async ({ page }, testInfo) => {
@@ -124,7 +124,7 @@ test('my test', async ({ page }, testInfo) => {
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test, expect } from '@playwright/test';
 
 test('my test', async ({ page }, testInfo) => {
@@ -134,13 +134,49 @@ test('my test', async ({ page }, testInfo) => {
 });
 ```
 
+You can specify retries for a specific group of tests or a single file with [`method: Test.describe.configure`].
+
+```js tab=js-js
+const { test, expect } = require('@playwright/test');
+
+test.describe(() => {
+  // All tests in this describe group will get 2 retry attempts.
+  test.describe.configure({ retries: 2 });
+
+  test('test 1', async ({ page }) => {
+    // ...
+  });
+
+  test('test 2', async ({ page }) => {
+    // ...
+  });
+});
+```
+
+```js tab=js-ts
+import { test, expect } from '@playwright/test';
+
+test.describe(() => {
+  // All tests in this describe group will get 2 retry attempts.
+  test.describe.configure({ retries: 2 });
+
+  test('test 1', async ({ page }) => {
+    // ...
+  });
+
+  test('test 2', async ({ page }) => {
+    // ...
+  });
+});
+```
+
 ## Serial mode
 
 Use [`method: Test.describe.serial`] to group dependent tests to ensure they will always run together and in order. If one of the tests fails, all subsequent tests are skipped. All tests in the group are retried together.
 
 Consider the following snippet that uses `test.describe.serial`:
 
-```js js-flavor=js
+```js tab=js-js
 const { test } = require('@playwright/test');
 
 test.describe.configure({ mode: 'serial' });
@@ -151,7 +187,7 @@ test('second flaky', async ({ page }) => { /* ... */ });
 test('third good', async ({ page }) => { /* ... */ });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 import { test } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
@@ -189,7 +225,7 @@ It is usually better to make your tests isolated, so they can be efficiently run
 
 Playwright Test creates an isolated [Page] object for each test. However, if you'd like to reuse a single [Page] object between multiple tests, you can create your own in [`method: Test.beforeAll`] and close it in [`method: Test.afterAll`].
 
-```js js-flavor=js
+```js tab=js-js
 // example.spec.js
 // @ts-check
 
@@ -213,11 +249,11 @@ test('runs first', async () => {
 });
 
 test('runs second', async () => {
-  await page.click('text=Get Started');
+  await page.getByText('Get Started').click();
 });
 ```
 
-```js js-flavor=ts
+```js tab=js-ts
 // example.spec.ts
 
 import { test, Page } from '@playwright/test';
@@ -239,6 +275,6 @@ test('runs first', async () => {
 });
 
 test('runs second', async () => {
-  await page.click('text=Get Started');
+  await page.getByText('Get Started').click();
 });
 ```

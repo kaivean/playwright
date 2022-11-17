@@ -15,7 +15,8 @@
  */
 
 import type { Fixtures } from '@playwright/test';
-import { ChildProcess, execSync, spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import net from 'net';
 
 type TestChildParams = {
@@ -31,7 +32,7 @@ export class TestChildProcess {
   process: ChildProcess;
   output = '';
   onOutput?: () => void;
-  exited: Promise<{ exitCode: number | null, signal: string | null }>;
+  exited: Promise<{ exitCode: number, signal: string | null }>;
   exitCode: Promise<number>;
 
   private _outputCallbacks = new Set<() => void>();
@@ -114,7 +115,11 @@ export type CommonFixtures = {
   waitForPort: (port: number) => Promise<void>;
 };
 
-export const commonFixtures: Fixtures<CommonFixtures, {}> = {
+export type CommonWorkerFixtures = {
+  daemonProcess: (params: TestChildParams) => TestChildProcess;
+};
+
+export const commonFixtures: Fixtures<CommonFixtures, CommonWorkerFixtures> = {
   childProcess: async ({}, use, testInfo) => {
     const processes: TestChildProcess[] = [];
     await use(params => {
@@ -132,12 +137,22 @@ export const commonFixtures: Fixtures<CommonFixtures, {}> = {
     }
   },
 
+  daemonProcess: [async ({}, use) => {
+    const processes: TestChildProcess[] = [];
+    await use(params => {
+      const process = new TestChildProcess(params);
+      processes.push(process);
+      return process;
+    });
+    await Promise.all(processes.map(child => child.close()));
+  }, { scope: 'worker' }],
+
   waitForPort: async ({}, use) => {
     const token = { canceled: false };
     await use(async port => {
       while (!token.canceled) {
         const promise = new Promise<boolean>(resolve => {
-          const conn = net.connect(port)
+          const conn = net.connect(port, '127.0.0.1')
               .on('error', () => resolve(false))
               .on('connect', () => {
                 conn.end();

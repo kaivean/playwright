@@ -33,6 +33,16 @@ it('should hover when Node is removed', async ({ page, server }) => {
   expect(await page.evaluate(() => document.querySelector('button:hover').id)).toBe('button-6');
 });
 
+it('hover should support noWaitAfter', async ({ page, server }) => {
+  await page.goto(server.EMPTY_PAGE);
+  await page.setContent(`<button onmouseover='location.href="${server.PREFIX}/next"'>GO</button>`);
+  await Promise.all([
+    new Promise(fulfill => server.setRoute('/next', fulfill)),
+    page.locator('button').hover({ noWaitAfter: true })
+  ]);
+  expect(page.url()).toBe(server.EMPTY_PAGE);
+});
+
 it('should fill input', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/input/textarea.html');
   const handle = page.locator('input');
@@ -46,6 +56,15 @@ it('should fill input when Node is removed', async ({ page, server }) => {
   const handle = page.locator('input');
   await handle.fill('some value');
   expect(await page.evaluate(() => window['result'])).toBe('some value');
+});
+
+it('should clear input', async ({ page, server }) => {
+  await page.goto(server.PREFIX + '/input/textarea.html');
+  const handle = page.locator('input');
+  await handle.fill('some value');
+  expect(await page.evaluate(() => window['result'])).toBe('some value');
+  await handle.clear();
+  expect(await page.evaluate(() => window['result'])).toBe('');
 });
 
 it('should check the box', async ({ page }) => {
@@ -79,12 +98,29 @@ it('should select single option', async ({ page, server }) => {
   expect(await page.evaluate(() => window['result'].onChange)).toEqual(['blue']);
 });
 
-it('should focus a button', async ({ page, server }) => {
+it('should focus and blur a button', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/input/button.html');
   const button = page.locator('button');
   expect(await button.evaluate(button => document.activeElement === button)).toBe(false);
+
+  let focused = false;
+  let blurred = false;
+  await page.exposeFunction('focusEvent', () => focused = true);
+  await page.exposeFunction('blurEvent', () => blurred = true);
+  await button.evaluate(button => {
+    button.addEventListener('focus', window['focusEvent']);
+    button.addEventListener('blur', window['blurEvent']);
+  });
+
   await button.focus();
+  expect(focused).toBe(true);
+  expect(blurred).toBe(false);
   expect(await button.evaluate(button => document.activeElement === button)).toBe(true);
+
+  await button.blur();
+  expect(focused).toBe(true);
+  expect(blurred).toBe(true);
+  expect(await button.evaluate(button => document.activeElement === button)).toBe(false);
 });
 
 it('focus should respect strictness', async ({ page, server }) => {

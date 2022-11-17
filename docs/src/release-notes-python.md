@@ -1,9 +1,361 @@
 ---
 id: release-notes
 title: "Release notes"
+toc_max_heading_level: 2
 ---
 
-<!-- TOC -->
+## Version 1.28
+
+### Playwright Tools
+
+* **Live Locators in CodeGen.** Generate a locator for any element on the page using "Explore" tool.
+
+![Locator Explorer](https://user-images.githubusercontent.com/9798949/202293514-8e2eade6-c809-4b0a-864b-899dfcee3d84.png)
+
+### New APIs
+
+- [`method: Locator.blur`]
+- [`method: Locator.clear`]
+
+### Browser Versions
+
+* Chromium 108.0.5359.29
+* Mozilla Firefox 106.0
+* WebKit 16.4
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 107
+* Microsoft Edge 107
+
+
+## Version 1.27
+
+### Locators
+
+With these new APIs writing locators is a joy:
+- [`method: Page.getByText`] to locate by text content.
+- [`method: Page.getByRole`] to locate by [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+- [`method: Page.getByLabel`] to locate a form control by associated label's text.
+- [`method: Page.getByTestId`] to locate an element based on its `data-testid` attribute (other attribute can be configured).
+- [`method: Page.getByPlaceholder`] to locate an input by placeholder.
+- [`method: Page.getByAltText`] to locate an element, usually image, by its text alternative.
+- [`method: Page.getByTitle`] to locate an element by its title.
+
+```python
+page.get_by_label("User Name").fill("John")
+
+page.get_by_label("Password").fill("secret-password")
+
+page.get_by_role("button", name="Sign in").click()
+
+expect(page.get_by_text("Welcome, John!")).to_be_visible()
+```
+
+All the same methods are also available on [Locator], [FrameLocator] and [Frame] classes.
+
+### Other highlights
+
+- As announced in v1.25, Ubuntu 18 will not be supported as of Dec 2022. In addition to that, there will be no WebKit updates on Ubuntu 18 starting from the next Playwright release.
+
+### Behavior Changes
+
+- [`method: LocatorAssertions.toHaveAttribute`] with an empty value does not match missing attribute anymore. For example, the following snippet will succeed when `button` **does not** have a `disabled` attribute.
+
+   ```js
+   expect(page.get_by_role("button")).to_have_attribute("disabled", "")
+   ```
+
+### Browser Versions
+
+* Chromium 107.0.5304.18
+* Mozilla Firefox 105.0.1
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 106
+* Microsoft Edge 106
+
+
+## Version 1.26
+
+### Assertions
+
+- New option `enabled` for [`method: LocatorAssertions.toBeEnabled`].
+- [`method: LocatorAssertions.toHaveText`] now pierces open shadow roots.
+- New option `editable` for [`method: LocatorAssertions.toBeEditable`].
+- New option `visible` for [`method: LocatorAssertions.toBeVisible`].
+
+### Other highlights
+
+- New option `max_redirects` for [`method: APIRequestContext.get`] and others to limit redirect count.
+- Python 3.11 is now supported.
+
+### Behavior Change
+
+A bunch of Playwright APIs already support the `wait_until: "domcontentloaded"` option.
+For example:
+
+```python
+page.goto("https://playwright.dev", wait_until="domcontentloaded")
+```
+
+Prior to 1.26, this would wait for all iframes to fire the `DOMContentLoaded`
+event.
+
+To align with web specification, the `'domcontentloaded'` value only waits for
+the target frame to fire the `'DOMContentLoaded'` event. Use `wait_until="load"` to wait for all iframes.
+
+### Browser Versions
+
+* Chromium 106.0.5249.30
+* Mozilla Firefox 104.0
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 105
+* Microsoft Edge 105
+
+## Version 1.25
+
+### Announcements
+
+* 🎁 We now ship Ubuntu 22.04 Jammy Jellyfish docker image: `mcr.microsoft.com/playwright/python:v1.29.0-jammy`.
+* 🪦 This is the last release with macOS 10.15 support (deprecated as of 1.21).
+* ⚠️ Ubuntu 18 is now deprecated and will not be supported as of Dec 2022.
+
+### Browser Versions
+
+* Chromium 105.0.5195.19
+* Mozilla Firefox 103.0
+* WebKit 16.0
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 104
+* Microsoft Edge 104
+
+## Version 1.24
+
+<div className="embed-youtube">
+<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/9F05o1shxcY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+</div>
+
+### 🐂 Debian 11 Bullseye Support
+
+Playwright now supports Debian 11 Bullseye on x86_64 for Chromium, Firefox and WebKit. Let us know
+if you encounter any issues!
+
+Linux support looks like this:
+
+|          | Ubuntu 18.04 | Ubuntu 20.04 | Ubuntu 22.04 | Debian 11
+| :--- | :---: | :---: | :---: | :---: |
+| Chromium | ✅ | ✅ | ✅ | ✅ |
+| WebKit | ✅ | ✅ | ✅ | ✅ |
+| Firefox | ✅ | ✅ | ✅ | ✅ |
+
+### New introduction docs
+
+We rewrote our Getting Started docs to be more end-to-end testing focused. Check them out on [playwright.dev](https://playwright.dev/python/docs/intro).
+
+## Version 1.23
+
+### Network Replay
+
+Now you can record network traffic into a HAR file and re-use this traffic in your tests.
+
+To record network into HAR file:
+
+```bash
+npx playwright open --save-har=github.har.zip https://github.com/microsoft
+```
+
+Alternatively, you can record HAR programmatically:
+
+```python async
+context = await browser.new_context(record_har_path="github.har.zip")
+# ... do stuff ...
+await context.close()
+```
+
+```python sync
+context = browser.new_context(record_har_path="github.har.zip")
+# ... do stuff ...
+context.close()
+```
+
+Use the new methods [`method: Page.routeFromHAR`] or [`method: BrowserContext.routeFromHAR`] to serve matching responses from the [HAR](http://www.softwareishard.com/blog/har-12-spec/) file:
+
+
+```python async
+await context.route_from_har("github.har.zip")
+```
+
+```python sync
+context.route_from_har("github.har.zip")
+```
+
+Read more in [our documentation](./network#record-and-replay-requests).
+
+
+### Advanced Routing
+
+You can now use [`method: Route.fallback`] to defer routing to other handlers.
+
+Consider the following example:
+
+```python async
+# Remove a header from all requests
+async def remove_header_handler(route: Route) -> None:
+    headers = await route.request.all_headers()
+    if "if-none-match" in headers:
+        del headers["if-none-match"]
+    await route.fallback(headers=headers)
+
+await page.route("**/*", remove_header_handler)
+
+# Abort all images
+async def abort_images_handler(route: Route) -> None:
+    if route.request.resource_type == "image":
+        await route.abort()
+    else:
+        await route.fallback()
+
+await page.route("**/*", abort_images_handler)
+```
+
+```python sync
+# Remove a header from all requests
+def remove_header_handler(route: Route) -> None:
+    headers = route.request.all_headers()
+    if "if-none-match" in headers:
+        del headers["if-none-match"]
+    route.fallback(headers=headers)
+
+page.route("**/*", remove_header_handler)
+
+# Abort all images
+def abort_images_handler(route: Route) -> None:
+    if route.request.resource_type == "image":
+        route.abort()
+    else:
+        route.fallback()
+
+page.route("**/*", abort_images_handler)
+```
+
+Note that the new methods [`method: Page.routeFromHAR`] and [`method: BrowserContext.routeFromHAR`] also participate in routing and could be deferred to.
+
+### Web-First Assertions Update
+
+* New method [`method: LocatorAssertions.toHaveValues`] that asserts all selected values of `<select multiple>` element.
+* Methods [`method: LocatorAssertions.toContainText`] and [`method: LocatorAssertions.toHaveText`] now accept `ignore_case` option.
+
+### Miscellaneous
+
+* If there's a service worker that's in your way, you can now easily disable it with a new context option `service_workers`:
+
+  ```python async
+  context = await browser.new_context(service_workers="block")
+  page = await context.new_page()
+  ```
+
+  ```python sync
+  context = browser.new_context(service_workers="block")
+  page = context.new_page()
+  ```
+
+* Using `.zip` path for `recordHar` context option automatically zips the resulting HAR:
+
+  ```python async
+  context = await browser.new_context(record_har_path="github.har.zip")
+  ```
+
+  ```python sync
+  context = browser.new_context(record_har_path="github.har.zip")
+  ```
+
+* If you intend to edit HAR by hand, consider using the `"minimal"` HAR recording mode
+  that only records information that is essential for replaying:
+
+  ```python async
+  context = await browser.new_context(record_har_mode="minimal", record_har_path="har.har")
+  ```
+
+  ```python sync
+  context = browser.new_context(record_har_mode="minimal", record_har_path="har.har")
+  ```
+
+* Playwright now runs on Ubuntu 22 amd64 and Ubuntu 22 arm64.
+
+
+## Version 1.22
+
+### Highlights
+
+- Role selectors that allow selecting elements by their [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+
+  ```py
+  # Click a button with accessible name "log in"
+  page.locator("role=button[name='log in']").click()
+  ```
+
+  Read more in [our documentation](./selectors#role-selector).
+
+- New [`method: Locator.filter`] API to filter an existing locator
+
+  ```py
+  buttons = page.locator("role=button")
+  # ...
+  submit_button = buttons.filter(has_text="Submit")
+  submit_button.click()
+  ```
+
+- Codegen now supports generating Pytest Tests
+
+  ![Graphics](https://user-images.githubusercontent.com/746130/168098384-40784024-6c26-4426-8255-e714862af6fc.png)
+
+
+
+## Version 1.21
+
+### Highlights
+
+- New role selectors that allow selecting elements by their [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles), [ARIA attributes](https://www.w3.org/TR/wai-aria-1.2/#aria-attributes) and [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
+
+  ```python async
+  # Click a button with accessible name "log in"
+  await page.locator("role=button[name='log in']").click()
+  ```
+
+  ```python sync
+  # Click a button with accessible name "log in"
+  page.locator("role=button[name='log in']").click()
+  ```
+
+  Read more in [our documentation](./selectors#role-selector).
+- New `scale` option in [`method: Page.screenshot`] for smaller sized screenshots.
+- New `caret` option in [`method: Page.screenshot`] to control text caret. Defaults to `"hide"`.
+
+### Behavior Changes
+
+- The `mcr.microsoft.com/playwright` docker image no longer contains Python. Please use `mcr.microsoft.com/playwright/python`
+  as a Playwright-ready docker image with pre-installed Python.
+- Playwright now supports large file uploads (100s of MBs) via [`method: Locator.setInputFiles`] API.
+
+### Browser Versions
+
+- Chromium 101.0.4951.26
+- Mozilla Firefox 98.0.2
+- WebKit 15.4
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 100
+- Microsoft Edge 100
+
 
 ## Version 1.20
 
@@ -100,7 +452,7 @@ from playwright.async_api import Page, expect
 
 async def test_status_becomes_submitted(page: Page) -> None:
     # ..
-    await page.click("#submit-button")
+    await page.locator("#submit-button").click()
     await expect(page.locator(".status")).to_have_text("Submitted")
 ```
 
@@ -109,7 +461,7 @@ from playwright.sync_api import Page, expect
 
 def test_status_becomes_submitted(page: Page) -> None:
     # ..
-    page.click("#submit-button")
+    page.locator("#submit-button").click()
     expect(page.locator(".status")).to_have_text("Submitted")
 ```
 
@@ -262,7 +614,7 @@ Previously it was not possible to get multiple header values of a response. This
 - [Response.all_headers()](https://playwright.dev/python/docs/api/class-response#response-all-headers)
 - [Response.headers_array()](https://playwright.dev/python/docs/api/class-response#response-headers-array)
 - [Response.header_value(name: str)](https://playwright.dev/python/docs/api/class-response#response-header-value)
-- [Response.header_values(name: str)](https://playwright.dev/python/docs/api/class-response/#response-header-values)
+- [Response.header_values(name: str)](https://playwright.dev/python/docs/api/class-response#response-header-values)
 
 ### 🌈 Forced-Colors emulation
 
@@ -293,7 +645,7 @@ Pass `strict=true` into your action calls to opt in.
 
 ```py
 # This will throw if you have more than one button!
-page.click("button", strict=true)
+page.click("button", strict=True)
 ```
 
 #### 📍 New [**Locators API**](./api/class-locator)
@@ -316,8 +668,8 @@ Learn more in the [documentation](./api/class-locator).
 React and Vue selectors allow selecting elements by its component name and/or property values. The syntax is very similar to [attribute selectors](https://developer.mozilla.org/en-US/docs/Web/CSS/Attribute_selectors) and supports all attribute selector operators.
 
 ```py
-page.click("_react=SubmitButton[enabled=true]");
-page.click("_vue=submit-button[enabled=true]");
+page.locator("_react=SubmitButton[enabled=true]").click()
+page.locator("_vue=submit-button[enabled=true]").click()
 ```
 
 Learn more in the [react selectors documentation](./selectors#react-selectors) and the [vue selectors documentation](./selectors#vue-selectors).
@@ -488,13 +840,13 @@ This version of Playwright was also tested against the following stable channels
 
 ## Version 1.9
 
-- [Playwright Inspector](./inspector.md) is a **new GUI tool** to author and debug your tests.
+- [Playwright Inspector](./debug.md) is a **new GUI tool** to author and debug your tests.
   - **Line-by-line debugging** of your Playwright scripts, with play, pause and step-through.
   - Author new scripts by **recording user actions**.
   - **Generate element selectors** for your script by hovering over elements.
   - Set the `PWDEBUG=1` environment variable to launch the Inspector
 
-- **Pause script execution** with [`method: Page.pause`] in headed mode. Pausing the page launches [Playwright Inspector](./inspector.md) for debugging.
+- **Pause script execution** with [`method: Page.pause`] in headed mode. Pausing the page launches [Playwright Inspector](./debug.md) for debugging.
 
 - **New has-text pseudo-class** for CSS selectors. `:has-text("example")` matches any element containing `"example"` somewhere inside, possibly in a child or a descendant element. See [more examples](./selectors.md#text-selector).
 
@@ -516,9 +868,6 @@ This version of Playwright was also tested against the following stable channels
 
 - [Selecting elements based on layout](./selectors.md#selecting-elements-based-on-layout) with `:left-of()`, `:right-of()`, `:above()` and `:below()`.
 - Playwright now includes [command line interface](./cli.md), former playwright-cli.
-  ```bash js
-  npx playwright --help
-  ```
   ```bash python
   playwright --help
   ```

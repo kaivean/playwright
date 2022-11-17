@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-import * as channels from '../protocol/channels';
+import type * as channels from '@protocol/channels';
 import { Browser } from './browser';
 import { BrowserContext, prepareBrowserContextParams } from './browserContext';
 import { ChannelOwner } from './channelOwner';
-import { LaunchOptions, LaunchServerOptions, ConnectOptions, LaunchPersistentContextOptions, BrowserContextOptions } from './types';
+import type { LaunchOptions, LaunchServerOptions, ConnectOptions, LaunchPersistentContextOptions, BrowserContextOptions } from './types';
 import { Connection } from './connection';
 import { Events } from './events';
-import { ChildProcess } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import { envObjectToArray } from './clientHelper';
-import { assert, headersObjectToArray, monotonicTime } from '../utils/utils';
-import * as api from '../../types/types';
-import { kBrowserClosedError } from '../utils/errors';
-import { raceAgainstTimeout } from '../utils/async';
+import { assert, headersObjectToArray, monotonicTime } from '../utils';
+import type * as api from '../../types/types';
+import { kBrowserClosedError } from '../common/errors';
+import { raceAgainstTimeout } from '../utils/timeoutRunner';
 import type { Playwright } from './playwright';
 
 export interface BrowserServerLauncher {
@@ -49,6 +49,7 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
   // Instrumentation.
   _defaultContextOptions?: BrowserContextOptions;
   _defaultLaunchOptions?: LaunchOptions;
+  _defaultConnectOptions?: ConnectOptions;
   _onDidCreateContext?: (context: BrowserContext) => Promise<void>;
   _onWillCloseContext?: (context: BrowserContext) => Promise<void>;
 
@@ -67,6 +68,9 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
   }
 
   async launch(options: LaunchOptions = {}): Promise<Browser> {
+    if (this._defaultConnectOptions)
+      return await this._connectInsteadOfLaunching();
+
     const logger = options.logger || this._defaultLaunchOptions?.logger;
     assert(!(options as any).userDataDir, 'userDataDir option is not supported in `browserType.launch`. Use `browserType.launchPersistentContext` instead');
     assert(!(options as any).port, 'Cannot specify a port without launching as a server.');
@@ -77,11 +81,24 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
       ignoreAllDefaultArgs: !!options.ignoreDefaultArgs && !Array.isArray(options.ignoreDefaultArgs),
       env: options.env ? envObjectToArray(options.env) : undefined,
     };
-    const browser = Browser.from((await this._channel.launch(launchOptions)).browser);
-    browser._logger = logger;
-    browser._setBrowserType(this);
-    browser._localUtils = this._playwright._utils;
-    return browser;
+    return await this._wrapApiCall(async () => {
+      const browser = Browser.from((await this._channel.launch(launchOptions)).browser);
+      browser._logger = logger;
+      browser._setBrowserType(this);
+      return browser;
+    });
+  }
+
+  private async _connectInsteadOfLaunching(): Promise<Browser> {
+    const connectOptions = this._defaultConnectOptions!;
+    return this._connect(connectOptions.wsEndpoint, {
+      headers: {
+        'x-playwright-browser': this.name(),
+        'x-playwright-launch-options': JSON.stringify(this._defaultLaunchOptions || {}),
+        ...connectOptions.headers,
+      },
+      timeout: connectOptions.timeout ?? 3 * 60 * 1000, // 3 minutes
+    });
   }
 
   async launchServer(options: LaunchServerOptions = {}): Promise<api.BrowserServer> {
@@ -104,14 +121,15 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
       channel: options.channel,
       userDataDir,
     };
-    const result = await this._channel.launchPersistentContext(persistentParams);
-    const context = BrowserContext.from(result.context);
-    context._options = contextParams;
-    context._logger = logger;
-    context._setBrowserType(this);
-    context.tracing._localUtils = this._playwright._utils;
-    await this._onDidCreateContext?.(context);
-    return context;
+    return await this._wrapApiCall(async () => {
+      const result = await this._channel.launchPersistentContext(persistentParams);
+      const context = BrowserContext.from(result.context);
+      context._options = contextParams;
+      context._logger = logger;
+      context._setBrowserType(this);
+      await this._onDidCreateContext?.(context);
+      return context;
+    });
   }
 
   connect(options: api.ConnectOptions & { wsEndpoint?: string }): Promise<api.Browser>;
@@ -127,17 +145,18 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
     const logger = params.logger;
     return await this._wrapApiCall(async () => {
       const deadline = params.timeout ? monotonicTime() + params.timeout : 0;
-      let browser: Browser;
       const headers = { 'x-playwright-browser': this.name(), ...params.headers };
-      const connectParams: channels.BrowserTypeConnectParams = { wsEndpoint, headers, slowMo: params.slowMo, timeout: params.timeout };
+      const localUtils = this._connection.localUtils();
+      const connectParams: channels.LocalUtilsConnectParams = { wsEndpoint, headers, slowMo: params.slowMo, timeout: params.timeout };
       if ((params as any).__testHookRedirectPortForwarding)
         connectParams.socksProxyRedirectPortForTest = (params as any).__testHookRedirectPortForwarding;
-      const { pipe } = await this._channel.connect(connectParams);
+      const { pipe } = await localUtils._channel.connect(connectParams);
       const closePipe = () => pipe.close().catch(() => {});
-      const connection = new Connection();
+      const connection = new Connection(localUtils);
       connection.markAsRemote();
       connection.on('close', closePipe);
 
+      let browser: Browser;
       let closeError: string | undefined;
       const onPipeClosed = () => {
         // Emulate all pages, contexts and the browser closing upon disconnect.
@@ -169,14 +188,13 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
         const playwright = await connection!.initializePlaywright();
         if (!playwright._initializer.preLaunchedBrowser) {
           closePipe();
-          throw new Error('Malformed endpoint. Did you use launchServer method?');
+          throw new Error('Malformed endpoint. Did you use BrowserType.launchServer method?');
         }
         playwright._setSelectors(this._playwright.selectors);
         browser = Browser.from(playwright._initializer.preLaunchedBrowser!);
         browser._logger = logger;
         browser._shouldCloseConnectionOnClose = true;
         browser._setBrowserType(this);
-        browser._localUtils = this._playwright._utils;
         browser.on(Events.Browser.Disconnected, closePipe);
         return browser;
       }, deadline ? deadline - monotonicTime() : 0);
@@ -214,7 +232,6 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
       browser._contexts.add(BrowserContext.from(result.defaultContext));
     browser._logger = params.logger;
     browser._setBrowserType(this);
-    browser._localUtils = this._playwright._utils;
     return browser;
   }
 }

@@ -15,23 +15,25 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import * as structs from '../../types/structs';
-import * as api from '../../types/types';
-import * as channels from '../protocol/channels';
-import { TimeoutSettings } from '../utils/timeoutSettings';
-import { headersObjectToArray } from '../utils/utils';
-import { BrowserContext } from './browserContext';
+import type * as childProcess from 'child_process';
+import type * as structs from '../../types/structs';
+import type * as api from '../../types/types';
+import type * as channels from '@protocol/channels';
+import { TimeoutSettings } from '../common/timeoutSettings';
+import { BrowserContext, prepareBrowserContextParams } from './browserContext';
 import { ChannelOwner } from './channelOwner';
 import { envObjectToArray } from './clientHelper';
 import { Events } from './events';
 import { JSHandle, parseResult, serializeArgument } from './jsHandle';
-import { Page } from './page';
-import { Env, WaitForEventOptions, Headers } from './types';
+import type { Page } from './page';
+import type { Env, WaitForEventOptions, Headers, BrowserContextOptions } from './types';
 import { Waiter } from './waiter';
 
-type ElectronOptions = Omit<channels.ElectronLaunchOptions, 'env'|'extraHTTPHeaders'> & {
+type ElectronOptions = Omit<channels.ElectronLaunchOptions, 'env'|'extraHTTPHeaders'|'recordHar'|'colorScheme'> & {
   env?: Env,
   extraHTTPHeaders?: Headers,
+  recordHar?: BrowserContextOptions['recordHar'],
+  colorScheme?: 'dark' | 'light' | 'no-preference' | null,
 };
 
 type ElectronAppType = typeof import('electron');
@@ -47,8 +49,7 @@ export class Electron extends ChannelOwner<channels.ElectronChannel> implements 
 
   async launch(options: ElectronOptions = {}): Promise<ElectronApplication> {
     const params: channels.ElectronLaunchParams = {
-      ...options,
-      extraHTTPHeaders: options.extraHTTPHeaders && headersObjectToArray(options.extraHTTPHeaders),
+      ...await prepareBrowserContextParams(options),
       env: envObjectToArray(options.env ? options.env : process.env),
     };
     const app = ElectronApplication.from((await this._channel.launch(params)).electronApplication);
@@ -73,6 +74,10 @@ export class ElectronApplication extends ChannelOwner<channels.ElectronApplicati
       this._onPage(page);
     this._context.on(Events.BrowserContext.Page, page => this._onPage(page));
     this._channel.on('close', () => this.emit(Events.ElectronApplication.Close));
+  }
+
+  process(): childProcess.ChildProcess {
+    return this._toImpl().process();
   }
 
   _onPage(page: Page) {

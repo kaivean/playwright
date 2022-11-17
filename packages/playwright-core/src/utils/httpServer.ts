@@ -17,10 +17,10 @@
 import * as http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { Server as WebSocketServer } from 'ws';
-import * as mime from 'mime';
-import { assert } from './utils';
-import { VirtualFileSystem } from './vfs';
+import { mime, wsServer } from '../utilsBundle';
+import type { WebSocketServer } from '../utilsBundle';
+import { assert } from './';
+import { ManualPromise } from './manualPromise';
 
 export type ServerRouteHandler = (request: http.IncomingMessage, response: http.ServerResponse) => boolean;
 
@@ -28,15 +28,16 @@ export class HttpServer {
   private _server: http.Server;
   private _urlPrefix: string;
   private _port: number = 0;
+  private _started = false;
   private _routes: { prefix?: string, exact?: string, handler: ServerRouteHandler }[] = [];
   private _activeSockets = new Set<import('net').Socket>();
-  constructor() {
-    this._urlPrefix = '';
+  constructor(address: string = '') {
+    this._urlPrefix = address;
     this._server = http.createServer(this._onRequest.bind(this));
   }
 
   createWebSocketServer(): WebSocketServer {
-    return new WebSocketServer({ server: this._server });
+    return new wsServer({ server: this._server });
   }
 
   routePrefix(prefix: string, handler: ServerRouteHandler) {
@@ -51,21 +52,52 @@ export class HttpServer {
     return this._port;
   }
 
-  async start(port?: number): Promise<string> {
-    assert(!this._urlPrefix, 'server already started');
+  private async _tryStart(port: number | undefined, host: string) {
+    const errorPromise = new ManualPromise();
+    const errorListener = (error: Error) => errorPromise.reject(error);
+    this._server.on('error', errorListener);
+
+    try {
+      this._server.listen(port, host);
+      await Promise.race([
+        new Promise(cb => this._server!.once('listening', cb)),
+        errorPromise,
+      ]);
+    } finally {
+      this._server.removeListener('error', errorListener);
+    }
+  }
+
+  async start(options: { port?: number, preferredPort?: number, host?: string } = {}): Promise<string> {
+    assert(!this._started, 'server already started');
+    this._started = true;
     this._server.on('connection', socket => {
       this._activeSockets.add(socket);
       socket.once('close', () => this._activeSockets.delete(socket));
     });
-    this._server.listen(port);
-    await new Promise(cb => this._server!.once('listening', cb));
-    const address = this._server.address();
-    if (typeof address === 'string') {
-      this._urlPrefix = address;
+
+    const host = options.host || 'localhost';
+    if (options.preferredPort) {
+      try {
+        await this._tryStart(options.preferredPort, host);
+      } catch (e) {
+        if (!e || !e.message || !e.message.includes('EADDRINUSE'))
+          throw e;
+        await this._tryStart(undefined, host);
+      }
     } else {
-      assert(address, 'Could not bind server socket');
-      this._port = address.port;
-      this._urlPrefix = `http://127.0.0.1:${address.port}`;
+      await this._tryStart(options.port, host);
+    }
+
+    const address = this._server.address();
+    assert(address, 'Could not bind server socket');
+    if (!this._urlPrefix) {
+      if (typeof address === 'string') {
+        this._urlPrefix = address;
+      } else {
+        this._port = address.port;
+        this._urlPrefix = `http://${host}:${address.port}`;
+      }
     }
     return this._urlPrefix;
   }
@@ -149,22 +181,6 @@ export class HttpServer {
 
     const readable = fs.createReadStream(absoluteFilePath, { start, end });
     readable.pipe(response);
-  }
-
-  async serveVirtualFile(response: http.ServerResponse, vfs: VirtualFileSystem, entry: string, headers?: { [name: string]: string }) {
-    try {
-      const content = await vfs.read(entry);
-      response.statusCode = 200;
-      const contentType = mime.getType(path.extname(entry)) || 'application/octet-stream';
-      response.setHeader('Content-Type', contentType);
-      response.setHeader('Content-Length', content.byteLength);
-      for (const [name, value] of Object.entries(headers || {}))
-        response.setHeader(name, value);
-      response.end(content);
-      return true;
-    } catch (e) {
-      return false;
-    }
   }
 
   private _onRequest(request: http.IncomingMessage, response: http.ServerResponse) {

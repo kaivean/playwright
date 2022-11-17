@@ -1,0 +1,5 @@
+[*]
+@isomorphic/**
+@web/**
+../entries.ts
+../geometry.ts

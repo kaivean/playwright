@@ -16,47 +16,51 @@
 
 /* eslint-disable no-console */
 
-import { Command } from 'commander';
+import type { Command } from 'playwright-core/lib/utilsBundle';
 import fs from 'fs';
 import url from 'url';
 import path from 'path';
-import os from 'os';
-import type { Config } from './types';
-import { Runner, builtInReporters, BuiltInReporter, kDefaultConfigFiles } from './runner';
+import { Runner, builtInReporters, kDefaultConfigFiles } from './runner';
+import type { ConfigCLIOverrides } from './runner';
 import { stopProfiling, startProfiling } from './profiler';
-import { FilePatternFilter } from './util';
+import type { TestFileFilter } from './util';
+import { createTitleMatcher } from './util';
 import { showHTMLReport } from './reporters/html';
-import { GridServer } from 'playwright-core/lib/grid/gridServer';
-import dockerFactory from 'playwright-core/lib/grid/dockerGridFactory';
-import { createGuid, hostPlatform } from 'playwright-core/lib/utils/utils';
-import { fileIsModule } from './loader';
+import { baseFullConfig, defaultTimeout, fileIsModule } from './loader';
+import type { TraceMode } from './types';
 
-const defaultTimeout = 30000;
-const defaultReporter: BuiltInReporter = process.env.CI ? 'dot' : 'list';
+export function addTestCommands(program: Command) {
+  addTestCommand(program);
+  addShowReportCommand(program);
+  addListFilesCommand(program);
+}
 
-export function addTestCommand(program: Command) {
+function addTestCommand(program: Command) {
   const command = program.command('test [test-filter...]');
-  command.description('Run tests with Playwright Test');
+  command.description('run tests with Playwright Test');
   command.option('--browser <browser>', `Browser to use for tests, one of "all", "chromium", "firefox" or "webkit" (default: "chromium")`);
   command.option('--headed', `Run tests in headed browsers (default: headless)`);
-  command.option('--debug', `Run tests with Playwright Inspector. Shortcut for "PWDEBUG=1" environment variable and "--timeout=0 --maxFailures=1 --headed --workers=1" options`);
+  command.option('--debug', `Run tests with Playwright Inspector. Shortcut for "PWDEBUG=1" environment variable and "--timeout=0 --max-failures=1 --headed --workers=1" options`);
   command.option('-c, --config <file>', `Configuration file, or a test directory with optional ${kDefaultConfigFiles.map(file => `"${file}"`).join('/')}`);
   command.option('--forbid-only', `Fail if test.only is called (default: false)`);
   command.option('--fully-parallel', `Run all tests in parallel (default: false)`);
   command.option('-g, --grep <grep>', `Only run tests matching this regular expression (default: ".*")`);
   command.option('-gv, --grep-invert <grep>', `Only run tests that do not match this regular expression`);
   command.option('--global-timeout <timeout>', `Maximum time this test suite can run in milliseconds (default: unlimited)`);
-  command.option('-j, --workers <workers>', `Number of concurrent workers, use 1 to run in a single worker (default: number of CPU cores / 2)`);
+  command.option('--ignore-snapshots', `Ignore screenshot and snapshot expectations`);
+  command.option('-j, --workers <workers>', `Number of concurrent workers or percentage of logical CPU cores, use 1 to run in a single worker (default: 50%)`);
   command.option('--list', `Collect all the tests and report them, but do not run`);
   command.option('--max-failures <N>', `Stop after the first N failures`);
   command.option('--output <dir>', `Folder for output artifacts (default: "test-results")`);
+  command.option('--pass-with-no-tests', `Makes test run succeed even if no tests were found`);
   command.option('--quiet', `Suppress stdio`);
   command.option('--repeat-each <N>', `Run each test N times (default: 1)`);
-  command.option('--reporter <reporter>', `Reporter to use, comma-separated, can be ${builtInReporters.map(name => `"${name}"`).join(', ')} (default: "${defaultReporter}")`);
+  command.option('--reporter <reporter>', `Reporter to use, comma-separated, can be ${builtInReporters.map(name => `"${name}"`).join(', ')} (default: "${baseFullConfig.reporter[0]}")`);
   command.option('--retries <retries>', `Maximum retry count for flaky tests, zero for no retries (default: no retries)`);
   command.option('--shard <shard>', `Shard tests and execute only the selected shard, specify in the form "current/all", 1-based, for example "3/5"`);
   command.option('--project <project-name...>', `Only run tests from the specified list of projects (default: run all projects)`);
   command.option('--timeout <timeout>', `Specify test timeout threshold in milliseconds, zero for unlimited (default: ${defaultTimeout})`);
+  command.option('--trace <mode>', `Force tracing mode, can be ${kTraceModes.map(mode => `"${mode}"`).join(', ')}`);
   command.option('-u, --update-snapshots', `Update snapshots with actual results (default: only create missing snapshots)`);
   command.option('-x', `Stop after the first failure`);
   command.action(async (args, opts) => {
@@ -73,11 +77,12 @@ Arguments [test-filter...]:
 
 Examples:
   $ npx playwright test my.spec.ts
+  $ npx playwright test some.spec.ts:42
   $ npx playwright test --headed
   $ npx playwright test --browser=webkit`);
 }
 
-export function addListFilesCommand(program: Command) {
+function addListFilesCommand(program: Command) {
   const command = program.command('list-files [file-filter...]', { hidden: true });
   command.description('List files with Playwright Test tests');
   command.option('-c, --config <file>', `Configuration file, or a test directory with optional ${kDefaultConfigFiles.map(file => `"${file}"`).join('/')}`);
@@ -92,10 +97,12 @@ export function addListFilesCommand(program: Command) {
   });
 }
 
-export function addShowReportCommand(program: Command) {
+function addShowReportCommand(program: Command) {
   const command = program.command('show-report [report]');
   command.description('show HTML report');
-  command.action(report => showHTMLReport(report));
+  command.action((report, options) => showHTMLReport(report, options.host, +options.port));
+  command.option('--host <host>', 'Host to serve report on', 'localhost');
+  command.option('--port <port>', 'Port to serve report on', '9323');
   command.addHelpText('afterAll', `
 Arguments [report]:
   When specified, opens given report, otherwise opens last generated report.
@@ -108,24 +115,13 @@ Examples:
 async function runTests(args: string[], opts: { [key: string]: any }) {
   await startProfiling();
 
-  const cpus = os.cpus().length;
-  const workers = hostPlatform.startsWith('mac') && hostPlatform.endsWith('arm64') ? cpus : Math.ceil(cpus / 2);
-
-  const defaultConfig: Config = {
-    preserveOutput: 'always',
-    reporter: [ [defaultReporter] ],
-    reportSlowTests: { max: 5, threshold: 15000 },
-    timeout: defaultTimeout,
-    updateSnapshots: 'missing',
-    workers,
-  };
-
+  const overrides = overridesFromOptions(opts);
   if (opts.browser) {
     const browserOpt = opts.browser.toLowerCase();
     if (!['all', 'chromium', 'firefox', 'webkit'].includes(browserOpt))
       throw new Error(`Unsupported browser "${opts.browser}", must be one of "all", "chromium", "firefox" or "webkit"`);
     const browserNames = browserOpt === 'all' ? ['chromium', 'firefox', 'webkit'] : [browserOpt];
-    defaultConfig.projects = browserNames.map(browserName => {
+    overrides.projects = browserNames.map(browserName => {
       return {
         name: browserName,
         use: { browserName },
@@ -133,7 +129,6 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
     });
   }
 
-  const overrides = overridesFromOptions(opts);
   if (opts.headed || opts.debug)
     overrides.use = { headless: false };
   if (opts.debug) {
@@ -142,6 +137,12 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
     overrides.workers = 1;
     process.env.PWDEBUG = '1';
   }
+  if (opts.trace) {
+    if (!kTraceModes.includes(opts.trace))
+      throw new Error(`Unsupported trace mode "${opts.trace}", must be one of ${kTraceModes.map(mode => `"${mode}"`).join(', ')}`);
+    overrides.use = overrides.use || {};
+    overrides.use.trace = opts.trace;
+  }
 
   // When no --config option is passed, let's look for the config file in the current directory.
   const configFileOrDirectory = opts.config ? path.resolve(process.cwd(), opts.config) : process.cwd();
@@ -149,25 +150,31 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
   if (restartWithExperimentalTsEsm(resolvedConfigFile))
     return;
 
-  const runner = new Runner(overrides, { defaultConfig });
-  const config = resolvedConfigFile ? await runner.loadConfigFromResolvedFile(resolvedConfigFile) : runner.loadEmptyConfig(configFileOrDirectory);
-  if (('projects' in config) && opts.browser)
-    throw new Error(`Cannot use --browser option when configuration file defines projects. Specify browserName in the projects instead.`);
+  const runner = new Runner(overrides);
+  if (resolvedConfigFile)
+    await runner.loadConfigFromResolvedFile(resolvedConfigFile);
+  else
+    await runner.loadEmptyConfig(configFileOrDirectory);
 
-  const filePatternFilter: FilePatternFilter[] = args.map(arg => {
-    const match = /^(.*):(\d+)$/.exec(arg);
+  const testFileFilters: TestFileFilter[] = args.map(arg => {
+    const match = /^(.*?):(\d+):?(\d+)?$/.exec(arg);
     return {
       re: forceRegExp(match ? match[1] : arg),
       line: match ? parseInt(match[2], 10) : null,
+      column: match?.[3] ? parseInt(match[3], 10) : null,
     };
   });
 
-  if (process.env.PLAYWRIGHT_DOCKER)
-    runner.addInternalGlobalSetup(launchDockerContainer);
+  const grepMatcher = opts.grep ? createTitleMatcher(forceRegExp(opts.grep)) : () => true;
+  const grepInvertMatcher = opts.grepInvert ? createTitleMatcher(forceRegExp(opts.grepInvert)) : () => false;
+  const testTitleMatcher = (title: string) => !grepInvertMatcher(title) && grepMatcher(title);
+
   const result = await runner.runAllTests({
     listOnly: !!opts.list,
-    filePatternFilter,
+    testFileFilters,
+    testTitleMatcher,
     projectFilter: opts.project || undefined,
+    passWithNoTests: opts.passWithNoTests,
   });
   await stopProfiling(undefined);
 
@@ -178,15 +185,18 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
 
 
 async function listTestFiles(opts: { [key: string]: any }) {
+  // Redefine process.stdout.write in case config decides to pollute stdio.
+  const write = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (() => {}) as any;
   const configFileOrDirectory = opts.config ? path.resolve(process.cwd(), opts.config) : process.cwd();
   const resolvedConfigFile = Runner.resolveConfigFile(configFileOrDirectory)!;
   if (restartWithExperimentalTsEsm(resolvedConfigFile))
     return;
 
-  const runner = new Runner({}, { defaultConfig: {} });
+  const runner = new Runner();
   await runner.loadConfigFromResolvedFile(resolvedConfigFile);
-  const report = await runner.listTestFiles(resolvedConfigFile, opts.project);
-  process.stdout.write(JSON.stringify(report), () => {
+  const report = await runner.listTestFiles(opts.project);
+  write(JSON.stringify(report), () => {
     process.exit(0);
   });
 }
@@ -198,14 +208,12 @@ function forceRegExp(pattern: string): RegExp {
   return new RegExp(pattern, 'gi');
 }
 
-function overridesFromOptions(options: { [key: string]: any }): Config {
+function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrides {
   const shardPair = options.shard ? options.shard.split('/').map((t: string) => parseInt(t, 10)) : undefined;
   return {
     forbidOnly: options.forbidOnly ? true : undefined,
     fullyParallel: options.fullyParallel ? true : undefined,
     globalTimeout: options.globalTimeout ? parseInt(options.globalTimeout, 10) : undefined,
-    grep: options.grep ? forceRegExp(options.grep) : undefined,
-    grepInvert: options.grepInvert ? forceRegExp(options.grepInvert) : undefined,
     maxFailures: options.x ? 1 : (options.maxFailures ? parseInt(options.maxFailures, 10) : undefined),
     outputDir: options.output ? path.resolve(process.cwd(), options.output) : undefined,
     quiet: options.quiet ? options.quiet : undefined,
@@ -214,8 +222,9 @@ function overridesFromOptions(options: { [key: string]: any }): Config {
     reporter: (options.reporter && options.reporter.length) ? options.reporter.split(',').map((r: string) => [resolveReporter(r)]) : undefined,
     shard: shardPair ? { current: shardPair[0], total: shardPair[1] } : undefined,
     timeout: options.timeout ? parseInt(options.timeout, 10) : undefined,
+    ignoreSnapshots: options.ignoreSnapshots ? !!options.ignoreSnapshots : undefined,
     updateSnapshots: options.updateSnapshots ? 'all' as const : undefined,
-    workers: options.workers ? parseInt(options.workers, 10) : undefined,
+    workers: options.workers,
   };
 }
 
@@ -225,32 +234,23 @@ function resolveReporter(id: string) {
   const localPath = path.resolve(process.cwd(), id);
   if (fs.existsSync(localPath))
     return localPath;
-  return require.resolve(id, { paths: [ process.cwd() ] });
-}
-
-async function launchDockerContainer(): Promise<() => Promise<void>> {
-  const gridServer = new GridServer(dockerFactory, createGuid());
-  await gridServer.start();
-  // Start docker container in advance.
-  const { error } = await gridServer.createAgent();
-  if (error)
-    throw error;
-  process.env.PW_GRID = gridServer.urlPrefix().substring(0, gridServer.urlPrefix().length - 1);
-  return async () => await gridServer.stop();
+  return require.resolve(id, { paths: [process.cwd()] });
 }
 
 function restartWithExperimentalTsEsm(configFile: string | null): boolean {
+  const nodeVersion = +process.versions.node.split('.')[0];
+  // New experimental loader is only supported on Node 16+.
+  if (nodeVersion < 16)
+    return false;
   if (!configFile)
     return false;
   if (process.env.PW_DISABLE_TS_ESM)
     return false;
   if (process.env.PW_TS_ESM_ON)
     return false;
-  if (!configFile.endsWith('.ts'))
-    return false;
   if (!fileIsModule(configFile))
     return false;
-  const NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ` --experimental-loader=${url.pathToFileURL(require.resolve('@playwright/test/lib/experimentalLoader')).toString()}`;
+  const NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + experimentalLoaderOption();
   const innerProcess = require('child_process').fork(require.resolve('playwright-core/cli'), process.argv.slice(2), {
     env: {
       ...process.env,
@@ -265,3 +265,17 @@ function restartWithExperimentalTsEsm(configFile: string | null): boolean {
   });
   return true;
 }
+
+export function experimentalLoaderOption() {
+  return ` --no-warnings --experimental-loader=${url.pathToFileURL(require.resolve('@playwright/test/lib/experimentalLoader')).toString()}`;
+}
+
+export function envWithoutExperimentalLoaderOptions(): NodeJS.ProcessEnv {
+  const substring = experimentalLoaderOption();
+  const result = { ...process.env };
+  if (result.NODE_OPTIONS)
+    result.NODE_OPTIONS = result.NODE_OPTIONS.replace(substring, '').trim() || undefined;
+  return result;
+}
+
+const kTraceModes: TraceMode[] = ['on', 'off', 'on-first-retry', 'retain-on-failure'];

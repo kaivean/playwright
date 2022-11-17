@@ -20,7 +20,7 @@ import { verifyViewport, attachFrame } from '../config/utils';
 import type { Route } from 'playwright-core';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
+import { comparePNGs } from '../config/comparator';
 
 it.describe('page screenshot', () => {
   it.skip(({ browserName, headless }) => browserName === 'firefox' && !headless, 'Firefox headed produces a different image.');
@@ -33,7 +33,7 @@ it.describe('page screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-sanity.png');
   });
 
-  it('should not capture blinking caret', async ({ page, server }) => {
+  it('should not capture blinking caret by default', async ({ page, server, browserName }) => {
     await page.setContent(`
       <!-- Refer to stylesheet from other origin. Accessing this
            stylesheet rules will throw.
@@ -58,6 +58,80 @@ it.describe('page screenshot', () => {
       const newScreenshot = await div.screenshot();
       expect(newScreenshot.equals(screenshot)).toBe(true);
     }
+  });
+
+  it('should capture blinking caret if explicitly asked for', async ({ page, server, browserName }) => {
+    it.fixme(browserName === 'firefox', 'browser-level screenshot API in firefox does not capture caret');
+    await page.setContent(`
+      <!-- Refer to stylesheet from other origin. Accessing this
+           stylesheet rules will throw.
+      -->
+      <link rel=stylesheet href="${server.CROSS_PROCESS_PREFIX + '/injectedstyle.css'}">
+      <!-- make life harder: define caret color in stylesheet -->
+      <style>
+        div {
+          caret-color: #000 !important;
+        }
+      </style>
+      <div contenteditable="true"></div>
+    `);
+    const div = page.locator('div');
+    await div.type('foo bar');
+    const screenshot = await div.screenshot();
+    let hasDifferentScreenshots = false;
+    for (let i = 0; !hasDifferentScreenshots && i < 10; ++i) {
+      // Caret blinking time is set to 500ms.
+      // Try to capture variety of screenshots to make
+      // sure we capture blinking caret.
+      await new Promise(x => setTimeout(x, 150));
+      const newScreenshot = await div.screenshot({ caret: 'initial' });
+      hasDifferentScreenshots = !newScreenshot.equals(screenshot);
+    }
+    expect(hasDifferentScreenshots).toBe(true);
+  });
+
+  it('should capture blinking caret in shadow dom', async ({ page, browserName }) => {
+    it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16732' });
+    await page.addScriptTag({
+      content: `
+      class CustomElementContainer extends HTMLElement {
+        #shadowRoot;
+        constructor() {
+          super();
+          this.#shadowRoot = this.attachShadow({ mode: 'open' });
+          this.#shadowRoot.innerHTML = '<custom-element-input-wrapper><input type="text"/></custom-element-input-wrapper>';
+        }
+      }
+      class CustomElementInputWrapper extends HTMLElement {
+        #shadowRoot;
+        constructor() {
+          super();
+          this.#shadowRoot = this.attachShadow({ mode: 'open' });
+          this.#shadowRoot.innerHTML = '<style>:host { all: initial; }</style><slot/>';
+        }
+      }
+      customElements.define('custom-element-input-wrapper', CustomElementInputWrapper);
+      customElements.define('custom-element-container', CustomElementContainer);
+
+      const container = document.createElement('custom-element-container');
+      document.body.appendChild(container);`,
+    });
+
+    const input = await page.locator('input');
+    // TODO: click fails in webkit
+    await input.focus();
+
+    const screenshot = await input.screenshot();
+    let hasDifferentScreenshots = false;
+    for (let i = 0; !hasDifferentScreenshots && i < 10; ++i) {
+      // Caret blinking time is set to 500ms.
+      // Try to capture variety of screenshots to make
+      // sure we capture blinking caret.
+      await new Promise(x => setTimeout(x, 150));
+      const newScreenshot = await input.screenshot({ caret: 'hide' });
+      hasDifferentScreenshots = !newScreenshot.equals(screenshot);
+    }
+    expect(hasDifferentScreenshots).toBe(false);
   });
 
   it('should clip rect', async ({ page, server }) => {
@@ -153,8 +227,9 @@ it.describe('page screenshot', () => {
     await verifyViewport(page, 500, 500);
   });
 
-  it('should allow transparency', async ({ page, browserName }) => {
+  it('should allow transparency', async ({ page, browserName, platform }) => {
     it.fail(browserName === 'firefox');
+    it.fixme(browserName === 'webkit' && platform === 'win32', 'https://github.com/microsoft/playwright/issues/18452');
 
     await page.setViewportSize({ width: 50, height: 150 });
     await page.setContent(`
@@ -173,7 +248,7 @@ it.describe('page screenshot', () => {
   it('should render white background on jpeg file', async ({ page, server, isElectron }) => {
     it.fixme(isElectron, 'omitBackground with jpeg does not work');
 
-    await page.setViewportSize({ width: 100, height: 100 });
+    await page.setViewportSize({ width: 300, height: 300 });
     await page.goto(server.EMPTY_PAGE);
     const screenshot = await page.screenshot({ omitBackground: true, type: 'jpeg' });
     expect(screenshot).toMatchSnapshot('white.jpg');
@@ -200,9 +275,10 @@ it.describe('page screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-canvas.png', { threshold: 0.4 });
   });
 
-  it('should capture canvas changes', async ({ page, isElectron, browserName, isMac }) => {
-    it.fail(browserName === 'webkit' && isMac && parseInt(os.release(), 10) <= 20, 'https://github.com/microsoft/playwright/issues/8796');
+  it('should capture canvas changes', async ({ page, isElectron, browserName, isMac, isWebView2 }) => {
+    it.fixme(browserName === 'webkit' && isMac, 'https://github.com/microsoft/playwright/issues/8796,https://github.com/microsoft/playwright/issues/16180');
     it.skip(isElectron);
+    it.skip(isWebView2);
     await page.goto('data:text/html,<canvas></canvas>');
     await page.evaluate(() => {
       const canvas = document.querySelector('canvas');
@@ -285,7 +361,7 @@ it.describe('page screenshot', () => {
   it('path option should detect jpeg', async ({ page, server, isElectron }, testInfo) => {
     it.fixme(isElectron, 'omitBackground with jpeg does not work');
 
-    await page.setViewportSize({ width: 100, height: 100 });
+    await page.setViewportSize({ width: 300, height: 300 });
     await page.goto(server.EMPTY_PAGE);
     const outputPath = testInfo.outputPath('screenshot.jpg');
     const screenshot = await page.screenshot({ omitBackground: true, path: outputPath });
@@ -357,7 +433,7 @@ it.describe('page screenshot', () => {
       await page.setViewportSize({ width: 500, height: 500 });
       await page.goto(server.PREFIX + '/grid.html');
       expect(await page.screenshot({
-        mask: [ page.locator('div').nth(5) ],
+        mask: [page.locator('div').nth(5)],
       })).toMatchSnapshot('mask-should-work.png');
     });
 
@@ -366,7 +442,7 @@ it.describe('page screenshot', () => {
       await page.goto(server.PREFIX + '/grid.html');
       const bodyLocator = page.locator('body');
       expect(await bodyLocator.screenshot({
-        mask: [ page.locator('div').nth(5) ],
+        mask: [page.locator('div').nth(5)],
       })).toMatchSnapshot('mask-should-work-with-locator.png');
     });
 
@@ -375,7 +451,7 @@ it.describe('page screenshot', () => {
       await page.goto(server.PREFIX + '/grid.html');
       const bodyHandle = await page.$('body');
       expect(await bodyHandle.screenshot({
-        mask: [ page.locator('div').nth(5) ],
+        mask: [page.locator('div').nth(5)],
       })).toMatchSnapshot('mask-should-work-with-elementhandle.png');
     });
 
@@ -410,10 +486,10 @@ it.describe('page screenshot', () => {
       await page.addStyleTag({ content: 'iframe { border: none; }' });
       const screenshots = await Promise.all([
         page.screenshot({
-          mask: [ page.frameLocator('#frame1').locator('div').nth(1) ],
+          mask: [page.frameLocator('#frame1').locator('div').nth(1)],
         }),
         page.screenshot({
-          mask: [ page.frameLocator('#frame2').locator('div').nth(3) ],
+          mask: [page.frameLocator('#frame2').locator('div').nth(3)],
         }),
       ]);
       expect(screenshots[0]).toMatchSnapshot('should-mask-in-parallel-1.png');
@@ -425,7 +501,7 @@ it.describe('page screenshot', () => {
       await page.goto(server.PREFIX + '/grid.html');
       const screenshot1 = await page.screenshot();
       await page.screenshot({
-        mask: [ page.locator('div').nth(1) ],
+        mask: [page.locator('div').nth(1)],
       });
       const screenshot2 = await page.screenshot();
       expect(screenshot1.equals(screenshot2)).toBe(true);
@@ -440,9 +516,22 @@ it.describe('page screenshot', () => {
       const done = page.setContent(`<iframe src='/subframe.html'></iframe>`);
       const route = await routeReady;
 
-      await page.screenshot({ mask: [ page.locator('non-existent') ] });
+      await page.screenshot({ mask: [page.locator('non-existent')] });
       await route.fulfill({ body: '' });
       await done;
+    });
+
+    it('should work when subframe used document.open after a weird url', async ({ page, server }) => {
+      await page.goto(server.EMPTY_PAGE);
+      await page.evaluate(() => {
+        const iframe = document.createElement('iframe');
+        iframe.src = 'javascript:hi';
+        document.body.appendChild(iframe);
+        iframe.contentDocument.open();
+        iframe.contentDocument.write('Hello');
+        iframe.contentDocument.close();
+      });
+      await page.screenshot({ mask: [page.locator('non-existent')] });
     });
   });
 });
@@ -525,7 +614,7 @@ it.describe('page screenshot animations', () => {
     const buffer2 = await page.screenshot({
       animations: 'disabled',
     });
-    expect(buffer1.equals(buffer2)).toBe(true);
+    expect(comparePNGs(buffer1, buffer2)).toBe(null);
   });
 
   it('should resume infinite animations', async ({ page, server }) => {
@@ -536,7 +625,7 @@ it.describe('page screenshot animations', () => {
     const buffer1 = await page.screenshot();
     await rafraf(page);
     const buffer2 = await page.screenshot();
-    expect(buffer1.equals(buffer2)).toBe(false);
+    expect(comparePNGs(buffer1, buffer2, { threshold: 0.2, maxDiffPixels: 50 })).not.toBe(null);
   });
 
   it('should not capture infinite web animations', async ({ page, server }) => {
@@ -556,7 +645,7 @@ it.describe('page screenshot animations', () => {
     const buffer1 = await page.screenshot();
     await rafraf(page);
     const buffer2 = await page.screenshot();
-    expect(buffer1.equals(buffer2)).toBe(false);
+    expect(comparePNGs(buffer1, buffer2, { threshold: 0.2, maxDiffPixels: 50 })).not.toBe(null);
   });
 
   it('should fire transitionend for finite transitions', async ({ page, server }) => {
@@ -725,40 +814,19 @@ it.describe('page screenshot animations', () => {
       'onfinish', 'animationend'
     ]);
   });
-
-  it('should respect fonts option', async ({ page, server, isWindows, browserName, isLinux }) => {
-    it.fixme(browserName === 'webkit' && isLinux, 'https://github.com/microsoft/playwright/issues/12839');
-    it.fixme(isWindows, 'This requires a windows-specific test expectations. https://github.com/microsoft/playwright/issues/12707');
-    await page.setViewportSize({ width: 500, height: 500 });
-    let serverRequest, serverResponse;
-    // Stall font loading.
-    server.setRoute('/webfont/iconfont.woff2', (req, res) => {
-      serverRequest = req;
-      serverResponse = res;
-    });
-    await page.goto(server.PREFIX + '/webfont/webfont.html', {
-      waitUntil: 'domcontentloaded', // 'load' will not happen if webfont is pending
-    });
-    // Make sure we can take screenshot.
-    const noIconsScreenshot = await page.screenshot();
-    // Make sure screenshot times out while webfont is stalled.
-    const error = await page.screenshot({
-      fonts: 'ready',
-      timeout: 200,
-    }).catch(e => e);
-    expect(error.message).toContain('waiting for fonts to load...');
-    expect(error.message).toContain('Timeout 200ms exceeded');
-    const [iconsScreenshot] = await Promise.all([
-      page.screenshot({ fonts: 'ready' }),
-      server.serveFile(serverRequest, serverResponse),
-    ]);
-    expect(iconsScreenshot).toMatchSnapshot('screenshot-web-font.png', {
-      maxDiffPixels: 3,
-    });
-    expect(noIconsScreenshot).not.toMatchSnapshot('screenshot-web-font.png', {
-      maxDiffPixels: 3,
-    });
-  });
-
 });
 
+it('should throw if screenshot size is too large', async ({ page, browserName, isMac }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16727' });
+  {
+    await page.setContent(`<style>body {margin: 0; padding: 0;}</style><div style='min-height: 32767px; background: red;'></div>`);
+    const result = await page.screenshot({ fullPage: true });
+    expect(result).toBeTruthy();
+  }
+  {
+    await page.setContent(`<style>body {margin: 0; padding: 0;}</style><div style='min-height: 32768px; background: red;'></div>`);
+    const exception = await page.screenshot({ fullPage: true }).catch(e => e);
+    if (browserName === 'firefox' || (browserName === 'webkit' && !isMac))
+      expect(exception.message).toContain('Cannot take screenshot larger than 32767');
+  }
+});

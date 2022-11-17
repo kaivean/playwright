@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import type { Route } from 'playwright-core';
+import type { Route, Request } from 'playwright-core';
 import { expect, test as base } from './pageTest';
 import fs from 'fs';
 import path from 'path';
@@ -57,13 +57,15 @@ it('should fulfill intercepted response', async ({ page, server, isElectron, isA
   expect(await page.evaluate(() => document.body.textContent)).toBe('Yo, page!');
 });
 
-it('should fulfill response with empty body', async ({ page, server, isAndroid, browserName, browserMajorVersion }) => {
+it('should fulfill response with empty body', async ({ page, server, isAndroid, isElectron, browserName, browserMajorVersion }) => {
   it.skip(browserName === 'chromium' && browserMajorVersion <= 91, 'Fails in Electron that uses old Chromium');
   it.skip(isAndroid, 'The internal Android localhost (10.0.0.2) != the localhost on the host');
+  it.skip(isElectron, 'Protocol error (Storage.getCookies): Browser context management is not supported.');
   await page.route('**/*', async route => {
     const response = await page.request.fetch(route.request());
     await route.fulfill({
       response,
+      headers: { 'content-length': '0' },
       status: 201,
       body: ''
     });
@@ -173,4 +175,23 @@ it('should give access to the intercepted response body', async ({ page, server,
   expect(await response.text()).toBe('{"foo": "bar"}\n');
 
   await Promise.all([route.fulfill({ response }), evalPromise]);
+});
+
+it('should intercept multipart/form-data request body', async ({ page, server, asset, browserName }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/14624' });
+  it.fail(browserName !== 'firefox');
+  await page.goto(server.PREFIX + '/input/fileupload.html');
+  const filePath = path.relative(process.cwd(), asset('file-to-upload.txt'));
+  await page.locator('input[type=file]').setInputFiles(filePath);
+  const requestPromise = new Promise<Request>(async fulfill => {
+    await page.route('**/upload', route => {
+      fulfill(route.request());
+    });
+  });
+  const [request] = await Promise.all([
+    requestPromise,
+    page.click('input[type=submit]', { noWaitAfter: true })
+  ]);
+  expect(request.method()).toBe('POST');
+  expect(request.postData()).toContain(fs.readFileSync(filePath, 'utf8'));
 });

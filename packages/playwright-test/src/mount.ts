@@ -14,35 +14,77 @@
  * limitations under the License.
  */
 
-import { Page } from '@playwright/test';
-import { createGuid } from 'playwright-core/lib/utils/utils';
+import type { Fixtures, Locator, Page, BrowserContextOptions, PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWorkerArgs, PlaywrightWorkerOptions, BrowserContext } from './types';
+import type { Component, JsxComponent, MountOptions } from '../types/component';
 
-export async function mount(page: Page, jsxOrType: any, options: any): Promise<string> {
-  let component;
-  if (typeof jsxOrType === 'string')
-    component = { kind: 'object', type: jsxOrType, options };
-  else
-    component = jsxOrType;
+let boundCallbacksForMount: Function[] = [];
 
-  const callbacks: Function[] = [];
-  wrapFunctions(component, page, callbacks);
+interface MountResult extends Locator {
+  unmount(locator: Locator): Promise<void>;
+  update(options: Omit<MountOptions, 'hooksConfig'> | string | JsxComponent): Promise<void>;
+}
 
+export const fixtures: Fixtures<
+  PlaywrightTestArgs & PlaywrightTestOptions & {
+    mount: (component: any, options: any) => Promise<MountResult>;
+  },
+  PlaywrightWorkerArgs & PlaywrightWorkerOptions & { _ctWorker: { context: BrowserContext | undefined, hash: string } },
+  { _contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>, _contextReuseEnabled: boolean }> = {
 
-  const dispatchMethod = `__pw_dispatch_${createGuid()}`;
-  await page.exposeFunction(dispatchMethod, (ordinal: number, args: any[]) => {
-    callbacks[ordinal](...args);
-  });
+    _contextReuseEnabled: true,
 
-  // WebKit does not wait for deferred scripts.
-  await page.waitForFunction(() => !!(window as any).playwrightMount);
+    serviceWorkers: 'block',
 
-  const selector = await page.evaluate(async ({ component, dispatchMethod }) => {
+    _ctWorker: [{ context: undefined, hash: '' }, { scope: 'worker' }],
+
+    page: async ({ page }, use) => {
+      await (page as any)._wrapApiCall(async () => {
+        await page.exposeFunction('__ct_dispatch', (ordinal: number, args: any[]) => {
+          boundCallbacksForMount[ordinal](...args);
+        });
+        await page.goto(process.env.PLAYWRIGHT_TEST_BASE_URL!);
+      }, true);
+      await use(page);
+    },
+
+    mount: async ({ page }, use) => {
+      await use(async (component: JsxComponent | string, options?: MountOptions) => {
+        const selector = await (page as any)._wrapApiCall(async () => {
+          return await innerMount(page, component, options);
+        }, true);
+        const locator = page.locator(selector);
+        return Object.assign(locator, {
+          unmount: async () => {
+            await locator.evaluate(async () => {
+              const rootElement = document.getElementById('root')!;
+              await window.playwrightUnmount(rootElement);
+            });
+          },
+          update: async (options: JsxComponent | Omit<MountOptions, 'hooksConfig'>) => {
+            if (isJsxApi(options)) return await innerUpdate(page, options);
+            await innerUpdate(page, component, options);
+          }
+        });
+      });
+      boundCallbacksForMount = [];
+    },
+  };
+
+function isJsxApi(options: Record<string, unknown>): options is JsxComponent {
+  return options?.kind === 'jsx';
+}
+
+async function innerUpdate(page: Page, jsxOrType: JsxComponent | string, options: Omit<MountOptions, 'hooksConfig'> = {}): Promise<void> {
+  const component = createComponent(jsxOrType, options);
+  wrapFunctions(component, page, boundCallbacksForMount);
+
+  await page.evaluate(async ({ component }) => {
     const unwrapFunctions = (object: any) => {
       for (const [key, value] of Object.entries(object)) {
         if (typeof value === 'string' && (value as string).startsWith('__pw_func_')) {
           const ordinal = +value.substring('__pw_func_'.length);
           object[key] = (...args: any[]) => {
-            (window as any)[dispatchMethod](ordinal, args);
+            (window as any)['__ct_dispatch'](ordinal, args);
           };
         } else if (typeof value === 'object' && value) {
           unwrapFunctions(value);
@@ -51,9 +93,50 @@ export async function mount(page: Page, jsxOrType: any, options: any): Promise<s
     };
 
     unwrapFunctions(component);
-    return await (window as any).playwrightMount(component);
-  }, { component, dispatchMethod });
+    const rootElement = document.getElementById('root')!;
+    return await window.playwrightUpdate(rootElement, component);
+  }, { component });
+}
+
+async function innerMount(page: Page, jsxOrType: JsxComponent | string, options: MountOptions = {}): Promise<string> {
+  const component = createComponent(jsxOrType, options);
+  wrapFunctions(component, page, boundCallbacksForMount);
+
+  // WebKit does not wait for deferred scripts.
+  await page.waitForFunction(() => !!window.playwrightMount);
+
+  const selector = await page.evaluate(async ({ component, hooksConfig }) => {
+    const unwrapFunctions = (object: any) => {
+      for (const [key, value] of Object.entries(object)) {
+        if (typeof value === 'string' && (value as string).startsWith('__pw_func_')) {
+          const ordinal = +value.substring('__pw_func_'.length);
+          object[key] = (...args: any[]) => {
+            (window as any)['__ct_dispatch'](ordinal, args);
+          };
+        } else if (typeof value === 'object' && value) {
+          unwrapFunctions(value);
+        }
+      }
+    };
+
+    unwrapFunctions(component);
+    let rootElement = document.getElementById('root');
+    if (!rootElement) {
+      rootElement = document.createElement('div');
+      rootElement.id = 'root';
+      document.body.appendChild(rootElement);
+    }
+
+    await window.playwrightMount(component, rootElement, hooksConfig);
+
+    return '#root >> internal:control=component';
+  }, { component, hooksConfig: options.hooksConfig });
   return selector;
+}
+
+function createComponent(jsxOrType: JsxComponent | string, options: Omit<MountOptions, 'hooksConfig'> = {}): Component {
+  if (typeof jsxOrType !== 'string') return jsxOrType;
+  return { kind: 'object', type: jsxOrType, options };
 }
 
 function wrapFunctions(object: any, page: Page, callbacks: Function[]) {

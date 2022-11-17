@@ -179,8 +179,10 @@ it('should return status text', async ({ page, server }) => {
   expect(response.statusText()).toBe('cool!');
 });
 
-it('should report all headers', async ({ page, server, browserName, platform }) => {
+it('should report all headers', async ({ page, server, browserName, platform, isElectron, browserMajorVersion }) => {
+  it.skip(isElectron && browserMajorVersion < 99, 'This needs Chromium >= 99');
   it.fixme(browserName === 'webkit' && platform === 'win32', 'libcurl does not support non-set-cookie multivalue headers');
+
   const expectedHeaders = {
     'header-a': ['value-a', 'value-a-1', 'value-a-2'],
     'header-b': ['value-b'],
@@ -213,7 +215,9 @@ it('should report all headers', async ({ page, server, browserName, platform }) 
   expect(actualHeaders).toEqual(expectedHeaders);
 });
 
-it('should report multiple set-cookie headers', async ({ page, server }) => {
+it('should report multiple set-cookie headers', async ({ page, server, isElectron, browserMajorVersion }) => {
+  it.skip(isElectron && browserMajorVersion < 99, 'This needs Chromium >= 99');
+
   server.setRoute('/headers', (req, res) => {
     res.writeHead(200, {
       'Set-Cookie': ['a=b', 'c=d']
@@ -235,9 +239,8 @@ it('should report multiple set-cookie headers', async ({ page, server }) => {
   expect(await response.headerValues('set-cookie')).toEqual(['a=b', 'c=d']);
 });
 
-it('should behave the same way for headers and allHeaders', async ({ page, server, browserName, channel, platform, isAndroid }) => {
+it('should behave the same way for headers and allHeaders', async ({ page, server, browserName, platform }) => {
   it.fixme(browserName === 'webkit' && platform === 'win32', 'libcurl does not support non-set-cookie multivalue headers');
-  it.fixme(isAndroid, 'Android uses \n as a header separator in non-raw headers');
   server.setRoute('/headers', (req, res) => {
     const headers = {
       'Set-Cookie': ['a=b', 'c=d'],
@@ -317,4 +320,30 @@ it('should return headers after route.fulfill', async ({ page, server }) => {
     'content-length': '4',
     'content-language': 'en'
   });
+});
+
+it('should report if request was fromServiceWorker', async ({ page, server, isAndroid, isElectron }) => {
+  it.skip(isAndroid || isElectron);
+  {
+    const res = await page.goto(server.PREFIX + '/serviceworkers/fetch/sw.html');
+    expect(res.fromServiceWorker()).toBe(false);
+  }
+  await page.evaluate(() => window['activationPromise']);
+  {
+    const [res] = await Promise.all([
+      page.waitForResponse(/example\.txt/),
+      page.evaluate(() => fetch('/example.txt')),
+    ]);
+    expect(res.fromServiceWorker()).toBe(true);
+  }
+});
+
+it('should return body for prefetch script', async ({ page, server, browserName }) => {
+  it.skip(browserName === 'webkit', 'No prefetch in WebKit: https://caniuse.com/link-rel-prefetch');
+  const [response] = await Promise.all([
+    page.waitForResponse('**/prefetch.js'),
+    page.goto(server.PREFIX + '/prefetch.html')
+  ]);
+  const body = await response.body();
+  expect(body.toString()).toBe('// Scripts will be pre-fetched');
 });

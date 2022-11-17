@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-import * as mime from 'mime';
+import { mime } from '../utilsBundle';
 import * as injectedScriptSource from '../generated/injectedScriptSource';
-import * as channels from '../protocol/channels';
+import type * as channels from '@protocol/channels';
 import { isSessionClosedError } from './protocolError';
-import { ScreenshotOptions } from './screenshotter';
-import * as frames from './frames';
-import type { InjectedScript, InjectedScriptPoll, LogEntry, HitTargetInterceptionResult } from './injected/injectedScript';
-import { CallMetadata } from './instrumentation';
+import type { ScreenshotOptions } from './screenshotter';
+import type * as frames from './frames';
+import type { InjectedScript, InjectedScriptPoll, LogEntry, HitTargetInterceptionResult, ElementState } from './injected/injectedScript';
+import type { CallMetadata } from './instrumentation';
 import * as js from './javascript';
-import { Page } from './page';
-import { Progress, ProgressController } from './progress';
-import { SelectorInfo } from './selectors';
-import * as types from './types';
-import { TimeoutOptions } from '../common/types';
-import { isUnderTest } from '../utils/utils';
+import type { Page } from './page';
+import type { Progress } from './progress';
+import { ProgressController } from './progress';
+import type { SelectorInfo } from './selectors';
+import type * as types from './types';
+import type { TimeoutOptions } from '../common/types';
+import { isUnderTest } from '../utils';
 
 type SetInputFilesFiles = channels.ElementHandleSetInputFilesParams['files'];
 export type InputFilesItems = { files?: SetInputFilesFiles, localPaths?: string[] };
@@ -97,11 +98,15 @@ export class FrameExecutionContext extends js.ExecutionContext {
       const custom: string[] = [];
       for (const [name, { source }] of this.frame._page.selectors._engines)
         custom.push(`{ name: '${name}', engine: (${source}) }`);
+      const sdkLanguage = this.frame._page.context()._browser.options.sdkLanguage;
       const source = `
         (() => {
+        const module = {};
         ${injectedScriptSource.source}
-        return new pwExport(
+        return new module.exports(
           ${isUnderTest()},
+          "${sdkLanguage}",
+          ${JSON.stringify(this.frame._page.selectors.testIdAttributeName())},
           ${this.frame._page._delegate.rafCountForStablePosition()},
           "${this.frame._page._browserContext._browser.options.name}",
           [${custom.join(',\n')}]
@@ -257,14 +262,22 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
   }
 
-  async _waitAndScrollIntoViewIfNeeded(progress: Progress): Promise<void> {
+  async _waitAndScrollIntoViewIfNeeded(progress: Progress, waitForVisible: boolean): Promise<void> {
+    const timeouts = [0, 50, 100, 250];
     while (progress.isRunning()) {
-      assertDone(throwRetargetableDOMError(await this._waitForDisplayedAtStablePosition(progress, false /* force */, false /* waitForEnabled */)));
-
+      assertDone(throwRetargetableDOMError(await this._waitForElementStates(progress, waitForVisible ? ['visible', 'stable'] : ['stable'], false /* force */)));
       progress.throwIfAborted();  // Avoid action that has side-effects.
       const result = throwRetargetableDOMError(await this._scrollRectIntoViewIfNeeded());
-      if (result === 'error:notvisible')
+      if (result === 'error:notvisible') {
+        if (!waitForVisible) {
+          // Wait for a timeout to avoid retrying too often when not waiting for visible.
+          // If we wait for visible, this should be covered by _waitForElementStates instead.
+          const timeout = timeouts.shift() ?? 500;
+          progress.log(`  element is not displayed, retrying in ${timeout}ms`);
+          await new Promise(f => setTimeout(f, timeout));
+        }
         continue;
+      }
       assertDone(result);
       return;
     }
@@ -273,7 +286,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async scrollIntoViewIfNeeded(metadata: CallMetadata, options: types.TimeoutOptions = {}) {
     const controller = new ProgressController(metadata, this);
     return controller.run(
-        progress => this._waitAndScrollIntoViewIfNeeded(progress),
+        progress => this._waitAndScrollIntoViewIfNeeded(progress, false /* waitForVisible */),
         this._page._timeoutSettings.timeout(options));
   }
 
@@ -392,7 +405,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     const { force = false, position } = options;
     if ((options as any).__testHookBeforeStable)
       await (options as any).__testHookBeforeStable();
-    const result = await this._waitForDisplayedAtStablePosition(progress, force, waitForEnabled);
+    const result = await this._waitForElementStates(progress, waitForEnabled ? ['visible', 'enabled', 'stable'] : ['visible', 'stable'], force);
     if (result !== 'done')
       return result;
     if ((options as any).__testHookAfterStable)
@@ -426,34 +439,26 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       if ((options as any).__testHookBeforeHitTarget)
         await (options as any).__testHookBeforeHitTarget();
 
-      if (actionName === 'move and up') {
-        // When dropping, the "element that is being dragged" often stays under the cursor,
-        // so hit target check at the moment we receive mousedown does not work -
-        // it finds the "element that is being dragged" instead of the
-        // "element that we drop onto".
-        progress.log(`  checking that element receives pointer events at (${point.x},${point.y})`);
-        const hitTargetResult = await this._checkHitTargetAt(point);
-        if (hitTargetResult !== 'done')
-          return hitTargetResult;
-        progress.log(`  element does receive pointer events`);
-        if (options.trial) {
-          progress.log(`  trial ${actionName} has finished`);
-          return 'done';
-        }
-      } else {
-        const actionType = (actionName === 'hover' || actionName === 'tap') ? actionName : 'mouse';
-        const handle = await this.evaluateHandleInUtility(([injected, node, { actionType, trial }]) => injected.setupHitTargetInterceptor(node, actionType, trial), { actionType, trial: !!options.trial } as const);
-        if (handle === 'error:notconnected')
-          return handle;
-        if (!handle._objectId)
-          return handle.rawValue() as 'error:notconnected';
-        hitTargetInterceptionHandle = handle as any;
-        progress.cleanupWhenAborted(() => {
-          // Do not await here, just in case the renderer is stuck (e.g. on alert)
-          // and we won't be able to cleanup.
-          hitTargetInterceptionHandle!.evaluate(h => h.stop()).catch(e => {});
-        });
+      const frameCheckResult = await this._checkFrameIsHitTarget(point);
+      if (frameCheckResult === 'error:notconnected' || ('hitTargetDescription' in frameCheckResult))
+        return frameCheckResult;
+      const hitPoint = frameCheckResult.framePoint;
+      const actionType = actionName === 'move and up' ? 'drag' : ((actionName === 'hover' || actionName === 'tap') ? actionName : 'mouse');
+      const handle = await this.evaluateHandleInUtility(([injected, node, { actionType, hitPoint, trial }]) => injected.setupHitTargetInterceptor(node, actionType, hitPoint, trial), { actionType, hitPoint, trial: !!options.trial } as const);
+      if (handle === 'error:notconnected')
+        return handle;
+      if (!handle._objectId) {
+        const error = handle.rawValue() as string;
+        if (error === 'error:notconnected')
+          return error;
+        return { hitTargetDescription: error };
       }
+      hitTargetInterceptionHandle = handle as any;
+      progress.cleanupWhenAborted(() => {
+        // Do not await here, just in case the renderer is stuck (e.g. on alert)
+        // and we won't be able to cleanup.
+        hitTargetInterceptionHandle!.evaluate(h => h.stop()).catch(e => {});
+      });
     }
 
     const actionResult = await this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
@@ -497,7 +502,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), options);
   }
 
@@ -613,10 +618,15 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
 
   async _setInputFiles(progress: Progress, items: InputFilesItems, options: types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     const { files, localPaths } = items;
+    let filePayloads: types.FilePayload[] | undefined;
     if (files) {
+      filePayloads = [];
       for (const payload of files) {
-        if (!payload.mimeType)
-          payload.mimeType = mime.getType(payload.name) || 'application/octet-stream';
+        filePayloads.push({
+          name: payload.name,
+          mimeType: payload.mimeType || mime.getType(payload.name) || 'application/octet-stream',
+          buffer: payload.buffer.toString('base64'),
+        });
       }
     }
     const multiple = files && files.length > 1 || localPaths && localPaths.length > 1;
@@ -639,7 +649,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       if (localPaths)
         await this._page._delegate.setInputFilePaths(retargeted, localPaths);
       else
-        await retargeted.evaluateInUtility(([injected, node, files]) => injected.setInputFiles(node, files), files as types.FilePayload[]);
+        await this._page._delegate.setInputFiles(retargeted, filePayloads!);
     });
     await this._page._doSlowMo();
     return 'done';
@@ -657,6 +667,11 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async _focus(progress: Progress, resetSelectionIfNotFocused?: boolean): Promise<'error:notconnected' | 'done'> {
     progress.throwIfAborted();  // Avoid action that has side-effects.
     return await this.evaluateInUtility(([injected, node, resetSelectionIfNotFocused]) => injected.focusNode(node, resetSelectionIfNotFocused), resetSelectionIfNotFocused);
+  }
+
+  async _blur(progress: Progress): Promise<'error:notconnected' | 'done'> {
+    progress.throwIfAborted();  // Avoid action that has side-effects.
+    return await this.evaluateInUtility(([injected, node]) => injected.blurNode(node), {});
   }
 
   async type(metadata: CallMetadata, text: string, options: { delay?: number } & types.NavigatingActionWaitOptions): Promise<void> {
@@ -842,35 +857,45 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return this;
   }
 
-  async _waitForDisplayedAtStablePosition(progress: Progress, force: boolean, waitForEnabled: boolean): Promise<'error:notconnected' | 'done'> {
-    if (waitForEnabled)
-      progress.log(`  waiting for element to be visible, enabled and stable`);
-    else
-      progress.log(`  waiting for element to be visible and stable`);
-    const result = await this.evaluatePoll(progress, ([injected, node, { waitForEnabled, force }]) => {
-      return injected.waitForElementStatesAndPerformAction(node,
-          waitForEnabled ? ['visible', 'stable', 'enabled'] : ['visible', 'stable'], force, () => 'done' as const);
-    }, { waitForEnabled, force });
+  async _waitForElementStates(progress: Progress, states: ElementState[], force: boolean): Promise<'error:notconnected' | 'done'> {
+    const title = joinWithAnd(states);
+    progress.log(`  waiting for element to be ${title}`);
+    const result = await this.evaluatePoll(progress, ([injected, node, { states, force }]) => {
+      return injected.waitForElementStatesAndPerformAction(node, states, force, () => 'done' as const);
+    }, { states, force });
     if (result === 'error:notconnected')
       return result;
-    if (waitForEnabled)
-      progress.log('  element is visible, enabled and stable');
-    else
-      progress.log('  element is visible and stable');
+    progress.log(`  element is ${title}`);
     return result;
   }
 
-  async _checkHitTargetAt(point: types.Point): Promise<'error:notconnected' | { hitTargetDescription: string } | 'done'> {
-    const frame = await this.ownerFrame();
-    if (frame && frame.parentFrame()) {
-      const element = await frame.frameElement();
-      const box = await element.boundingBox();
+  async _checkFrameIsHitTarget(point: types.Point): Promise<{ framePoint: types.Point } | 'error:notconnected' | { hitTargetDescription: string }> {
+    let frame = this._frame;
+    const data: { frame: frames.Frame, frameElement: ElementHandle<Element> | null, pointInFrame: types.Point }[] = [];
+    while (frame.parentFrame()) {
+      const frameElement = await frame.frameElement() as ElementHandle<Element>;
+      const box = await frameElement.boundingBox();
       if (!box)
         return 'error:notconnected';
       // Translate from viewport coordinates to frame coordinates.
-      point = { x: point.x - box.x, y: point.y - box.y };
+      const pointInFrame = { x: point.x - box.x, y: point.y - box.y };
+      data.push({ frame, frameElement, pointInFrame });
+      frame = frame.parentFrame()!;
     }
-    return this.evaluateInUtility(([injected, node, point]) => injected.checkHitTargetAt(node, point), point);
+    // Add main frame.
+    data.push({ frame, frameElement: null, pointInFrame: point });
+
+    for (let i = data.length - 1; i > 0; i--) {
+      const element = data[i - 1].frameElement!;
+      const point = data[i].pointInFrame;
+      // Hit target in the parent frame should hit the child frame element.
+      const hitTargetResult = await element.evaluateInUtility(([injected, element, hitPoint]) => {
+        return injected.expectHitTarget(hitPoint, element);
+      }, point);
+      if (hitTargetResult !== 'done')
+        return hitTargetResult;
+    }
+    return { framePoint: data[0].pointInFrame };
   }
 }
 
@@ -991,14 +1016,14 @@ export function waitForSelectorTask(selector: SelectorInfo, state: 'attached' | 
       if (lastElement !== element) {
         lastElement = element;
         if (!element) {
-          progress.log(`  selector did not resolve to any element`);
+          progress.log(`  locator did not resolve to any element`);
         } else {
           if (elements.length > 1) {
             if (strict)
               throw injected.strictModeViolationError(parsed, elements);
-            progress.log(`  selector resolved to ${elements.length} elements. Proceeding with the first one.`);
+            progress.log(`  locator resolved to ${elements.length} elements. Proceeding with the first one.`);
           }
-          progress.log(`  selector resolved to ${visible ? 'visible' : 'hidden'} ${injected.previewNode(element)}`);
+          progress.log(`  locator resolved to ${visible ? 'visible' : 'hidden'} ${injected.previewNode(element)}`);
         }
       }
 
@@ -1018,6 +1043,12 @@ export function waitForSelectorTask(selector: SelectorInfo, state: 'attached' | 
       }
     });
   }, { parsed: selector.parsed, strict: selector.strict, state, omitReturnValue, root });
+}
+
+function joinWithAnd(strings: string[]): string {
+  if (strings.length < 1)
+    return strings.join(', ');
+  return strings.slice(0, strings.length - 1).join(', ') + ' and ' + strings[strings.length - 1];
 }
 
 export const kUnableToAdoptErrorMessage = 'Unable to adopt element handle from a different document';

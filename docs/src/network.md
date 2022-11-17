@@ -3,15 +3,12 @@ id: network
 title: "Network"
 ---
 
-Playwright provides APIs to **monitor** and **modify** network traffic, both HTTP and HTTPS. Any requests that page
-does, including [XHRs](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest) and
+Playwright provides APIs to **monitor** and **modify** network traffic, both HTTP and HTTPS. Any requests that a page does, including [XHRs](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest) and
 [fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) requests, can be tracked, modified and handled.
 
-<!-- TOC -->
-
-<br/>
-
 ## HTTP Authentication
+
+Perform HTTP Authentication with [`method: Browser.newContext`].
 
 ```js
 const context = await browser.newContext({
@@ -48,7 +45,7 @@ page.goto("https://example.com")
 ```
 
 ```csharp
-using var context = await Browser.NewContextAsync(new BrowserNewContextOptions
+using var context = await Browser.NewContextAsync(new()
 {
     HttpCredentials = new HttpCredentials
     {
@@ -59,10 +56,6 @@ using var context = await Browser.NewContextAsync(new BrowserNewContextOptions
 var page = await context.NewPageAsync();
 await page.GotoAsync("https://example.com");
 ```
-
-### API reference
-- [`method: Browser.newContext`]
-
 ## HTTP Proxy
 
 You can configure pages to load over the HTTP(S) proxy or SOCKSv5. Proxy can be either set globally
@@ -113,7 +106,7 @@ var proxy = new Proxy
     Username = "user",
     Password = "pwd"
 };
-await using var browser = await BrowserType.LaunchAsync(new BrowserTypeLaunchOptions
+await using var browser = await BrowserType.LaunchAsync(new()
 {
     Proxy = proxy
 });
@@ -153,21 +146,20 @@ context = browser.new_context(proxy={"server": "http://myproxy.com:3128"})
 
 ```csharp
 var proxy = new Proxy { Server = "per-context" };
-await using var browser = await BrowserType.LaunchAsync(new BrowserTypeLaunchOptions
+await using var browser = await BrowserType.LaunchAsync(new()
 {
     // Browser proxy option is required for Chromium on Windows.
     Proxy = proxy
 });
-using var context = await Browser.NewContextAsync(new BrowserNewContextOptions
+using var context = await Browser.NewContextAsync(new()
 {
     Proxy = new Proxy { Server = "http://myproxy.com:3128" })
 });
 ```
 
-
 ## Network events
 
-You can monitor all the requests and responses:
+You can monitor all the [Request]s and [Response]s:
 
 ```js
 const { chromium, webkit, firefox } = require('playwright');
@@ -244,134 +236,118 @@ with sync_playwright() as playwright:
 
 ```csharp
 using Microsoft.Playwright;
-using System;
 
-class Program
-{
-    public static async Task Main()
-    {
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync();
-        var page = await browser.NewPageAsync();
-        page.Request += (_, request) => Console.WriteLine(">> " + request.Method + " " + request.Url);
-        page.Response += (_, response) => Console.WriteLine("<< " + response.Status + " " + response.Url);
-        await page.GotoAsync("https://example.com");
-    }
-}
+using var playwright = await Playwright.CreateAsync();
+await using var browser = await playwright.Chromium.LaunchAsync();
+var page = await browser.NewPageAsync();
+page.Request += (_, request) => Console.WriteLine(">> " + request.Method + " " + request.Url);
+page.Response += (_, response) => Console.WriteLine("<< " + response.Status + " " + response.Url);
+await page.GotoAsync("https://example.com");
 ```
 
-Or wait for a network response after the button click:
+Or wait for a network response after the button click with [`method: Page.waitForResponse`]:
 
 ```js
 // Use a glob URL pattern
 const [response] = await Promise.all([
   page.waitForResponse('**/api/fetch_data'),
-  page.click('button#update'),
+  page.getByText('Update').click(),
 ]);
 ```
 
 ```java
 // Use a glob URL pattern
 Response response = page.waitForResponse("**/api/fetch_data", () -> {
-  page.click("button#update");
+  page.getByText("Update").click();
 });
 ```
 
 ```python async
 # Use a glob url pattern
 async with page.expect_response("**/api/fetch_data") as response_info:
-    await page.click("button#update")
+    await page.get_by_text("Update").click()
 response = await response_info.value
 ```
 
 ```python sync
 # Use a glob url pattern
 with page.expect_response("**/api/fetch_data") as response_info:
-    page.click("button#update")
+    page.get_by_text("Update").click()
 response = response_info.value
 ```
 
 ```csharp
 // Use a glob URL pattern
 var waitForResponseTask = page.WaitForResponseAsync("**/api/fetch_data");
-await page.ClickAsync("button#update");
+await page.GetByText("Update").ClickAsync();
 var response = await waitForResponseTask;
 ```
 
 #### Variations
 
+Wait for [Response]s with [`method: Page.waitForResponse`]
+
 ```js
 // Use a RegExp
 const [response] = await Promise.all([
   page.waitForResponse(/\.jpeg$/),
-  page.click('button#update'),
+  page.getByText('Update').click(),
 ]);
 
 // Use a predicate taking a Response object
 const [response] = await Promise.all([
   page.waitForResponse(response => response.url().includes(token)),
-  page.click('button#update'),
+  page.getByText('Update').click(),
 ]);
 ```
 
 ```java
 // Use a RegExp
 Response response = page.waitForResponse(Pattern.compile("\\.jpeg$"), () -> {
-  page.click("button#update");
+  page.getByText("Update").click();
 });
 
 // Use a predicate taking a Response object
 Response response = page.waitForResponse(r -> r.url().contains(token), () -> {
-  page.click("button#update");
+  page.getByText("Update").click();
 });
 ```
 
 ```python async
 # Use a regular expression
 async with page.expect_response(re.compile(r"\.jpeg$")) as response_info:
-    await page.click("button#update")
+    await page.get_by_text("Update").click()
 response = await response_info.value
 
 # Use a predicate taking a response object
 async with page.expect_response(lambda response: token in response.url) as response_info:
-    await page.click("button#update")
+    await page.get_by_text("Update").click()
 response = await response_info.value
 ```
 
 ```python sync
 # Use a regular expression
 with page.expect_response(re.compile(r"\.jpeg$")) as response_info:
-    page.click("button#update")
+    page.get_by_text("Update").click()
 response = response_info.value
 
 # Use a predicate taking a response object
 with page.expect_response(lambda response: token in response.url) as response_info:
-    page.click("button#update")
+    page.get_by_text("Update").click()
 response = response_info.value
 ```
 
 ```csharp
 // Use a regular expression
 var waitForResponseTask = page.WaitForResponseAsync(new Regex("\\.jpeg$"));
-await page.ClickAsync("button#update");
+await page.GetByText("Update").ClickAsync();
 var response = await waitForResponseTask;
 
 // Use a predicate taking a Response object
 var waitForResponseTask = page.WaitForResponseAsync(r => r.Url.Contains(token));
-await page.ClickAsync("button#update");
+await page.GetByText("Update").ClickAsync();
 var response = await waitForResponseTask;
 ```
-
-### API reference
-- [Request]
-- [Response]
-- [`event: Page.request`]
-- [`event: Page.response`]
-- [`method: Page.waitForRequest`]
-- [`method: Page.waitForResponse`]
-
-<br/>
-
 ## Handle requests
 
 ```js
@@ -407,10 +383,9 @@ You can mock API endpoints via handling the network requests in your Playwright 
 
 #### Variations
 
-```js
-// Set up route on the entire browser context.
-// It will apply to popup windows and opened links.
+Set up route on the entire browser context with [`method: BrowserContext.route`] or page with [`method: Page.route`]. It will apply to popup windows and opened links.
 
+```js
 await browserContext.route('**/api/login', route => route.fulfill({
   status: 200,
   body: 'accept',
@@ -426,8 +401,6 @@ page.navigate("https://example.com");
 ```
 
 ```python async
-# Set up route on the entire browser context.
-# It will apply to popup windows and opened links.
 await context.route(
     "**/api/login",
     lambda route: route.fulfill(status=200, body="accept"))
@@ -435,8 +408,6 @@ await page.goto("https://example.com")
 ```
 
 ```python sync
-# Set up route on the entire browser context.
-# It will apply to popup windows and opened links.
 context.route(
     "**/api/login",
     lambda route: route.fulfill(status=200, body="accept"))
@@ -449,15 +420,6 @@ await page.RouteAsync("**/api/fetch_data", async route => {
 });
 await page.GotoAsync("https://example.com");
 ```
-
-### API reference
-- [`method: BrowserContext.route`]
-- [`method: BrowserContext.unroute`]
-- [`method: Page.route`]
-- [`method: Page.unroute`]
-- [Route]
-
-<br/>
 
 ## Modify requests
 
@@ -525,6 +487,8 @@ You can continue requests with modifications. Example above removes an HTTP head
 
 ## Abort requests
 
+You can abort requests using [`method: Page.route`] and [`method: Route.abort`].
+
 ```js
 await page.route('**/*.{png,jpg,jpeg}', route => route.abort());
 
@@ -573,18 +537,9 @@ else
 });
 ```
 
-### API reference
-- [`method: Page.route`]
-- [`method: BrowserContext.route`]
-- [`method: Route.abort`]
-
-<br/>
-
 ## Modify responses
-* langs: js
 
-To modify a response use [APIRequestContext] to get original response and then pass the response to [`method: Route.fulfill`].
-You can override individual fields on the reponse via options:
+To modify a response use [APIRequestContext] to get the original response and then pass the response to [`method: Route.fulfill`]. You can override individual fields on the response via options:
 
 ```js
 await page.route('**/title.html', async route => {
@@ -607,22 +562,216 @@ await page.route('**/title.html', async route => {
 });
 ```
 
-### API reference
-- [APIRequestContext]
-- [`method: Page.route`]
-- [`method: BrowserContext.route`]
-- [`property: Playwright.request`]
-- [`property: BrowserContext.request`]
-- [`property: Page.request`]
-- [`method: Route.fulfill`]
+```java
+page.route("**/title.html", route -> {
+  // Fetch original response.
+  APIResponse response = page.request().fetch(route.request());
+  // Add a prefix to the title.
+  String body = response.text();
+  body = body.replace("<title>", "<title>My prefix:");
+  Map<String, String> headers = response.headers();
+  headers.put("content-type": "text/html");
+  route.fulfill(new Route.FulfillOptions()
+    // Pass all fields from the response.
+    .setResponse(response)
+    // Override response body.
+    .setBody(body)
+    // Force content type to be html.
+    .setHeaders(headers));
+});
+```
 
-<br/>
+```python async
+async def handle_route(route: Route) -> None:
+    # Fetch original response.
+    response = await page.request.fetch(route.request)
+    # Add a prefix to the title.
+    body = await response.text()
+    body = body.replace("<title>", "<title>My prefix:")
+    await route.fulfill(
+        # Pass all fields from the response.
+        response=response,
+        # Override response body.
+        body=body,
+        # Force content type to be html.
+        headers={**response.headers, "content-type": "text/html"},
+    )
+
+await page.route("**/title.html", handle_route)
+```
+
+```python sync
+def handle_route(route: Route) -> None:
+    # Fetch original response.
+    response = page.request.fetch(route.request)
+    # Add a prefix to the title.
+    body = response.text()
+    body = body.replace("<title>", "<title>My prefix:")
+    route.fulfill(
+        # Pass all fields from the response.
+        response=response,
+        # Override response body.
+        body=body,
+        # Force content type to be html.
+        headers={**response.headers, "content-type": "text/html"},
+    )
+
+page.route("**/title.html", handle_route)
+```
+
+```csharp
+await Page.RouteAsync("**/title.html", async route =>
+{
+    // Fetch original response.
+    var response = await Page.APIRequest.FetchAsync(route.Request);
+    // Add a prefix to the title.
+    var body = await response.TextAsync();
+    body = body.Replace("<title>", "<title>My prefix:");
+
+    var headers = response.Headers;
+    headers.Add("Content-Type", "text/html");
+
+    await route.FulfillAsync(new()
+    {
+        // Pass all fields from the response.
+        Response = response,
+        // Override response body.
+        Body = body,
+        // Force content type to be html.
+        Headers = headers,
+    });
+});
+```
+
+## Record and replay requests
+
+You can record network activity as an HTTP Archive file (HAR). Later on, this archive can be used to mock responses to the network requests. You'll need to:
+1. Record a HAR file.
+1. Commit the HAR file alongside the tests.
+1. Route requests using the saved HAR files in the tests.
+
+### Recording HAR with CLI
+
+Open the browser with [Playwright CLI](./cli.md) and pass `--save-har` option to produce a HAR file. Optionally, use `--save-har-glob` to only save requests you are interested in, for example API endpoints. If the har file name ends with `.zip`, artifacts are written as separate files and are all compressed into a single `zip`.
+
+```bash js
+# Save API requests from example.com as "example.har" archive.
+npx playwright open --save-har=example.har --save-har-glob="**/api/**" https://example.com
+```
+
+```bash java
+# Save API requests from example.com as "example.har" archive.
+mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="open --save-har=example.har --save-har-glob='**/api/**' https://example.com"
+```
+
+```bash python
+# Save API requests from example.com as "example.har" archive.
+playwright open --save-har=example.har --save-har-glob="**/api/**" https://example.coms
+```
+
+```bash csharp
+# Save API requests from example.com as "example.har" archive.
+pwsh bin/Debug/netX/playwright.ps1 open --save-har=example.har --save-har-glob="**/api/**" https://example.com
+```
+
+### Recording HAR with a script
+
+Alternatively, instead of using the CLI, you can record HAR programmatically. Pass [`option: har`] option when creating a [BrowserContext] with [`method: Browser.newContext`] to create an archive. If the har file name ends with `.zip`, artifacts are written as separate files and are all compressed into a single `zip`.
+
+```js
+const context = await browser.newContext({
+  recordHar: { path: 'example.har', urlFilter: '**/api/**' }
+});
+
+// ... Perform actions ...
+
+// Close context to ensure HAR is saved to disk.
+await context.close();
+```
+
+```java
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+    .setRecordHarPath(Paths.get("example.har"))
+    .setRecordHarUrlFilter("**/api/**"));
+
+// ... Perform actions ...
+
+// Close context to ensure HAR is saved to disk.
+context.close();
+```
+
+```python async
+context = await browser.new_context(record_har_path="example.har", record_har_url_filter="**/api/**")
+
+# ... Perform actions ...
+
+# Close context to ensure HAR is saved to disk.
+await context.close()
+```
+
+```python sync
+context = browser.new_context(record_har_path="example.har", record_har_url_filter="**/api/**")
+
+# ... Perform actions ...
+
+# Close context to ensure HAR is saved to disk.
+context.close()
+```
+
+```csharp
+var context = await browser.NewContextAsync(new() {
+    RecordHarPath = "example.har",
+    RecordHarUrlFilter = "**/api/**",
+});
+
+// ... Perform actions ...
+
+// Close context to ensure HAR is saved to disk.
+await context.CloseAsync();
+```
+
+### Replaying from HAR
+
+Use [`method: Page.routeFromHAR`] or [`method: BrowserContext.routeFromHAR`] to serve matching responses from the [HAR](http://www.softwareishard.com/blog/har-12-spec/) file.
+
+```js
+// Replay API requests from HAR.
+// Either use a matching response from the HAR,
+// or abort the request if nothing matches.
+await page.routeFromHAR('example.har');
+```
+
+```java
+// Either use a matching response from the HAR,
+// or abort the request if nothing matches.
+page.routeFromHAR(Paths.get("example.har"));
+```
+
+```python async
+# Either use a matching response from the HAR,
+# or abort the request if nothing matches.
+await page.route_from_har("example.har")
+```
+
+```python sync
+# Either use a matching response from the HAR,
+# or abort the request if nothing matches.
+page.route_from_har("example.har")
+```
+
+```csharp
+// Either use a matching response from the HAR,
+// or abort the request if nothing matches.
+await context.RouteFromHARAsync("example.har");
+```
+
+HAR replay matches URL and HTTP method strictly. For POST requests, it also matches POST payloads strictly. If multiple recordings match a request, the one with the most matching headers is picked. An entry resulting in a redirect will be followed automatically.
+
+Similar to when recording, if given HAR file name ends with `.zip`, it is considered an archive containing the HAR file along with network payloads stored as separate entries. You can also extract this archive, edit payloads or HAR log manually and point to the extracted har file. All the payloads will be resolved relative to the extracted har file on the file system.
 
 ## WebSockets
 
-Playwright supports [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) inspection out of the
-box. Every time WebSocket is created, [`event: Page.webSocket`] event is fired. This event contains the [WebSocket]
-instance for further web socket frames inspection:
+Playwright supports [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) inspection out of the box. Every time a WebSocket is created, the [`event: Page.webSocket`] event is fired. This event contains the [WebSocket] instance for further web socket frames inspection:
 
 ```js
 page.on('websocket', ws => {
@@ -661,12 +810,10 @@ page.WebSocket += (_, ws) =>
     ws.Close += (_, ws1) => Console.WriteLine("WebSocket closed");
 };
 ```
+## Missing Network Events and Service Workers
 
-### API reference
-- [WebSocket]
-- [`event: Page.webSocket`]
-- [`event: WebSocket.frameSent`]
-- [`event: WebSocket.frameReceived`]
-- [`event: WebSocket.close`]
+Playwright's built-in [`method: BrowserContext.route`] and [`method: Page.route`] allow your tests to natively route requests and perform mocking and interception.
 
-<br/>
+1. If you're using Playwright's native [`method: BrowserContext.route`] and [`method: Page.route`], and it appears network events are missing, disable Service Workers by setting [`option: Browser.newContext.serviceWorkers`] to `'block'`.
+1. It might be that you are using a mock tool such as Mock Service Worker (MSW). While this tool works out of the box for mocking responses, it adds its own Service Worker that takes over the network requests, hence making them invisible to [`method: BrowserContext.route`] and [`method: Page.route`]. If you are interested in both network testing and mocking, consider using built-in [`method: BrowserContext.route`] and [`method: Page.route`] for [response mocking](#handle-requests).
+1. If you're interested in not solely using Service Workers for testing and network mocking, but in routing and listening for requests made by Service Workers themselves, please see [this experimental feature](https://github.com/microsoft/playwright/issues/15684).

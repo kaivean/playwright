@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { NodeSnapshot } from '../common/snapshotTypes';
+import type { NodeSnapshot } from '@trace/snapshot';
 
 export type SnapshotData = {
   doctype?: string,
@@ -44,7 +44,7 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
   const kScrollTopAttribute = '__playwright_scroll_top_';
   const kScrollLeftAttribute = '__playwright_scroll_left_';
   const kStyleSheetAttribute = '__playwright_style_sheet_';
-  const kBlobUrlPrefix = 'http://playwright.bloburl/#';
+  const kTargetAttribute = '__playwright_target__';
 
   // Symbols for our own info on Nodes/StyleSheets.
   const kSnapshotFrameId = Symbol('__playwright_snapshot_frameid_');
@@ -218,11 +218,8 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
     }
 
     private _sanitizeUrl(url: string): string {
-      if (url.startsWith('javascript:'))
+      if (url.startsWith('javascript:') || url.startsWith('vbscript:'))
         return '';
-      // Rewrite blob urls so that Service Worker can intercept them.
-      if (url.startsWith('blob:'))
-        return kBlobUrlPrefix + url;
       return url;
     }
 
@@ -277,6 +274,28 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
       // Ensure we are up to date.
       this._handleMutations(this._observer.takeRecords());
 
+      // Restore scroll positions for all ancestors of action target elements
+      // that will show the highlight/red dot in the trace viewer.
+      // Workaround for chromium regression:
+      // https://bugs.chromium.org/p/chromium/issues/detail?id=1324419
+      // https://github.com/microsoft/playwright/issues/14037
+      // TODO: remove after chromium is fixed?
+      const elementsToRestoreScrollPosition = new Set<Node>();
+      const findElementsToRestoreScrollPositionRecursively = (element: Element) => {
+        let shouldAdd = element.hasAttribute(kTargetAttribute);
+        for (let child = element.firstElementChild; child; child = child.nextElementSibling)
+          shouldAdd = shouldAdd || findElementsToRestoreScrollPositionRecursively(child);
+        if (element.shadowRoot) {
+          for (let child = element.shadowRoot.firstElementChild; child; child = child.nextElementSibling)
+            shouldAdd = shouldAdd || findElementsToRestoreScrollPositionRecursively(child);
+        }
+        if (shouldAdd)
+          elementsToRestoreScrollPosition.add(element);
+        return shouldAdd;
+      };
+      if (document.documentElement)
+        findElementsToRestoreScrollPositionRecursively(document.documentElement);
+
       const visitNode = (node: Node | ShadowRoot): { equals: boolean, n: NodeSnapshot } | undefined => {
         const nodeType = node.nodeType;
         const nodeName = nodeType === Node.DOCUMENT_FRAGMENT_NODE ? 'template' : node.nodeName;
@@ -315,7 +334,7 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
         const checkAndReturn = (n: NodeSnapshot): { equals: boolean, n: NodeSnapshot } => {
           data.attributesCached = true;
           if (equals)
-            return { equals: true, n: [[ snapshotNumber - data.ref![0], data.ref![1] ]] };
+            return { equals: true, n: [[snapshotNumber - data.ref![0], data.ref![1]]] };
           nodeCounter += extraNodes;
           data.ref = [snapshotNumber, nodeCounter++];
           data.cached = values;
@@ -337,7 +356,7 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
           expectValue(cssText);
           // Compensate for the extra 'cssText' text node.
           extraNodes++;
-          return checkAndReturn(['style', {}, cssText]);
+          return checkAndReturn([nodeName, {}, cssText]);
         }
 
         const attrs: { [attr: string]: string } = {};
@@ -384,12 +403,12 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
             expectValue(value);
             attrs[kSelectedAttribute] = value;
           }
-          if (element.scrollTop) {
+          if (elementsToRestoreScrollPosition.has(element) && element.scrollTop) {
             expectValue(kScrollTopAttribute);
             expectValue(element.scrollTop);
             attrs[kScrollTopAttribute] = '' + element.scrollTop;
           }
-          if (element.scrollLeft) {
+          if (elementsToRestoreScrollPosition.has(element) && element.scrollLeft) {
             expectValue(kScrollLeftAttribute);
             expectValue(element.scrollLeft);
             attrs[kScrollLeftAttribute] = '' + element.scrollLeft;
@@ -479,7 +498,7 @@ export function frameSnapshotStreamer(snapshotStreamer: string) {
         const oldCSSText = data.cssText;
         const cssText = this._updateStyleElementStyleSheetTextIfNeeded(sheet, true /* forceText */)!;
         if (cssText === oldCSSText)
-          return { equals: true, n: [[ snapshotNumber - data.ref![0], data.ref![1] ]] };
+          return { equals: true, n: [[snapshotNumber - data.ref![0], data.ref![1]]] };
         data.ref = [snapshotNumber, nodeCounter++];
         return {
           equals: false,

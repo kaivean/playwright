@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { test as it } from './pageTest';
+import { expect, test as it } from './pageTest';
 
-it('should not hit scroll bar', async ({ page, isAndroid, browserName, platform, headless }) => {
+it('should not hit scroll bar', async ({ page, browserName, platform }) => {
   it.fixme(browserName === 'webkit' && platform === 'darwin');
-  it.fixme(browserName === 'webkit' && platform === 'linux' && headless);
-  it.skip(isAndroid);
+  it.fixme(browserName === 'webkit' && platform === 'linux', 'Fails in headless and in headful on Ubuntu 22.04');
+  it.fixme(browserName === 'webkit' && platform === 'win32', 'https://github.com/microsoft/playwright/issues/18452');
 
   await page.setContent(`
     <style>
@@ -37,4 +37,53 @@ it('should not hit scroll bar', async ({ page, isAndroid, browserName, platform,
     </div>
     `);
   await page.click('text=Story', { timeout: 2000 });
+});
+
+it('should scroll into view display:contents', async ({ page, browserName, browserMajorVersion }) => {
+  it.skip(browserName === 'chromium' && browserMajorVersion < 105, 'Needs https://chromium-review.googlesource.com/c/chromium/src/+/3758670');
+
+  await page.setContent(`
+    <div style="background:red;height:2000px">filler</div>
+    <div>
+      Example text, and button here:
+      <button style="display: contents" onclick="window._clicked=true;">click me</button>
+    </div>
+  `);
+  await page.click('text=click me', { timeout: 5000 });
+  expect(await page.evaluate('window._clicked')).toBe(true);
+});
+
+it('should scroll into view display:contents with a child', async ({ page, browserName, browserMajorVersion }) => {
+  it.skip(browserName === 'chromium' && browserMajorVersion < 105, 'Needs https://chromium-review.googlesource.com/c/chromium/src/+/3758670');
+
+  await page.setContent(`
+    <div style="background:red;height:2000px">filler</div>
+    Example text, and button here:
+    <button style="display: contents" onclick="window._clicked=true;"><div>click me</div></button>
+  `);
+  await page.click('text=click me', { timeout: 5000 });
+  expect(await page.evaluate('window._clicked')).toBe(true);
+});
+
+it('should scroll into view display:contents with position', async ({ page, browserName }) => {
+  it.fixme(browserName === 'chromium', 'DOM.getBoxModel does not work for display:contents');
+
+  await page.setContent(`
+    <div style="background:red;height:2000px">filler</div>
+    <div>
+      Example text, and button here:
+      <button style="display: contents" onclick="window._clicked=true;">click me</button>
+    </div>
+  `);
+  await page.click('text=click me', { position: { x: 5, y: 5 }, timeout: 5000 });
+  expect(await page.evaluate('window._clicked')).toBe(true);
+});
+
+it('should not crash when force-clicking hidden input', async ({ page, browserName, channel, browserMajorVersion }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/18183' });
+  it.skip(browserName === 'chromium' && browserMajorVersion < 109 || channel.startsWith('msedge') && browserMajorVersion < 110);
+
+  await page.setContent(`<input type=hidden>`);
+  const error = await page.locator('input').click({ force: true, timeout: 2000 }).catch(e => e);
+  expect(error.message).toContain('Element is not visible');
 });

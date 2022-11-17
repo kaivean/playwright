@@ -15,29 +15,34 @@
  * limitations under the License.
  */
 
-import * as channels from '../protocol/channels';
-import { ConsoleMessage } from './console';
+import type * as channels from '@protocol/channels';
+import type { ConsoleMessage } from './console';
 import * as dom from './dom';
 import { helper } from './helper';
-import { eventsHelper, RegisteredListener } from '../utils/eventsHelper';
+import type { RegisteredListener } from '../utils/eventsHelper';
+import { eventsHelper } from '../utils/eventsHelper';
 import * as js from './javascript';
 import * as network from './network';
-import { Dialog } from './dialog';
+import type { Dialog } from './dialog';
 import { Page } from './page';
 import * as types from './types';
 import { BrowserContext } from './browserContext';
-import { Progress, ProgressController } from './progress';
-import { assert, constructURLBasedOnBaseURL, makeWaitForNextTask } from '../utils/utils';
-import { ManualPromise } from '../utils/async';
-import { debugLogger } from '../utils/debugLogger';
-import { CallMetadata, serverSideCallMetadata, SdkObject } from './instrumentation';
-import type InjectedScript from './injected/injectedScript';
+import type { Progress } from './progress';
+import { ProgressController } from './progress';
+import { assert, constructURLBasedOnBaseURL, makeWaitForNextTask } from '../utils';
+import { ManualPromise } from '../utils/manualPromise';
+import { debugLogger } from '../common/debugLogger';
+import type { CallMetadata } from './instrumentation';
+import { serverSideCallMetadata, SdkObject } from './instrumentation';
+import { type InjectedScript } from './injected/injectedScript';
 import type { ElementStateWithoutStable, FrameExpectParams, InjectedScriptPoll, InjectedScriptProgress } from './injected/injectedScript';
 import { isSessionClosedError } from './protocolError';
-import { isInvalidSelectorError, splitSelectorByFrame, stringifySelector, ParsedSelector } from './common/selectorParser';
-import { SelectorInfo } from './selectors';
-import { ScreenshotOptions } from './screenshotter';
-import { InputFilesItems } from './dom';
+import type { ParsedSelector } from './isomorphic/selectorParser';
+import { isInvalidSelectorError, splitSelectorByFrame, stringifySelector } from './isomorphic/selectorParser';
+import type { SelectorInfo } from './selectors';
+import type { ScreenshotOptions } from './screenshotter';
+import type { InputFilesItems } from './dom';
+import { asLocator } from './isomorphic/locatorGenerators';
 
 type ContextData = {
   contextPromise: ManualPromise<dom.FrameExecutionContext | Error>;
@@ -58,6 +63,8 @@ export type GotoResult = {
 
 type ConsoleTagHandler = () => void;
 
+type RegularLifecycleEvent = Exclude<types.LifecycleEvent, 'networkidle'>;
+
 export type FunctionWithSource = (source: { context: BrowserContext, page: Page, frame: Frame}, ...args: any) => any;
 
 export type NavigationEvent = {
@@ -71,15 +78,27 @@ export type NavigationEvent = {
   // Error for cross-document navigations if any. When error is present,
   // the navigation did not commit.
   error?: Error,
+  // Wether this event should be visible to the clients via the public APIs.
+  isPublic?: boolean;
 };
 
 export type SchedulableTask<T> = (injectedScript: js.JSHandle<InjectedScript>) => Promise<js.JSHandle<InjectedScriptPoll<T>>>;
 export type DomTaskBody<T, R, E> = (progress: InjectedScriptProgress, element: E, data: T, elements: Element[]) => R | symbol;
 
+export class NavigationAbortedError extends Error {
+  readonly documentId?: string;
+  constructor(documentId: string | undefined, message: string) {
+    super(message);
+    this.documentId = documentId;
+  }
+}
+
 type SelectorInFrame = {
   frame: Frame;
   info: SelectorInfo;
 };
+
+const kDummyFrameId = '<dummy>';
 
 export class FrameManager {
   private _page: Page;
@@ -89,15 +108,23 @@ export class FrameManager {
   readonly _signalBarriers = new Set<SignalBarrier>();
   private _webSockets = new Map<string, network.WebSocket>();
   _openedDialogs: Set<Dialog> = new Set();
+  private _closeAllOpeningDialogs = false;
 
   constructor(page: Page) {
     this._page = page;
     this._mainFrame = undefined as any as Frame;
   }
 
+  createDummyMainFrameIfNeeded() {
+    if (!this._mainFrame)
+      this.frameAttached(kDummyFrameId, null);
+  }
+
   dispose() {
-    for (const frame of this._frames.values())
+    for (const frame of this._frames.values()) {
       frame._stopNetworkIdleTimer();
+      frame._invalidateNonStallingEvaluations('Target crashed');
+    }
   }
 
   mainFrame(): Frame {
@@ -215,8 +242,8 @@ export class FrameManager {
     }
 
     frame._onClearLifecycle();
-    const navigationEvent: NavigationEvent = { url, name, newDocument: frame._currentDocument };
-    frame.emit(Frame.Events.Navigation, navigationEvent);
+    const navigationEvent: NavigationEvent = { url, name, newDocument: frame._currentDocument, isPublic: true };
+    this._fireInternalFrameNavigation(frame, navigationEvent);
     if (!initial) {
       debugLogger.log('api', `  navigated to "${url}"`);
       this._page.frameNavigatedToNewDocument(frame);
@@ -230,8 +257,8 @@ export class FrameManager {
     if (!frame)
       return;
     frame._url = url;
-    const navigationEvent: NavigationEvent = { url, name: frame._name };
-    frame.emit(Frame.Events.Navigation, navigationEvent);
+    const navigationEvent: NavigationEvent = { url, name: frame._name, isPublic: true };
+    this._fireInternalFrameNavigation(frame, navigationEvent);
     debugLogger.log('api', `  navigated to "${url}"`);
   }
 
@@ -245,31 +272,29 @@ export class FrameManager {
       url: frame._url,
       name: frame._name,
       newDocument: frame.pendingDocument(),
-      error: new Error(errorText),
+      error: new NavigationAbortedError(documentId, errorText),
+      isPublic: !(documentId && frame._redirectedNavigations.has(documentId)),
     };
     frame.setPendingDocument(undefined);
-    frame.emit(Frame.Events.Navigation, navigationEvent);
+    this._fireInternalFrameNavigation(frame, navigationEvent);
   }
 
   frameDetached(frameId: string) {
     const frame = this._frames.get(frameId);
-    if (frame)
+    if (frame) {
       this._removeFramesRecursively(frame);
+      this._page.mainFrame()._recalculateNetworkIdle();
+    }
   }
 
-  frameStoppedLoading(frameId: string) {
-    this.frameLifecycleEvent(frameId, 'domcontentloaded');
-    this.frameLifecycleEvent(frameId, 'load');
-  }
-
-  frameLifecycleEvent(frameId: string, event: types.LifecycleEvent) {
+  frameLifecycleEvent(frameId: string, event: RegularLifecycleEvent) {
     const frame = this._frames.get(frameId);
     if (frame)
       frame._onLifecycleEvent(event);
   }
 
   requestStarted(request: network.Request, route?: network.RouteDelegate) {
-    const frame = request.frame();
+    const frame = request.frame()!;
     this._inflightRequestStarted(request);
     if (request._documentId)
       frame.setPendingDocument({ documentId: request._documentId, request });
@@ -279,8 +304,22 @@ export class FrameManager {
       return;
     }
     this._page.emitOnContext(BrowserContext.Events.Request, request);
-    if (route)
-      this._page._requestStarted(request, route);
+    if (route) {
+      const r = new network.Route(request, route);
+      if (this._page._serverRequestInterceptor) {
+        this._page._serverRequestInterceptor(r, request);
+        return;
+      }
+      if (this._page._clientRequestInterceptor) {
+        this._page._clientRequestInterceptor(r, request);
+        return;
+      }
+      if (this._page._browserContext._requestInterceptor) {
+        this._page._browserContext._requestInterceptor(r, request);
+        return;
+      }
+      r.continue();
+    }
   }
 
   requestReceivedResponse(response: network.Response) {
@@ -297,7 +336,7 @@ export class FrameManager {
   }
 
   requestFailed(request: network.Request, canceled: boolean) {
-    const frame = request.frame();
+    const frame = request.frame()!;
     this._inflightRequestFinished(request);
     if (frame.pendingDocument() && frame.pendingDocument()!.request === request) {
       let errorText = request.failure()!.errorText;
@@ -314,11 +353,23 @@ export class FrameManager {
     // Any ongoing evaluations will be stalled until the dialog is closed.
     for (const frame of this._frames.values())
       frame._invalidateNonStallingEvaluations('JavaScript dialog interrupted evaluation');
-    this._openedDialogs.add(dialog);
+    if (this._closeAllOpeningDialogs)
+      dialog.close().then(() => {});
+    else
+      this._openedDialogs.add(dialog);
   }
 
   dialogWillClose(dialog: Dialog) {
     this._openedDialogs.delete(dialog);
+  }
+
+  async closeOpenDialogs() {
+    await Promise.all([...this._openedDialogs].map(dialog => dialog.close())).catch(() => {});
+    this._openedDialogs.clear();
+  }
+
+  setCloseAllOpeningDialogs(closeDialogs: boolean) {
+    this._closeAllOpeningDialogs = closeDialogs;
   }
 
   removeChildFramesRecursively(frame: Frame) {
@@ -335,7 +386,7 @@ export class FrameManager {
   }
 
   private _inflightRequestFinished(request: network.Request) {
-    const frame = request.frame();
+    const frame = request.frame()!;
     if (request._isFavicon)
       return;
     if (!frame._inflightRequests.has(request))
@@ -346,7 +397,7 @@ export class FrameManager {
   }
 
   private _inflightRequestStarted(request: network.Request) {
-    const frame = request.frame();
+    const frame = request.frame()!;
     if (request._isFavicon)
       return;
     frame._inflightRequests.add(request);
@@ -416,18 +467,22 @@ export class FrameManager {
     if (ws)
       ws.error(errorMessage);
   }
+
+  private _fireInternalFrameNavigation(frame: Frame, event: NavigationEvent) {
+    frame.emit(Frame.Events.InternalNavigation, event);
+  }
 }
 
 export class Frame extends SdkObject {
   static Events = {
-    Navigation: 'navigation',
+    InternalNavigation: 'internalnavigation',
     AddLifecycle: 'addlifecycle',
     RemoveLifecycle: 'removelifecycle',
   };
 
   _id: string;
-  private _firedLifecycleEvents = new Set<types.LifecycleEvent>();
-  _subtreeLifecycleEvents = new Set<types.LifecycleEvent>();
+  _firedLifecycleEvents = new Set<types.LifecycleEvent>();
+  private _firedNetworkIdleSelf = false;
   _currentDocument: DocumentInfo;
   private _pendingDocument: DocumentInfo | undefined;
   readonly _page: Page;
@@ -443,6 +498,7 @@ export class Frame extends SdkObject {
   readonly _detachedPromise: Promise<void>;
   private _detachedCallback = () => {};
   private _raceAgainstEvaluationStallingEventsPromises = new Set<ManualPromise<any>>();
+  readonly _redirectedNavigations = new Map<string, { url: string, gotoPromise: Promise<network.Response | null> }>(); // documentId -> data
 
   constructor(page: Page, id: string, parentFrame: Frame | null) {
     super(page, 'frame');
@@ -463,30 +519,34 @@ export class Frame extends SdkObject {
       this._parentFrame._childFrames.add(this);
 
     this._firedLifecycleEvents.add('commit');
-    this._subtreeLifecycleEvents.add('commit');
+    if (id !== kDummyFrameId)
+      this._startNetworkIdleTimer();
   }
 
   isDetached(): boolean {
     return this._detached;
   }
 
-  _onLifecycleEvent(event: types.LifecycleEvent) {
+  _onLifecycleEvent(event: RegularLifecycleEvent) {
     if (this._firedLifecycleEvents.has(event))
       return;
     this._firedLifecycleEvents.add(event);
-    // Recalculate subtree lifecycle for the whole tree - it should not be that big.
-    this._page.mainFrame()._recalculateLifecycle();
+    this.emit(Frame.Events.AddLifecycle, event);
+    if (this === this._page.mainFrame() && this._url !== 'about:blank')
+      debugLogger.log('api', `  "${event}" event fired`);
+    this._page.mainFrame()._recalculateNetworkIdle();
   }
 
   _onClearLifecycle() {
+    for (const event of this._firedLifecycleEvents)
+      this.emit(Frame.Events.RemoveLifecycle, event);
     this._firedLifecycleEvents.clear();
-    // Recalculate subtree lifecycle for the whole tree - it should not be that big.
-    this._page.mainFrame()._recalculateLifecycle();
     // Keep the current navigation request if any.
     this._inflightRequests = new Set(Array.from(this._inflightRequests).filter(request => request === this._currentDocument.request));
     this._stopNetworkIdleTimer();
     if (this._inflightRequests.size === 0)
       this._startNetworkIdleTimer();
+    this._page.mainFrame()._recalculateNetworkIdle(this);
     this._onLifecycleEvent('commit');
   }
 
@@ -544,44 +604,54 @@ export class Frame extends SdkObject {
     });
   }
 
-  private _recalculateLifecycle() {
-    const events = new Set<types.LifecycleEvent>(this._firedLifecycleEvents);
+  _recalculateNetworkIdle(frameThatAllowsRemovingNetworkIdle?: Frame) {
+    let isNetworkIdle = this._firedNetworkIdleSelf;
     for (const child of this._childFrames) {
-      child._recalculateLifecycle();
-      // We require a particular lifecycle event to be fired in the whole
-      // frame subtree, and then consider it done.
-      for (const event of events) {
-        if (!child._subtreeLifecycleEvents.has(event))
-          events.delete(event);
-      }
+      child._recalculateNetworkIdle(frameThatAllowsRemovingNetworkIdle);
+      // We require networkidle event to be fired in the whole frame subtree, and then consider it done.
+      if (!child._firedLifecycleEvents.has('networkidle'))
+        isNetworkIdle = false;
     }
-    const mainFrame = this._page.mainFrame();
-    for (const event of events) {
-      // Checking whether we have already notified about this event.
-      if (!this._subtreeLifecycleEvents.has(event)) {
-        this.emit(Frame.Events.AddLifecycle, event);
-        if (this === mainFrame && this._url !== 'about:blank')
-          debugLogger.log('api', `  "${event}" event fired`);
-        if (this === mainFrame && event === 'load')
-          this._page.emit(Page.Events.Load);
-        if (this === mainFrame && event === 'domcontentloaded')
-          this._page.emit(Page.Events.DOMContentLoaded);
-      }
+    if (isNetworkIdle && !this._firedLifecycleEvents.has('networkidle')) {
+      this._firedLifecycleEvents.add('networkidle');
+      this.emit(Frame.Events.AddLifecycle, 'networkidle');
+      if (this === this._page.mainFrame() && this._url !== 'about:blank')
+        debugLogger.log('api', `  "networkidle" event fired`);
     }
-    for (const event of this._subtreeLifecycleEvents) {
-      if (!events.has(event))
-        this.emit(Frame.Events.RemoveLifecycle, event);
+    if (frameThatAllowsRemovingNetworkIdle !== this && this._firedLifecycleEvents.has('networkidle') && !isNetworkIdle) {
+      // Usually, networkidle is fired once and not removed after that.
+      // However, when we clear them right before a new commit, this is allowed for a particular frame.
+      this._firedLifecycleEvents.delete('networkidle');
+      this.emit(Frame.Events.RemoveLifecycle, 'networkidle');
     }
-    this._subtreeLifecycleEvents = events;
   }
 
-  async raceNavigationAction<T>(action: () => Promise<T>): Promise<T> {
+  async raceNavigationAction(progress: Progress, options: types.GotoOptions, action: () => Promise<network.Response | null>): Promise<network.Response | null> {
     return Promise.race([
       this._page._disconnectedPromise.then(() => { throw new Error('Navigation failed because page was closed!'); }),
       this._page._crashedPromise.then(() => { throw new Error('Navigation failed because page crashed!'); }),
       this._detachedPromise.then(() => { throw new Error('Navigating frame was detached!'); }),
-      action(),
+      action().catch(e => {
+        if (e instanceof NavigationAbortedError && e.documentId) {
+          const data = this._redirectedNavigations.get(e.documentId);
+          if (data) {
+            progress.log(`waiting for redirected navigation to "${data.url}"`);
+            return data.gotoPromise;
+          }
+        }
+        throw e;
+      }),
     ]);
+  }
+
+  redirectNavigation(url: string, documentId: string, referer: string | undefined) {
+    const controller = new ProgressController(serverSideCallMetadata(), this);
+    const data = {
+      url,
+      gotoPromise: controller.run(progress => this._gotoAction(progress, url, { referer }), 0),
+    };
+    this._redirectedNavigations.set(documentId, data);
+    data.gotoPromise.finally(() => this._redirectedNavigations.delete(documentId));
   }
 
   async goto(metadata: CallMetadata, url: string, options: types.GotoOptions = {}): Promise<network.Response | null> {
@@ -591,67 +661,71 @@ export class Frame extends SdkObject {
   }
 
   private async _goto(progress: Progress, url: string, options: types.GotoOptions): Promise<network.Response | null> {
-    return this.raceNavigationAction(async () => {
-      const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
-      progress.log(`navigating to "${url}", waiting until "${waitUntil}"`);
-      const headers = this._page._state.extraHTTPHeaders || [];
-      const refererHeader = headers.find(h => h.name.toLowerCase() === 'referer');
-      let referer = refererHeader ? refererHeader.value : undefined;
-      if (options.referer !== undefined) {
-        if (referer !== undefined && referer !== options.referer)
-          throw new Error('"referer" is already specified as extra HTTP header');
-        referer = options.referer;
-      }
-      url = helper.completeUserURL(url);
-
-      const sameDocument = helper.waitForEvent(progress, this, Frame.Events.Navigation, (e: NavigationEvent) => !e.newDocument);
-      const navigateResult = await this._page._delegate.navigateFrame(this, url, referer);
-
-      let event: NavigationEvent;
-      if (navigateResult.newDocumentId) {
-        sameDocument.dispose();
-        event = await helper.waitForEvent(progress, this, Frame.Events.Navigation, (event: NavigationEvent) => {
-          // We are interested either in this specific document, or any other document that
-          // did commit and replaced the expected document.
-          return event.newDocument && (event.newDocument.documentId === navigateResult.newDocumentId || !event.error);
-        }).promise;
-
-        if (event.newDocument!.documentId !== navigateResult.newDocumentId) {
-          // This is just a sanity check. In practice, new navigation should
-          // cancel the previous one and report "request cancelled"-like error.
-          throw new Error('Navigation interrupted by another one');
-        }
-        if (event.error)
-          throw event.error;
-      } else {
-        event = await sameDocument.promise;
-      }
-
-      if (!this._subtreeLifecycleEvents.has(waitUntil))
-        await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
-
-      const request = event.newDocument ? event.newDocument.request : undefined;
-      const response = request ? request._finalRequest().response() : null;
-      await this._page._doSlowMo();
-      return response;
-    });
+    return this.raceNavigationAction(progress, options, async () => this._gotoAction(progress, url, options));
   }
 
-  async _waitForNavigation(progress: Progress, options: types.NavigateOptions): Promise<network.Response | null> {
+  private async _gotoAction(progress: Progress, url: string, options: types.GotoOptions): Promise<network.Response | null> {
+    const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
+    progress.log(`navigating to "${url}", waiting until "${waitUntil}"`);
+    const headers = this._page.extraHTTPHeaders() || [];
+    const refererHeader = headers.find(h => h.name.toLowerCase() === 'referer');
+    let referer = refererHeader ? refererHeader.value : undefined;
+    if (options.referer !== undefined) {
+      if (referer !== undefined && referer !== options.referer)
+        throw new Error('"referer" is already specified as extra HTTP header');
+      referer = options.referer;
+    }
+    url = helper.completeUserURL(url);
+
+    const sameDocument = helper.waitForEvent(progress, this, Frame.Events.InternalNavigation, (e: NavigationEvent) => !e.newDocument);
+    const navigateResult = await this._page._delegate.navigateFrame(this, url, referer);
+
+    let event: NavigationEvent;
+    if (navigateResult.newDocumentId) {
+      sameDocument.dispose();
+      event = await helper.waitForEvent(progress, this, Frame.Events.InternalNavigation, (event: NavigationEvent) => {
+        // We are interested either in this specific document, or any other document that
+        // did commit and replaced the expected document.
+        return event.newDocument && (event.newDocument.documentId === navigateResult.newDocumentId || !event.error);
+      }).promise;
+
+      if (event.newDocument!.documentId !== navigateResult.newDocumentId) {
+        // This is just a sanity check. In practice, new navigation should
+        // cancel the previous one and report "request cancelled"-like error.
+        throw new NavigationAbortedError(navigateResult.newDocumentId, 'Navigation interrupted by another one');
+      }
+      if (event.error)
+        throw event.error;
+    } else {
+      event = await sameDocument.promise;
+    }
+
+    if (!this._firedLifecycleEvents.has(waitUntil))
+      await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
+
+    const request = event.newDocument ? event.newDocument.request : undefined;
+    const response = request ? request._finalRequest().response() : null;
+    await this._page._doSlowMo();
+    return response;
+  }
+
+  async _waitForNavigation(progress: Progress, requiresNewDocument: boolean, options: types.NavigateOptions): Promise<network.Response | null> {
     const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
     progress.log(`waiting for navigation until "${waitUntil}"`);
 
-    const navigationEvent: NavigationEvent = await helper.waitForEvent(progress, this, Frame.Events.Navigation, (event: NavigationEvent) => {
+    const navigationEvent: NavigationEvent = await helper.waitForEvent(progress, this, Frame.Events.InternalNavigation, (event: NavigationEvent) => {
       // Any failed navigation results in a rejection.
       if (event.error)
         return true;
+      if (requiresNewDocument && !event.newDocument)
+        return false;
       progress.log(`  navigated to "${this._url}"`);
       return true;
     }).promise;
     if (navigationEvent.error)
       throw navigationEvent.error;
 
-    if (!this._subtreeLifecycleEvents.has(waitUntil))
+    if (!this._firedLifecycleEvents.has(waitUntil))
       await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
 
     const request = navigationEvent.newDocument ? navigationEvent.newDocument.request : undefined;
@@ -660,7 +734,7 @@ export class Frame extends SdkObject {
 
   async _waitForLoadState(progress: Progress, state: types.LifecycleEvent): Promise<void> {
     const waitUntil = verifyLifecycle('state', state);
-    if (!this._subtreeLifecycleEvents.has(waitUntil))
+    if (!this._firedLifecycleEvents.has(waitUntil))
       await helper.waitForEvent(progress, this, Frame.Events.AddLifecycle, (e: types.LifecycleEvent) => e === waitUntil).promise;
   }
 
@@ -730,7 +804,7 @@ export class Frame extends SdkObject {
     if (!['attached', 'detached', 'visible', 'hidden'].includes(state))
       throw new Error(`state: expected one of (attached|detached|visible|hidden)`);
     return controller.run(async progress => {
-      progress.log(`waiting for selector "${selector}"${state === 'attached' ? '' : ' to be ' + state}`);
+      progress.log(`waiting for ${this._asLocator(selector)}${state === 'attached' ? '' : ' to be ' + state}`);
       return this.retryWithProgress(progress, selector, options, async (selectorInFrame, continuePolling) => {
         // Be careful, |this| can be different from |frame|.
         // We did not pass omitAttached, so it is non-null.
@@ -824,28 +898,31 @@ export class Frame extends SdkObject {
 
   async setContent(metadata: CallMetadata, html: string, options: types.NavigateOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
-    return controller.run(progress => this.raceNavigationAction(async () => {
-      const waitUntil = options.waitUntil === undefined ? 'load' : options.waitUntil;
-      progress.log(`setting frame content, waiting until "${waitUntil}"`);
-      const tag = `--playwright--set--content--${this._id}--${++this._setContentCounter}--`;
-      const context = await this._utilityContext();
-      const lifecyclePromise = new Promise((resolve, reject) => {
-        this._page._frameManager._consoleMessageTags.set(tag, () => {
-          // Clear lifecycle right after document.open() - see 'tag' below.
-          this._onClearLifecycle();
-          this._waitForLoadState(progress, waitUntil).then(resolve).catch(reject);
+    return controller.run(async progress => {
+      await this.raceNavigationAction(progress, options, async () => {
+        const waitUntil = options.waitUntil === undefined ? 'load' : options.waitUntil;
+        progress.log(`setting frame content, waiting until "${waitUntil}"`);
+        const tag = `--playwright--set--content--${this._id}--${++this._setContentCounter}--`;
+        const context = await this._utilityContext();
+        const lifecyclePromise = new Promise((resolve, reject) => {
+          this._page._frameManager._consoleMessageTags.set(tag, () => {
+            // Clear lifecycle right after document.open() - see 'tag' below.
+            this._onClearLifecycle();
+            this._waitForLoadState(progress, waitUntil).then(resolve).catch(reject);
+          });
         });
+        const contentPromise = context.evaluate(({ html, tag }) => {
+          window.stop();
+          document.open();
+          console.debug(tag);  // eslint-disable-line no-console
+          document.write(html);
+          document.close();
+        }, { html, tag });
+        await Promise.all([contentPromise, lifecyclePromise]);
+        await this._page._doSlowMo();
+        return null;
       });
-      const contentPromise = context.evaluate(({ html, tag }) => {
-        window.stop();
-        document.open();
-        console.debug(tag);  // eslint-disable-line no-console
-        document.write(html);
-        document.close();
-      }, { html, tag });
-      await Promise.all([contentPromise, lifecyclePromise]);
-      await this._page._doSlowMo();
-    }), this._page._timeoutSettings.navigationTimeout(options));
+    }, this._page._timeoutSettings.navigationTimeout(options));
   }
 
   name(): string {
@@ -1037,7 +1114,7 @@ export class Frame extends SdkObject {
       const { frame, info } = selectorInFrame!;
       // Be careful, |this| can be different from |frame|.
       const task = dom.waitForSelectorTask(info, 'attached');
-      progress.log(`waiting for selector "${selector}"`);
+      progress.log(`waiting for ${this._asLocator(selector)}`);
       const handle = await frame._scheduleRerunnableHandleTask(progress, info.world, task);
       const element = handle.asElement() as dom.ElementHandle<Element>;
       try {
@@ -1122,6 +1199,14 @@ export class Frame extends SdkObject {
     }, this._page._timeoutSettings.timeout(options));
   }
 
+  async blur(metadata: CallMetadata, selector: string, options: types.TimeoutOptions & types.StrictOptions = {}) {
+    const controller = new ProgressController(metadata, this);
+    await controller.run(async progress => {
+      dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._blur(progress)));
+      await this._page._doSlowMo();
+    }, this._page._timeoutSettings.timeout(options));
+  }
+
   async textContent(metadata: CallMetadata, selector: string, options: types.QueryOnSelectorOptions = {}): Promise<string | null> {
     return this._scheduleRerunnableTask(metadata, selector, (progress, element) => element.textContent, undefined, options);
   }
@@ -1183,12 +1268,17 @@ export class Frame extends SdkObject {
   async isVisible(metadata: CallMetadata, selector: string, options: types.StrictOptions = {}): Promise<boolean> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      progress.log(`  checking visibility of "${selector}"`);
+      progress.log(`  checking visibility of ${this._asLocator(selector)}`);
       const pair = await this.resolveFrameForSelectorNoWait(selector, options);
       if (!pair)
         return false;
-      const element = await this._page.selectors.query(pair.frame, pair.info);
-      return element ? await element.isVisible() : false;
+      const context = await pair.frame._context(pair.info.world);
+      const injectedScript = await context.injectedScript();
+      return await injectedScript.evaluate((injected, { parsed, strict }) => {
+        const element = injected.querySelector(parsed, document, strict);
+        const state = element ? injected.elementState(element, 'visible') : false;
+        return state === 'error:notconnected' ? false : state;
+      }, { parsed: pair.info.parsed, strict: pair.info.strict });
     }, this._page._timeoutSettings.timeout({}));
   }
 
@@ -1212,7 +1302,7 @@ export class Frame extends SdkObject {
     return this._elementState(metadata, selector, 'checked', options);
   }
 
-  async hover(metadata: CallMetadata, selector: string, options: types.PointerActionOptions & types.PointerActionWaitOptions = {}) {
+  async hover(metadata: CallMetadata, selector: string, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._hover(progress, options)));
@@ -1268,7 +1358,7 @@ export class Frame extends SdkObject {
     });
   }
 
-  async expect(metadata: CallMetadata, selector: string, options: FrameExpectParams): Promise<{ matches: boolean, received?: any, log?: string[] }> {
+  async expect(metadata: CallMetadata, selector: string, options: FrameExpectParams): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }> {
     const controller = new ProgressController(metadata, this);
     const isArray = options.expression === 'to.have.count' || options.expression.endsWith('.array');
     const mainWorld = options.expression === 'to.have.property';
@@ -1316,7 +1406,7 @@ export class Frame extends SdkObject {
           // expect(locator).not.conditionThatDoesMatch
           progress.setIntermediateResult(result.received);
           if (!Array.isArray(result.received))
-            progress.log(`  unexpected value "${result.received}"`);
+            progress.log(`  unexpected value "${progress.injectedScript.renderUnexpectedValue(options.expression, result.received)}"`);
           return progress.continuePolling;
         }
 
@@ -1328,7 +1418,13 @@ export class Frame extends SdkObject {
       // A: We want user to receive a friendly message containing the last intermediate result.
       if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
         throw e;
-      return { received: controller.lastIntermediateResult(), matches: options.isNot, log: metadata.log };
+      const result: { matches: boolean, received?: any, log?: string[], timedOut?: boolean } = { matches: options.isNot, log: metadata.log };
+      const intermediateResult = controller.lastIntermediateResult();
+      if (intermediateResult)
+        result.received = intermediateResult.value;
+      else
+        result.timedOut = true;
+      return result;
     });
   }
 
@@ -1425,8 +1521,8 @@ export class Frame extends SdkObject {
     const callbackText = body.toString();
     return this.retryWithProgress(progress, selector, options, async selectorInFrame => {
       // Be careful, |this| can be different from |frame|.
-      progress.log(`waiting for selector "${selector}"`);
-      const { frame, info } = selectorInFrame || { frame: this, info: { parsed: { parts: [{ name: 'control', body: 'return-empty', source: 'control=return-empty' }] }, world: 'utility', strict: !!options.strict } };
+      progress.log(`waiting for ${this._asLocator(selector)}`);
+      const { frame, info } = selectorInFrame || { frame: this, info: { parsed: { parts: [{ name: 'internal:control', body: 'return-empty', source: 'internal:control=return-empty' }] }, world: 'utility', strict: !!options.strict } };
       return await frame._scheduleRerunnableTaskInFrame(progress, info, callbackText, taskData, options);
     });
   }
@@ -1452,12 +1548,12 @@ export class Frame extends SdkObject {
             if (querySelectorAll) {
               elements = injected.querySelectorAll(info.parsed, document);
               element = elements[0];
-              progress.logRepeating(`  selector resolved to ${elements.length} element${elements.length === 1 ? '' : 's'}`);
+              progress.logRepeating(`  locator resolved to ${elements.length} element${elements.length === 1 ? '' : 's'}`);
             } else {
               element = injected.querySelector(info.parsed, document, info.strict);
               elements = element ? [element] : [];
               if (element)
-                progress.logRepeating(`  selector resolved to ${injected.previewNode(element)}`);
+                progress.logRepeating(`  locator resolved to ${injected.previewNode(element)}`);
             }
 
             if (!element && !omitAttached)
@@ -1541,13 +1637,17 @@ export class Frame extends SdkObject {
     // after the frame was detached - probably a race in the Firefox itself.
     if (this._firedLifecycleEvents.has('networkidle') || this._detached)
       return;
-    this._networkIdleTimer = setTimeout(() => this._onLifecycleEvent('networkidle'), 500);
+    this._networkIdleTimer = setTimeout(() => {
+      this._firedNetworkIdleSelf = true;
+      this._page.mainFrame()._recalculateNetworkIdle();
+    }, 500);
   }
 
   _stopNetworkIdleTimer() {
     if (this._networkIdleTimer)
       clearTimeout(this._networkIdleTimer);
     this._networkIdleTimer = undefined;
+    this._firedNetworkIdleSelf = false;
   }
 
   async extendInjectedScript(source: string, arg?: any): Promise<js.JSHandle> {
@@ -1573,7 +1673,7 @@ export class Frame extends SdkObject {
     for (let i = 0; i < frameChunks.length - 1 && progress.isRunning(); ++i) {
       const info = this._page.parseSelector(frameChunks[i], options);
       const task = dom.waitForSelectorTask(info, 'attached', false, i === 0 ? scope : undefined);
-      progress.log(`  waiting for frame "${stringifySelector(frameChunks[i])}"`);
+      progress.log(`  waiting for ${this._asLocator(stringifySelector(frameChunks[i]) + ' >> internal:control=enter-frame')}`);
       const handle = i === 0 && scope ? await frame._runWaitForSelectorTaskOnce(progress, stringifySelector(info.parsed), info.world, task)
         : await frame._scheduleRerunnableHandleTask(progress, info.world, task);
       const element = handle.asElement() as dom.ElementHandle<Element>;
@@ -1616,8 +1716,36 @@ export class Frame extends SdkObject {
       progress.cleanupWhenAborted(() => result.dispose());
       return result;
     } catch (e) {
-      throw new Error(`Error: frame navigated while waiting for selector "${selector}"`);
+      throw new Error(`Error: frame navigated while waiting for ${this._asLocator(selector)}`);
     }
+  }
+
+  async resetStorageForCurrentOriginBestEffort(newStorage: channels.OriginStorage | undefined) {
+    const context = await this._utilityContext();
+    await context.evaluate(async ({ ls }) => {
+      // Clean DOMStorage.
+      sessionStorage.clear();
+      localStorage.clear();
+
+      // Add new DOM Storage values.
+      for (const entry of ls || [])
+        localStorage[entry.name] = entry.value;
+
+      // Clean Service Workers
+      const registrations = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : [];
+      await Promise.all(registrations.map(r => r.unregister())).catch(() => {});
+
+      // Clean IndexedDB
+      for (const db of await indexedDB.databases?.() || []) {
+        // Do not wait for the callback - it is called on timer in Chromium (slow).
+        if (db.name)
+          indexedDB.deleteDatabase(db.name!);
+      }
+    }, { ls: newStorage?.localStorage }).catch(() => {});
+  }
+
+  private _asLocator(selector: string) {
+    return asLocator(this._page.context()._browser.options.sdkLanguage, selector);
   }
 }
 
@@ -1701,7 +1829,9 @@ class SignalBarrier {
     if (frame.parentFrame())
       return;
     this.retain();
-    const waiter = helper.waitForEvent(null, frame, Frame.Events.Navigation, (e: NavigationEvent) => {
+    const waiter = helper.waitForEvent(null, frame, Frame.Events.InternalNavigation, (e: NavigationEvent) => {
+      if (!e.isPublic)
+        return false;
       if (!e.error && this._progress)
         this._progress.log(`  navigated to "${frame._url}"`);
       return true;
@@ -1734,4 +1864,3 @@ function verifyLifecycle(name: string, waitUntil: types.LifecycleEvent): types.L
     throw new Error(`${name}: expected one of (load|domcontentloaded|networkidle|commit)`);
   return waitUntil;
 }
-

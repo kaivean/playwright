@@ -18,15 +18,15 @@ import path from 'path';
 import fs from 'fs';
 import * as consoleApiSource from '../../../generated/consoleApiSource';
 import { HttpServer } from '../../../utils/httpServer';
-import { findChromiumChannel } from '../../../utils/registry';
-import { isUnderTest } from '../../../utils/utils';
-import { BrowserContext } from '../../browserContext';
-import { installAppIcon } from '../../chromium/crApp';
+import { findChromiumChannel } from '../../registry';
+import { isUnderTest } from '../../../utils';
+import type { BrowserContext } from '../../browserContext';
+import { installAppIcon, syncLocalStorageWithSettings } from '../../chromium/crApp';
 import { serverSideCallMetadata } from '../../instrumentation';
 import { createPlaywright } from '../../playwright';
 import { ProgressController } from '../../progress';
 
-export async function showTraceViewer(traceUrls: string[], browserName: string, headless = false, port?: number): Promise<BrowserContext | undefined> {
+export async function showTraceViewer(traceUrls: string[], browserName: string, headless = false, preferredPort?: number): Promise<BrowserContext | undefined> {
   for (const traceUrl of traceUrls) {
     if (!traceUrl.startsWith('http://') && !traceUrl.startsWith('https://') && !fs.existsSync(traceUrl)) {
       // eslint-disable-next-line no-console
@@ -49,7 +49,7 @@ export async function showTraceViewer(traceUrls: string[], browserName: string, 
     return server.serveFile(request, response, absolutePath);
   });
 
-  const urlPrefix = await server.start(port);
+  const urlPrefix = await server.start({ preferredPort });
 
   const traceViewerPlaywright = createPlaywright('javascript', true);
   const traceViewerBrowser = isUnderTest() ? 'chromium' : browserName;
@@ -68,6 +68,7 @@ export async function showTraceViewer(traceUrls: string[], browserName: string, 
     noDefaultViewport: true,
     ignoreDefaultArgs: ['--enable-automation'],
     headless,
+    colorScheme: 'no-override',
     useWebSocket: isUnderTest()
   });
 
@@ -80,13 +81,17 @@ export async function showTraceViewer(traceUrls: string[], browserName: string, 
 
   if (traceViewerBrowser === 'chromium')
     await installAppIcon(page);
+  await syncLocalStorageWithSettings(page, 'traceviewer');
 
-  if (isUnderTest())
+  const params = traceUrls.map(t => `trace=${t}`);
+  if (isUnderTest()) {
+    params.push('isUnderTest=true');
     page.on('close', () => context.close(serverSideCallMetadata()).catch(() => {}));
-  else
+  } else {
     page.on('close', () => process.exit());
+  }
 
-  const searchQuery = traceUrls.length ? '?' + traceUrls.map(t => `trace=${t}`).join('&') : '';
+  const searchQuery = params.length ? '?' + params.join('&') : '';
   await page.mainFrame().goto(serverSideCallMetadata(), urlPrefix + `/trace/index.html${searchQuery}`);
   return context;
 }

@@ -1,12 +1,12 @@
 module.exports = {
-    parser: '@typescript-eslint/parser',
-    plugins: ['@typescript-eslint', 'notice'],
+    parser: "@typescript-eslint/parser",
+    plugins: ["@typescript-eslint", "notice"],
     parserOptions: {
       ecmaVersion: 9,
-      sourceType: 'module',
+      sourceType: "module",
     },
     extends: [
-      'plugin:react-hooks/recommended'
+      "plugin:react-hooks/recommended"
     ],
 
     /**
@@ -18,8 +18,9 @@ module.exports = {
      *   "rule-name", [severity, { opts }]
      * Severity: 2 == error, 1 == warning, 0 == off.
      */
-    "rules": {
-        '@typescript-eslint/no-unused-vars': [2, {args: 'none'}],
+    rules: {
+        "@typescript-eslint/no-unused-vars": [2, {args: "none"}],
+        "@typescript-eslint/consistent-type-imports": [2, {disallowTypeAnnotations: false}],
         /**
          * Enforced rules
          */
@@ -70,6 +71,7 @@ module.exports = {
         "valid-typeof": 2,
         "no-implicit-globals": [2],
         "no-unused-expressions": [2, { "allowShortCircuit": true, "allowTernary": true, "allowTaggedTemplates": true}],
+        "no-proto": 2,
 
         // es2015 features
         "require-yield": 2,
@@ -78,6 +80,9 @@ module.exports = {
         // spacing details
         "space-infix-ops": 2,
         "space-in-parens": [2, "never"],
+        "array-bracket-spacing": [2, "never"],
+        "comma-spacing": [2, { "before": false, "after": true }],
+        "keyword-spacing": [2, "always"],
         "space-before-function-paren": [2, {
             "anonymous": "never",
             "named": "never",

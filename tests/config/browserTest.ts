@@ -16,16 +16,20 @@
 
 import * as fs from 'fs';
 import * as os from 'os';
-import { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
+import type { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
 import * as path from 'path';
 import type { BrowserContext, BrowserContextOptions, BrowserType, Page } from 'playwright-core';
-import { removeFolders } from '../../packages/playwright-core/lib/utils/utils';
+import { removeFolders } from '../../packages/playwright-core/lib/utils/fileUtils';
 import { baseTest } from './baseTest';
-import { RemoteServer, RemoteServerOptions } from './remoteServer';
+import type { RemoteServerOptions } from './remoteServer';
+import { RemoteServer } from './remoteServer';
+import type { Log } from '../../packages/trace/src/har';
+import { parseHar } from '../config/utils';
 
 export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
   browserVersion: string;
   defaultSameSiteCookieValue: string;
+  allowsThirdParty
   browserMajorVersion: number;
   browserType: BrowserType;
   isAndroid: boolean;
@@ -37,27 +41,47 @@ type BrowserTestTestFixtures = PageTestFixtures & {
   launchPersistent: (options?: Parameters<BrowserType['launchPersistentContext']>[1]) => Promise<{ context: BrowserContext, page: Page }>;
   startRemoteServer: (options?: RemoteServerOptions) => Promise<RemoteServer>;
   contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
+  pageWithHar(options?: { outputPath?: string, content?: 'embed' | 'attach' | 'omit', omitContent?: boolean }): Promise<{ context: BrowserContext, page: Page, getLog: () => Promise<Log>, getZip: () => Promise<Map<string, Buffer>> }>
 };
 
 const test = baseTest.extend<BrowserTestTestFixtures, BrowserTestWorkerFixtures>({
   browserVersion: [async ({ browser }, run) => {
     await run(browser.version());
-  }, { scope: 'worker' } ],
+  }, { scope: 'worker' }],
 
   browserType: [async ({ playwright, browserName }, run) => {
     await run(playwright[browserName]);
-  }, { scope: 'worker' } ],
+  }, { scope: 'worker' }],
 
-  defaultSameSiteCookieValue: [async ({ browserName, browserMajorVersion }, run) => {
-    await run(browserName === 'chromium' || (browserName === 'firefox' && browserMajorVersion >= 96 && browserMajorVersion < 97) ? 'Lax' : 'None');
-  }, { scope: 'worker' } ],
+  allowsThirdParty: [async ({ browserName, browserMajorVersion, channel }, run) => {
+    if (browserName === 'firefox' && !channel)
+      await run(browserMajorVersion >= 103);
+    else if (browserName === 'firefox' && channel === 'firefox-beta')
+      await run(browserMajorVersion >= 97 && browserMajorVersion < 103);
+    else
+      await run(false);
+  }, { scope: 'worker' }],
+
+  defaultSameSiteCookieValue: [async ({ browserName, browserMajorVersion, channel }, run) => {
+    if (browserName === 'chromium')
+      await run('Lax');
+    else if (browserName === 'webkit')
+      await run('None');
+    else if (browserName === 'firefox' && channel === 'firefox-beta')
+      await run(browserMajorVersion === 96 || browserMajorVersion >= 103 ? 'Lax' : 'None');
+    else if (browserName === 'firefox' && channel !== 'firefox-beta')
+      await run(browserMajorVersion >= 103 ? 'None' : 'Lax');
+    else
+      throw new Error('unknown browser - ' + browserName);
+  }, { scope: 'worker' }],
 
   browserMajorVersion: [async ({ browserVersion }, run) => {
     await run(Number(browserVersion.split('.')[0]));
-  }, { scope: 'worker' } ],
+  }, { scope: 'worker' }],
 
-  isAndroid: [false, { scope: 'worker' } ],
-  isElectron: [false, { scope: 'worker' } ],
+  isAndroid: [false, { scope: 'worker' }],
+  isElectron: [false, { scope: 'worker' }],
+  isWebView2: [false, { scope: 'worker' }],
 
   contextFactory: async ({ _contextFactory }: any, run) => {
     await run(_contextFactory);
@@ -109,6 +133,26 @@ const test = baseTest.extend<BrowserTestTestFixtures, BrowserTestWorkerFixtures>
       await new Promise(f => setTimeout(f, 1000));
     }
   },
+  pageWithHar: async ({ contextFactory }, use, testInfo) => {
+    const pageWithHar = async (options: { outputPath?: string, content?: 'embed' | 'attach' | 'omit', omitContent?: boolean } = {}) => {
+      const harPath = testInfo.outputPath(options.outputPath || 'test.har');
+      const context = await contextFactory({ recordHar: { path: harPath, content: options.content, omitContent: options.omitContent }, ignoreHTTPSErrors: true });
+      const page = await context.newPage();
+      return {
+        page,
+        context,
+        getLog: async () => {
+          await context.close();
+          return JSON.parse(fs.readFileSync(harPath).toString())['log'] as Log;
+        },
+        getZip: async () => {
+          await context.close();
+          return parseHar(harPath);
+        },
+      };
+    };
+    await use(pageWithHar);
+  }
 });
 
 export const playwrightTest = test;

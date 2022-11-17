@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
-import { test as baseTest, expect, createImage } from './playwright-test-fixtures';
-import { HttpServer } from '../../packages/playwright-core/lib/utils/httpServer';
+import fs from 'fs';
+import path from 'path';
+import url from 'url';
+import { test as baseTest, expect, createImage, stripAnsi } from './playwright-test-fixtures';
+import type { HttpServer } from '../../packages/playwright-core/lib/utils/httpServer';
 import { startHtmlReportServer } from '../../packages/playwright-test/lib/reporters/html';
-import { spawnAsync } from 'playwright-core/lib/utils/utils';
+import { spawnAsync } from 'playwright-core/lib/utils/spawnAsync';
 
 const test = baseTest.extend<{ showReport: () => Promise<void> }>({
   showReport: async ({ page }, use, testInfo) => {
@@ -70,6 +73,7 @@ test('should generate report', async ({ runInlineTest, showReport, page }) => {
   await expect(page.locator('.metadata-view')).not.toBeVisible();
 });
 
+
 test('should not throw when attachment is missing', async ({ runInlineTest, page, showReport }, testInfo) => {
   const result = await runInlineTest({
     'playwright.config.ts': `
@@ -90,7 +94,7 @@ test('should not throw when attachment is missing', async ({ runInlineTest, page
   await showReport();
   await page.click('text=passes');
   await page.locator('text=Missing attachment "screenshot"').click();
-  const screenshotFile = testInfo.outputPath('test-results' , 'a-passes', 'screenshot.png');
+  const screenshotFile = testInfo.outputPath('test-results', 'a-passes', 'screenshot.png');
   await expect(page.locator('.attachment-body')).toHaveText(`Attachment file ${screenshotFile} is missing`);
 });
 
@@ -119,16 +123,31 @@ test('should include image diff', async ({ runInlineTest, page, showReport }) =>
   await page.click('text=fails');
   await expect(page.locator('text=Image mismatch')).toBeVisible();
   await expect(page.locator('text=Snapshot mismatch')).toHaveCount(0);
+
+  const set = new Set();
+
   const imageDiff = page.locator('data-testid=test-result-image-mismatch');
-  const image = imageDiff.locator('img');
-  await expect(image).toHaveAttribute('src', /.*png/);
-  const actualSrc = await image.getAttribute('src');
-  await imageDiff.locator('text=Expected').click();
-  const expectedSrc = await image.getAttribute('src');
-  await imageDiff.locator('text=Diff').click();
-  const diffSrc = await image.getAttribute('src');
-  const set = new Set([expectedSrc, actualSrc, diffSrc]);
-  expect(set.size).toBe(3);
+  const expectedImage = imageDiff.locator('img').first();
+  const actualImage = imageDiff.locator('img').last();
+  await expect(expectedImage).toHaveAttribute('src', /.*png/);
+  await expect(actualImage).toHaveAttribute('src', /.*png/);
+  set.add(await expectedImage.getAttribute('src'));
+  set.add(await actualImage.getAttribute('src'));
+  expect(set.size, 'Should be two images overlaid').toBe(2);
+
+  const sliderElement = imageDiff.locator('data-testid=test-result-image-mismatch-grip');
+  await expect.poll(() => sliderElement.evaluate(e => e.style.left), 'Actual slider is on the right').toBe('590px');
+
+  await imageDiff.locator('text="Expected"').click();
+  set.add(await expectedImage.getAttribute('src'));
+  set.add(await actualImage.getAttribute('src'));
+  expect(set.size).toBe(2);
+
+  await expect.poll(() => sliderElement.evaluate(e => e.style.left), 'Expected slider is on the left').toBe('350px');
+
+  await imageDiff.locator('text="Diff"').click();
+  set.add(await imageDiff.locator('img').getAttribute('src'));
+  expect(set.size, 'Should be three images altogether').toBe(3);
 });
 
 test('should include multiple image diffs', async ({ runInlineTest, page, showReport }) => {
@@ -140,7 +159,7 @@ test('should include multiple image diffs', async ({ runInlineTest, page, showRe
   const result = await runInlineTest({
     'playwright.config.ts': `
       module.exports = {
-        screenshotsDir: '__screenshots__',
+        snapshotPathTemplate: '__screenshots__/{testFilePath}/{arg}{ext}',
         use: { viewport: { width: ${IMG_WIDTH}, height: ${IMG_HEIGHT} }}
       };
     `,
@@ -167,9 +186,42 @@ test('should include multiple image diffs', async ({ runInlineTest, page, showRe
   await expect(page.locator('text=Screenshots')).toHaveCount(0);
   for (let i = 0; i < 2; ++i) {
     const imageDiff = page.locator('data-testid=test-result-image-mismatch').nth(i);
-    const image = imageDiff.locator('img');
+    const image = imageDiff.locator('img').first();
     await expect(image).toHaveAttribute('src', /.*png/);
   }
+});
+
+test('should include image diffs for same expectation', async ({ runInlineTest, page, showReport }) => {
+  const expected = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAYAAACtWK6eAAAAAXNSR0IArs4c6QAAAhVJREFUeJzt07ERwCAQwLCQ/Xd+FuDcQiFN4MZrZuYDjv7bAfAyg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAgEg0AwCASDQDAIBINAMAiEDVPZBYx6ffy+AAAAAElFTkSuQmCC', 'base64');
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = { use: { viewport: { width: 200, height: 200 }} };
+    `,
+    'a.test.js-snapshots/expected-linux.png': expected,
+    'a.test.js-snapshots/expected-darwin.png': expected,
+    'a.test.js-snapshots/expected-win32.png': expected,
+    'a.test.js': `
+      const { test } = pwt;
+      test('fails', async ({ page }, testInfo) => {
+        await page.setContent('<html>Hello World</html>');
+        const screenshot = await page.screenshot();
+        await expect.soft(screenshot).toMatchSnapshot('expected.png');
+        await expect.soft(screenshot).toMatchSnapshot('expected.png');
+        await expect.soft(screenshot).toMatchSnapshot('expected.png');
+      });
+    `,
+  }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' });
+  expect(result.exitCode).toBe(1);
+  expect(result.failed).toBe(1);
+
+  await showReport();
+  await page.click('text=fails');
+  await expect(page.locator('data-testid=test-result-image-mismatch')).toHaveCount(3);
+  await expect(page.locator('text=Image mismatch:')).toHaveText([
+    'Image mismatch: expected.png',
+    'Image mismatch: expected.png-1',
+    'Image mismatch: expected.png-2',
+  ]);
 });
 
 test('should include image diff when screenshot failed to generate due to animation', async ({ runInlineTest, page, showReport }) => {
@@ -200,11 +252,12 @@ test('should include image diff when screenshot failed to generate due to animat
   await expect(page.locator('.chip-header', { hasText: 'Screenshots' })).toHaveCount(0);
   const imageDiff = page.locator('data-testid=test-result-image-mismatch');
   const image = imageDiff.locator('img');
-  await expect(image).toHaveAttribute('src', /.*png/);
-  const actualSrc = await image.getAttribute('src');
-  await imageDiff.locator('text=Previous').click();
-  const previousSrc = await image.getAttribute('src');
-  await imageDiff.locator('text=Diff').click();
+  await expect(image.first()).toHaveAttribute('src', /.*png/);
+  await expect(image.last()).toHaveAttribute('src', /.*png/);
+  const previousSrc = await image.first().getAttribute('src');
+  const actualSrc = await image.last().getAttribute('src');
+  await imageDiff.locator('text="Previous"').click();
+  await imageDiff.locator('text="Diff"').click();
   const diffSrc = await image.getAttribute('src');
   const set = new Set([previousSrc, actualSrc, diffSrc]);
   expect(set.size).toBe(3);
@@ -233,9 +286,10 @@ test('should not include image diff with non-images', async ({ runInlineTest, pa
 
   await showReport();
   await page.click('text=fails');
-  await expect(page.locator('text=Snapshot mismatch')).toBeVisible();
   await expect(page.locator('text=Image mismatch')).toHaveCount(0);
   await expect(page.locator('img')).toHaveCount(0);
+  await expect(page.locator('a', { hasText: 'expected-actual' })).toBeVisible();
+  await expect(page.locator('a', { hasText: 'expected-expected' })).toBeVisible();
 });
 
 test('should include screenshot on failure', async ({ runInlineTest, page, showReport }) => {
@@ -328,7 +382,7 @@ test('should show trace source', async ({ runInlineTest, page, showReport }) => 
   await page.click('.action-title >> text=page.evaluate');
   await page.click('text=Source');
 
-  await expect(page.locator('.source-line')).toContainText([
+  await expect(page.locator('.CodeMirror-line')).toContainText([
     /const.*pwt;/,
     /page\.evaluate/
   ]);
@@ -393,6 +447,37 @@ test('should show multi trace source', async ({ runInlineTest, page, server, sho
   await page.click('.action-title >> text=apiRequestContext.get');
   await page.click('text=Source');
   await expect(page.locator('.source-line-running')).toContainText('request.get');
+});
+
+test('should warn user when viewing via file:// protocol', async ({ runInlineTest, page, showReport }, testInfo) => {
+  const result = await runInlineTest({
+    'playwright.config.js': `
+      module.exports = { use: { trace: 'on' } };
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('passes', async ({ page }) => {
+        await page.evaluate('2 + 2');
+      });
+    `,
+  }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+
+  await test.step('view via server', async () => {
+    await showReport();
+    await page.locator('[title="View trace"]').click();
+    await expect(page.locator('body')).toContainText('Action does not have snapshots', { useInnerText: true });
+    await expect(page.locator('dialog')).toBeHidden();
+  });
+
+  await test.step('view via local file://', async () => {
+    const reportFolder = testInfo.outputPath('playwright-report');
+    await page.goto(url.pathToFileURL(path.join(reportFolder, 'index.html')).toString());
+    await page.locator('[title="View trace"]').click();
+    await expect(page.locator('dialog')).toBeVisible();
+    await expect(page.locator('dialog')).toContainText('must be loaded over');
+  });
 });
 
 test('should show timed out steps and hooks', async ({ runInlineTest, page, showReport }) => {
@@ -514,6 +599,33 @@ test('should render text attachments as text', async ({ runInlineTest, page, sho
   await expect(page.locator('.attachment-body')).toHaveText(['foo', '{"foo":1}', 'utf16 encoded']);
 });
 
+test('should use file-browser friendly extensions for buffer attachments based on contentType', async ({ runInlineTest }, testInfo) => {
+  const result = await runInlineTest({
+    'a.test.js': `
+      const { test } = pwt;
+      test('passing', async ({ page }, testInfo) => {
+        await testInfo.attach('screenshot', { body: await page.screenshot(), contentType: 'image/png' });
+        await testInfo.attach('some-pdf', { body: Buffer.from('foo'), contentType: 'application/pdf' });
+        await testInfo.attach('madeup-contentType', { body: Buffer.from('bar'), contentType: 'madeup' });
+
+        await testInfo.attach('screenshot-that-already-has-an-extension-with-madeup.png', { body: Buffer.from('a'), contentType: 'madeup' });
+        await testInfo.attach('screenshot-that-already-has-an-extension-with-correct-contentType.png', { body: Buffer.from('c'), contentType: 'image/png' });
+        await testInfo.attach('example.ext with spaces', { body: Buffer.from('b'), contentType: 'madeup' });
+      });
+    `,
+  }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' });
+  expect(result.exitCode).toBe(0);
+  const files = await fs.promises.readdir(path.join(testInfo.outputPath('playwright-report'), 'data'));
+  expect(new Set(files)).toEqual(new Set([
+    'f6aa9785bc9c7b8fd40c3f6ede6f59112a939527.png', // screenshot
+    '0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33.pdf', // some-pdf
+    '62cdb7020ff920e5aa642c3d4066950dd1f01f4d.dat', // madeup-contentType
+    '86f7e437faa5a7fce15d1ddcb9eaeaea377667b8.png', // screenshot-that-already-has-an-extension-with-madeup.png
+    '84a516841ba77a5b4648de2cd0dfcb30ea46dbb4.png', // screenshot-that-already-has-an-extension-with-correct-contentType.png
+    'e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98.ext-with-spaces', // example.ext with spaces
+  ]));
+});
+
 test('should strikethough textual diff', async ({ runInlineTest, showReport, page }) => {
   const result = await runInlineTest({
     'helper.ts': `
@@ -628,63 +740,216 @@ test('open tests from required file', async ({ runInlineTest, showReport, page }
   ]);
 });
 
-test('should include metadata', async ({ runInlineTest, showReport, page }) => {
-  const beforeRunPlaywrightTest = async ({ baseDir }: { baseDir: string }) => {
-    const execGit = async (args: string[]) => {
-      const { code, stdout, stderr } = await spawnAsync('git', args, { stdio: 'pipe', cwd: baseDir });
-      if (!!code)
-        throw new Error(`Non-zero exit of:\n$ git ${args.join(' ')}\nConsole:\nstdout:\n${stdout}\n\nstderr:\n${stderr}\n\n`);
-      return;
-    };
-
-    await execGit(['init']);
-    await execGit(['config', '--local', 'user.email', 'shakespeare@example.local']);
-    await execGit(['config', '--local', 'user.name', 'William']);
-    await execGit(['add', '*.ts']);
-    await execGit(['commit', '-m', 'awesome commit message']);
-  };
-
-  const result = await runInlineTest({
-    'uncommitted.txt': `uncommitted file`,
-    'globalSetup.ts': `
-      import * as ci from '@playwright/test/lib/ci';
-      import { FullConfig } from '@playwright/test';
-
-      async function globalSetup(config: FullConfig) {
-        config.attachments = [
-          ...await ci.generationTimestamp(),
-          ...await ci.gitStatusFromCLI(config.rootDir).catch(() => []),
-          ...await ci.githubEnv(),
-        ];
+test.describe('gitCommitInfo plugin', () => {
+  test('should include metadata', async ({ runInlineTest, showReport, page }) => {
+    const beforeRunPlaywrightTest = async ({ baseDir }: { baseDir: string }) => {
+      const execGit = async (args: string[]) => {
+        const { code, stdout, stderr } = await spawnAsync('git', args, { stdio: 'pipe', cwd: baseDir });
+        if (!!code)
+          throw new Error(`Non-zero exit of:\n$ git ${args.join(' ')}\nConsole:\nstdout:\n${stdout}\n\nstderr:\n${stderr}\n\n`);
+        return;
       };
 
-      export default globalSetup;
-    `,
-    'playwright.config.ts': `
-      import path from 'path';
-      const config = {
-        globalSetup: path.join(__dirname, './globalSetup'),
-      }
+      await execGit(['init']);
+      await execGit(['config', '--local', 'user.email', 'shakespeare@example.local']);
+      await execGit(['config', '--local', 'user.name', 'William']);
+      await execGit(['add', '*.ts']);
+      await execGit(['commit', '-m', 'awesome commit message']);
+    };
 
-      export default config;
-    `,
-    'example.spec.ts': `
-      const { test } = pwt;
-      test('sample', async ({}) => { expect(2).toBe(2); });
-    `,
-  }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never', GITHUB_REPOSITORY: 'microsoft/playwright-example-for-test', GITHUB_RUN_ID: 'example-run-id', GITHUB_SERVER_URL: 'https://playwright.dev', GITHUB_SHA: 'example-sha' }, undefined, beforeRunPlaywrightTest);
+    const result = await runInlineTest({
+      'uncommitted.txt': `uncommitted file`,
+      'playwright.config.ts': `export default {};`,
+      'example.spec.ts': `
+        import { gitCommitInfo } from '@playwright/test/lib/plugins';
+        const { test, _addRunnerPlugin } = pwt;
+        _addRunnerPlugin(gitCommitInfo());
+        test('sample', async ({}) => { expect(2).toBe(2); });
+      `,
+    }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never', GITHUB_REPOSITORY: 'microsoft/playwright-example-for-test', GITHUB_RUN_ID: 'example-run-id', GITHUB_SERVER_URL: 'https://playwright.dev', GITHUB_SHA: 'example-sha' }, undefined, beforeRunPlaywrightTest);
 
-  await showReport();
+    await showReport();
 
-  expect(result.exitCode).toBe(0);
-  const metadata = page.locator('.metadata-view');
-  await expect.soft(metadata.locator('data-test-id=revision.id')).toContainText(/^[a-f\d]{7}$/i);
-  await expect.soft(metadata.locator('data-test-id=revision.id >> a')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/commit/example-sha');
-  await expect.soft(metadata.locator('data-test-id=revision.timestamp')).toContainText(/AM|PM/);
-  await expect.soft(metadata).toContainText('awesome commit message');
-  await expect.soft(metadata).toContainText('William');
-  await expect.soft(metadata).toContainText('shakespeare@example.local');
-  await expect.soft(metadata.locator('text=CI/CD Logs')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/actions/runs/example-run-id');
-  await expect.soft(metadata).toContainText('uncommitted changes');
-  await expect.soft(metadata.locator('text=Report generated on')).toContainText(/AM|PM/);
+    expect(result.exitCode).toBe(0);
+    await page.click('text=awesome commit message');
+    await expect.soft(page.locator('data-test-id=revision.id')).toContainText(/^[a-f\d]+$/i);
+    await expect.soft(page.locator('data-test-id=revision.id >> a')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/commit/example-sha');
+    await expect.soft(page.locator('data-test-id=revision.timestamp')).toContainText(/AM|PM/);
+    await expect.soft(page.locator('text=awesome commit message')).toHaveCount(2);
+    await expect.soft(page.locator('text=William')).toBeVisible();
+    await expect.soft(page.locator('text=shakespeare@example.local')).toBeVisible();
+    await expect.soft(page.locator('text=CI/CD Logs')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/actions/runs/example-run-id');
+    await expect.soft(page.locator('text=Report generated on')).toContainText(/AM|PM/);
+    await expect.soft(page.locator('data-test-id=metadata-chip')).toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-error')).not.toBeVisible();
+  });
+
+
+  test('should use explicitly supplied metadata', async ({ runInlineTest, showReport, page }) => {
+    const result = await runInlineTest({
+      'uncommitted.txt': `uncommitted file`,
+      'playwright.config.ts': `
+        export default {};
+      `,
+      'example.spec.ts': `
+        import { gitCommitInfo } from '@playwright/test/lib/plugins';
+        const { test, _addRunnerPlugin } = pwt;
+        _addRunnerPlugin(gitCommitInfo({
+          info: {
+            'revision.id': '1234567890',
+            'revision.subject': 'a better subject',
+            'revision.timestamp': new Date(),
+            'revision.author': 'William',
+            'revision.email': 'shakespeare@example.local',
+          },
+        }));
+        test('sample', async ({}) => { expect(2).toBe(2); });
+      `,
+    }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never', GITHUB_REPOSITORY: 'microsoft/playwright-example-for-test', GITHUB_RUN_ID: 'example-run-id', GITHUB_SERVER_URL: 'https://playwright.dev', GITHUB_SHA: 'example-sha' }, undefined);
+
+    await showReport();
+
+    expect(result.exitCode).toBe(0);
+    await page.click('text=a better subject');
+    await expect.soft(page.locator('data-test-id=revision.id')).toContainText(/^[a-f\d]+$/i);
+    await expect.soft(page.locator('data-test-id=revision.id >> a')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/commit/example-sha');
+    await expect.soft(page.locator('data-test-id=revision.timestamp')).toContainText(/AM|PM/);
+    await expect.soft(page.locator('text=a better subject')).toHaveCount(2);
+    await expect.soft(page.locator('text=William')).toBeVisible();
+    await expect.soft(page.locator('text=shakespeare@example.local')).toBeVisible();
+    await expect.soft(page.locator('text=CI/CD Logs')).toHaveAttribute('href', 'https://playwright.dev/microsoft/playwright-example-for-test/actions/runs/example-run-id');
+    await expect.soft(page.locator('text=Report generated on')).toContainText(/AM|PM/);
+    await expect.soft(page.locator('data-test-id=metadata-chip')).toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-error')).not.toBeVisible();
+  });
+
+  test('should not have metadata by default', async ({ runInlineTest, showReport, page }) => {
+    const result = await runInlineTest({
+      'uncommitted.txt': `uncommitted file`,
+      'playwright.config.ts': `
+        export default {};
+      `,
+      'example.spec.ts': `
+        const { test } = pwt;
+        test('my sample test', async ({}) => { expect(2).toBe(2); });
+      `,
+    }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' }, undefined);
+
+    await showReport();
+
+    expect(result.exitCode).toBe(0);
+    await expect.soft(page.locator('text="my sample test"')).toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-error')).not.toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-chip')).not.toBeVisible();
+  });
+
+  test('should not include metadata if user supplies invalid values via metadata field', async ({ runInlineTest, showReport, page }) => {
+    const result = await runInlineTest({
+      'uncommitted.txt': `uncommitted file`,
+      'playwright.config.ts': `
+        export default {
+          metadata: {
+            'revision.timestamp': 'hi',
+          },
+        };
+      `,
+      'example.spec.ts': `
+        const { test } = pwt;
+        test('my sample test', async ({}) => { expect(2).toBe(2); });
+      `,
+    }, { reporter: 'dot,html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' });
+
+    await showReport();
+
+    expect(result.exitCode).toBe(0);
+    await expect.soft(page.locator('text="my sample test"')).toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-error')).toBeVisible();
+    await expect.soft(page.locator('data-test-id=metadata-chip')).not.toBeVisible();
+  });
 });
+
+test('should report clashing folders', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+      module.exports = {
+        reporter: [['html', { outputFolder: 'test-results/html-report' }]]
+      }
+    `,
+    'a.test.js': `
+      const { test } = pwt;
+      test('passes', async ({}) => {
+      });
+    `,
+  },  {}, {}, { usesCustomReporters: true });
+  expect(result.exitCode).toBe(0);
+  const output = stripAnsi(result.output);
+  expect(output).toContain('Configuration Error');
+  expect(output).toContain('html-report');
+});
+
+test.describe('report location', () => {
+  test('with config should create report relative to config', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'nested/project/playwright.config.ts': `
+        module.exports = { reporter: [['html', { outputFolder: '../my-report/' }]] };
+      `,
+      'nested/project/a.test.js': `
+        const { test } = pwt;
+        test('one', async ({}) => {
+          expect(1).toBe(1);
+        });
+      `,
+    }, { reporter: '', config: './nested/project/playwright.config.ts' });
+    expect(result.exitCode).toBe(0);
+    expect(fs.existsSync(testInfo.outputPath(path.join('nested', 'my-report', 'index.html')))).toBeTruthy();
+  });
+
+  test('without config should create relative to package.json', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'foo/package.json': `{ "name": "foo" }`,
+      // unused config along "search path"
+      'foo/bar/playwright.config.js': `
+        module.exports = { projects: [ {} ] };
+      `,
+      'foo/bar/baz/tests/a.spec.js': `
+        const { test } = pwt;
+        const fs = require('fs');
+        test('pass', ({}, testInfo) => {
+        });
+      `
+    }, { 'reporter': 'html' }, { PW_TEST_HTML_REPORT_OPEN: 'never' }, {
+      cwd: 'foo/bar/baz/tests',
+      usesCustomOutputDir: true
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.passed).toBe(1);
+    expect(fs.existsSync(testInfo.outputPath('playwright-report'))).toBe(false);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'playwright-report'))).toBe(true);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'playwright-report'))).toBe(false);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'tests', 'playwright-report'))).toBe(false);
+  });
+
+  test('with env var should create relative to cwd', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'foo/package.json': `{ "name": "foo" }`,
+      // unused config along "search path"
+      'foo/bar/playwright.config.js': `
+        module.exports = { projects: [ {} ] };
+      `,
+      'foo/bar/baz/tests/a.spec.js': `
+        const { test } = pwt;
+        const fs = require('fs');
+        test('pass', ({}, testInfo) => {
+        });
+      `
+    }, { 'reporter': 'html' }, { 'PW_TEST_HTML_REPORT_OPEN': 'never', 'PLAYWRIGHT_HTML_REPORT': '../my-report' }, {
+      cwd: 'foo/bar/baz/tests',
+      usesCustomOutputDir: true
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.passed).toBe(1);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'my-report'))).toBe(true);
+  });
+});
+
+

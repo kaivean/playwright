@@ -394,7 +394,7 @@ test('should report api step failure', async ({ runInlineTest }) => {
     `%% begin {\"title\":\"page.setContent\",\"category\":\"pw:api\"}`,
     `%% end {\"title\":\"page.setContent\",\"category\":\"pw:api\"}`,
     `%% begin {\"title\":\"page.click(input)\",\"category\":\"pw:api\"}`,
-    `%% end {\"title\":\"page.click(input)\",\"category\":\"pw:api\",\"error\":{\"message\":\"page.click: Timeout 1ms exceeded.\\n=========================== logs ===========================\\nwaiting for selector \\\"input\\\"\\n============================================================\",\"stack\":\"<stack>\"}}`,
+    `%% end {\"title\":\"page.click(input)\",\"category\":\"pw:api\",\"error\":{\"message\":\"page.click: Timeout 1ms exceeded.\\n=========================== logs ===========================\\nwaiting for locator('input')\\n============================================================\",\"stack\":\"<stack>\"}}`,
     `%% begin {\"title\":\"After Hooks\",\"category\":\"hook\"}`,
     `%% begin {\"title\":\"browserContext.close\",\"category\":\"pw:api\"}`,
     `%% end {\"title\":\"browserContext.close\",\"category\":\"pw:api\"}`,
@@ -557,8 +557,8 @@ test('should report correct tests/suites when using grep', async ({ runInlineTes
   expect(result.output).toContain('%%test2');
   expect(result.output).not.toContain('%%test3');
   const fileSuite = result.report.suites[0];
-  expect(fileSuite.suites.length).toBe(1);
-  expect(fileSuite.suites[0].specs.length).toBe(2);
+  expect(fileSuite.suites!.length).toBe(1);
+  expect(fileSuite.suites![0].specs.length).toBe(2);
   expect(fileSuite.specs.length).toBe(0);
 });
 

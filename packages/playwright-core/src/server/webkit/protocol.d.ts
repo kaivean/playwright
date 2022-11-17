@@ -30,7 +30,7 @@ export module Protocol {
       /**
        * Backtrace that was captured when this `WebAnimation` was created.
        */
-      backtrace?: Console.CallFrame[];
+      stackTrace?: Console.StackTrace;
     }
     export interface Effect {
       startDelay?: number;
@@ -538,6 +538,10 @@ export module Protocol {
      */
     export type PseudoId = "first-line"|"first-letter"|"highlight"|"marker"|"before"|"after"|"selection"|"backdrop"|"scrollbar"|"scrollbar-thumb"|"scrollbar-button"|"scrollbar-track"|"scrollbar-track-piece"|"scrollbar-corner"|"resizer";
     /**
+     * Pseudo-style identifier (see <code>enum PseudoId</code> in <code>RenderStyleConstants.h</code>).
+     */
+    export type ForceablePseudoClass = "active"|"focus"|"focus-visible"|"focus-within"|"hover"|"target"|"visited";
+    /**
      * CSS rule collection for a single pseudo style.
      */
     export interface PseudoIdMatches {
@@ -853,11 +857,11 @@ export module Protocol {
      */
     export interface Grouping {
       /**
-       * Source of the media query: "media-rule" if specified by a @media rule, "media-import-rule" if specified by an @import rule, "media-link-node" if specified by a "media" attribute in a linked style sheet's LINK tag, "media-style-node" if specified by a "media" attribute in an inline style sheet's STYLE tag, "supports-rule" if specified by an @supports rule, "layer-rule" if specified by an @layer rule.
+       * Source of the media query: "media-rule" if specified by a @media rule, "media-import-rule" if specified by an @import rule, "media-link-node" if specified by a "media" attribute in a linked style sheet's LINK tag, "media-style-node" if specified by a "media" attribute in an inline style sheet's STYLE tag, "supports-rule" if specified by an @supports rule, "layer-rule" if specified by an @layer rule, "container-rule" if specified by an @container rule.
        */
-      type: "media-rule"|"media-import-rule"|"media-link-node"|"media-style-node"|"supports-rule"|"layer-rule"|"layer-import-rule";
+      type: "media-rule"|"media-import-rule"|"media-link-node"|"media-style-node"|"supports-rule"|"layer-rule"|"layer-import-rule"|"container-rule";
       /**
-       * Query text if specified by a @media or @supports rule. Layer name (or not present for anonymous layers) for @layer rules.
+       * Query text if specified by a @media, @supports, or @container rule. Layer name (or not present for anonymous layers) for @layer rules.
        */
       text?: string;
       /**
@@ -877,6 +881,14 @@ export module Protocol {
        * The variation axes defined by the font.
        */
       variationAxes: FontVariationAxis[];
+      /**
+       * Whether the font has synthesized its boldness or not.
+       */
+      synthesizedBold?: boolean;
+      /**
+       * Whether the font has synthesized its obliqueness or not
+       */
+      synthesizedOblique?: boolean;
     }
     /**
      * A single variation axis associated with a Font.
@@ -904,9 +916,9 @@ export module Protocol {
       defaultValue: number;
     }
     /**
-     * The layout context type of a node.
+     * Relevant layout information about the node. Things not in this list are not important to Web Inspector.
      */
-    export type LayoutContextType = "flex"|"grid";
+    export type LayoutFlag = "rendered"|"scrollable"|"flex"|"grid"|"event";
     /**
      * The mode for how layout context type changes are handled (default: <code>Observed</code>). <code>Observed</code> limits handling to those nodes already known to the frontend by other means (generally, this means the node is a visible item in the Elements tab). <code>All</code> informs the frontend of all layout context type changes and all nodes with a known layout context are sent to the frontend.
      */
@@ -941,17 +953,17 @@ export module Protocol {
       styleSheetId: StyleSheetId;
     }
     /**
-     * Called when a node's layout context type has changed.
+     * Called when the layout of a node changes in a way that is important to Web Inspector.
      */
-    export type nodeLayoutContextTypeChangedPayload = {
+    export type nodeLayoutFlagsChangedPayload = {
       /**
-       * Identifier of the node whose layout context type changed.
+       * Identifier of the node whose layout changed.
        */
       nodeId: DOM.NodeId;
       /**
-       * The new layout context type of the node. When not provided, the <code>LayoutContextType</code> of the node is not a context for which Web Inspector has specific functionality.
+       * Relevant information about the layout of the node. When not provided, the layout of the node is not important to Web Inspector.
        */
-      layoutContextType?: LayoutContextType;
+      layoutFlags?: string[];
     }
     
     /**
@@ -1167,7 +1179,7 @@ export module Protocol {
       /**
        * Element pseudo classes to force when computing the element's style.
        */
-      forcedPseudoClasses: "active"|"focus"|"hover"|"visited"[];
+      forcedPseudoClasses: ForceablePseudoClass[];
     }
     export type forcePseudoStateReturnValue = {
     }
@@ -1279,7 +1291,7 @@ export module Protocol {
       /**
        * Backtrace that was captured when this canvas context was created.
        */
-      backtrace?: Console.CallFrame[];
+      stackTrace?: Console.StackTrace;
     }
     /**
      * Information about a WebGL/WebGL2 shader program.
@@ -1554,11 +1566,15 @@ export module Protocol {
       /**
        * JavaScript stack trace for assertions and error messages.
        */
-      stackTrace?: CallFrame[];
+      stackTrace?: StackTrace;
       /**
        * Identifier of the network request associated with this message.
        */
       networkRequestId?: Network.RequestId;
+      /**
+       * Time when this message was added. Currently only used when an expensive operation happens to make sure that the frontend can account for it.
+       */
+      timestamp?: number;
     }
     /**
      * Stack entry for console errors and assertions.
@@ -1819,9 +1835,9 @@ export module Protocol {
        */
       contentSecurityPolicyHash?: string;
       /**
-       * The layout context type of the node. When not provided, the <code>LayoutContextType</code> of the node is not a context for which Web Inspector has specific functionality.
+       * Relevant information about the layout of the node. When not provided, the layout of the node is not important to Web Inspector.
        */
-      layoutContextType?: CSS.LayoutContextType;
+      layoutFlags?: string[];
     }
     /**
      * Relationship between data that is associated with a node and the node itself.
@@ -2384,7 +2400,7 @@ export module Protocol {
       /**
        * Query selector result.
        */
-      nodeId: NodeId;
+      nodeId?: NodeId;
     }
     /**
      * Executes <code>querySelectorAll</code> on a given node.
@@ -2549,6 +2565,10 @@ export module Protocol {
        * Id of the node to get listeners for.
        */
       nodeId: NodeId;
+      /**
+       * Controls whether ancestor event listeners are included. Defaults to true.
+       */
+      includeAncestors?: boolean;
     }
     export type getEventListenersForNodeReturnValue = {
       /**
@@ -2967,6 +2987,10 @@ export module Protocol {
        */
       objectId?: Runtime.RemoteObjectId;
       /**
+       * Id of the frame to resolve the owner element.
+       */
+      frameId?: Network.FrameId;
+      /**
        * Specifies in which execution context to adopt to.
        */
       executionContextId?: Runtime.ExecutionContextId;
@@ -3199,6 +3223,14 @@ might return multiple quads for inline nodes.
        */
       eventName?: string;
       /**
+       * If true, eventName is case sensitive. Defaults to true.
+       */
+      caseSensitive?: boolean;
+      /**
+       * If true, treats eventName as a regex. Defaults to false.
+       */
+      isRegex?: boolean;
+      /**
        * Options to apply to this breakpoint to modify its behavior.
        */
       options?: Debugger.BreakpointOptions;
@@ -3214,6 +3246,14 @@ might return multiple quads for inline nodes.
        * The name of the specific event to stop on.
        */
       eventName?: string;
+      /**
+       * If true, eventName is case sensitive. Defaults to true.
+       */
+      caseSensitive?: boolean;
+      /**
+       * If true, treats eventName as a regex. Defaults to false.
+       */
+      isRegex?: boolean;
     }
     export type removeEventBreakpointReturnValue = {
     }
@@ -3714,7 +3754,7 @@ might return multiple quads for inline nodes.
       /**
        * Pause reason.
        */
-      reason: "XHR"|"Fetch"|"DOM"|"AnimationFrame"|"Interval"|"Listener"|"Timeout"|"exception"|"assert"|"CSPViolation"|"DebuggerStatement"|"Breakpoint"|"PauseOnNextStatement"|"Microtask"|"BlackboxedScript"|"other";
+      reason: "URL"|"DOM"|"AnimationFrame"|"Interval"|"Listener"|"Timeout"|"exception"|"assert"|"CSPViolation"|"DebuggerStatement"|"Breakpoint"|"PauseOnNextStatement"|"Microtask"|"FunctionCall"|"BlackboxedScript"|"other";
       /**
        * Object containing break-specific auxiliary properties.
        */
@@ -3850,6 +3890,48 @@ might return multiple quads for inline nodes.
     export type removeBreakpointReturnValue = {
     }
     /**
+     * Adds a JavaScript breakpoint that pauses execution whenever a function with the given name is about to be called.
+     */
+    export type addSymbolicBreakpointParameters = {
+      /**
+       * The name of the function to pause in when called.
+       */
+      symbol: string;
+      /**
+       * If true, symbol is case sensitive. Defaults to true.
+       */
+      caseSensitive?: boolean;
+      /**
+       * If true, treats symbol as a regex. Defaults to false.
+       */
+      isRegex?: boolean;
+      /**
+       * Options to apply to this breakpoint to modify its behavior.
+       */
+      options?: BreakpointOptions;
+    }
+    export type addSymbolicBreakpointReturnValue = {
+    }
+    /**
+     * Removes a previously added symbolic breakpoint.
+     */
+    export type removeSymbolicBreakpointParameters = {
+      /**
+       * The name of the function to pause in when called.
+       */
+      symbol: string;
+      /**
+       * If true, symbol is case sensitive. Defaults to true.
+       */
+      caseSensitive?: boolean;
+      /**
+       * If true, treats symbol as a regex. Defaults to false.
+       */
+      isRegex?: boolean;
+    }
+    export type removeSymbolicBreakpointReturnValue = {
+    }
+    /**
      * Continues execution until the current evaluation completes. This will trigger either a Debugger.paused or Debugger.resumed event.
      */
     export type continueUntilNextRunLoopParameters = {
@@ -3965,6 +4047,25 @@ might return multiple quads for inline nodes.
        * Information about the function.
        */
       details: FunctionDetails;
+    }
+    /**
+     * Returns a list of valid breakpoint locations within the given location range.
+     */
+    export type getBreakpointLocationsParameters = {
+      /**
+       * Starting location to look for breakpoint locations after (inclusive). Must have same scriptId as end.
+       */
+      start: Location;
+      /**
+       * Ending location to look for breakpoint locations before (exclusive). Must have same scriptId as start.
+       */
+      end: Location;
+    }
+    export type getBreakpointLocationsReturnValue = {
+      /**
+       * List of resolved breakpoint locations.
+       */
+      locations: Location[];
     }
     /**
      * Control whether the debugger pauses execution before `debugger` statements.
@@ -5179,6 +5280,10 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
      */
     export type Walltime = number;
     /**
+     * Controls how much referrer information is sent with the request
+     */
+    export type ReferrerPolicy = "empty-string"|"no-referrer"|"no-referrer-when-downgrade"|"same-origin"|"origin"|"strict-origin"|"origin-when-cross-origin"|"strict-origin-when-cross-origin"|"unsafe-url";
+    /**
      * Request / response headers as keys / values of JSON object.
      */
     export type Headers = { [key: string]: string };
@@ -5255,6 +5360,14 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        * HTTP POST request data.
        */
       postData?: string;
+      /**
+       * The level of included referrer information.
+       */
+      referrerPolicy?: ReferrerPolicy;
+      /**
+       * The base64 cryptographic hash of the resource.
+       */
+      integrity?: string;
     }
     /**
      * HTTP response data.
@@ -5345,6 +5458,10 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        * Connection information for the completed request.
        */
       securityConnection?: Security.Connection;
+      /**
+       * Whether or not the connection was proxied through a server. If <code>true</code>, the <code>remoteAddress</code> will be for the proxy server, not the server that provided the resource to the proxy server.
+       */
+      isProxyConnection?: boolean;
     }
     /**
      * WebSocket request data.
@@ -5429,7 +5546,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
       /**
        * Initiator JavaScript stack trace, set for Script only.
        */
-      stackTrace?: Console.CallFrame[];
+      stackTrace?: Console.StackTrace;
       /**
        * Initiator URL, set for Parser type only.
        */
@@ -6039,6 +6156,17 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     export type interceptRequestWithErrorReturnValue = {
     }
     /**
+     * Emulate various network conditions (e.g. bytes per second, latency, etc.).
+     */
+    export type setEmulatedConditionsParameters = {
+      /**
+       * Limits the bytes per second of requests if positive. Removes any limits if zero or not provided.
+       */
+      bytesPerSecondLimit?: number;
+    }
+    export type setEmulatedConditionsReturnValue = {
+    }
+    /**
      * Emulate offline state overriding the actual state.
      */
     export type setEmulateOfflineStateParameters = {
@@ -6079,6 +6207,10 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
      * Page reduced-motion media query override.
      */
     export type ReducedMotion = "Reduce"|"NoPreference";
+    /**
+     * Page forced-colors media query override.
+     */
+    export type ForcedColors = "Active"|"None";
     /**
      * Information about the Frame on the page.
      */
@@ -6764,6 +6896,14 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     export type setForcedReducedMotionReturnValue = {
     }
     /**
+     * Forces the forced-colors media query for the page.
+     */
+    export type setForcedColorsParameters = {
+      forcedColors?: ForcedColors;
+    }
+    export type setForcedColorsReturnValue = {
+    }
+    /**
      * Enables time zone emulation.
      */
     export type setTimeZoneParameters = {
@@ -7415,7 +7555,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
      */
     export interface Frame {
       /**
-       * Information about an action made to the recorded object. Follows the structure [name, parameters, swizzleTypes, trace, snapshot], where name is a string, parameters is an array, swizzleTypes is an array, trace is an array, and snapshot is a data URL image of the current contents after this action.
+       * Information about an action made to the recorded object. Follows the structure [name, parameters, swizzleTypes, stackTrace, snapshot], where name is a string, parameters is an array, swizzleTypes is an array, stackTrace is a Console.StackTrace, and snapshot is a data URL image of the current contents after this action.
        */
       actions: any[];
       /**
@@ -7834,6 +7974,23 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        */
       context: ExecutionContextDescription;
     }
+    /**
+     * Issued when new execution context is created.
+     */
+    export type bindingCalledPayload = {
+      /**
+       * Id of the execution context where the binding was called.
+       */
+      contextId: ExecutionContextId;
+      /**
+       * Name of the bound function.
+       */
+      name: string;
+      /**
+       * String argument passed to the function.
+       */
+      argument: string;
+    }
     
     /**
      * Parses JavaScript source code for errors.
@@ -7994,6 +8151,17 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        * True if the result was thrown during the evaluation.
        */
       wasThrown?: boolean;
+    }
+    /**
+     * Adds binding with the given name on the global objects of all inspected contexts. Each binding function call produces Runtime.bindingCalled event.
+     */
+    export type addBindingParameters = {
+      /**
+       * Name of the bound function.
+       */
+      name: string;
+    }
+    export type addBindingReturnValue = {
     }
     /**
      * Returns a preview for the given object.
@@ -8560,11 +8728,11 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     /**
      * Timeline record type.
      */
-    export type EventType = "EventDispatch"|"ScheduleStyleRecalculation"|"RecalculateStyles"|"InvalidateLayout"|"Layout"|"Paint"|"Composite"|"RenderingFrame"|"TimerInstall"|"TimerRemove"|"TimerFire"|"EvaluateScript"|"TimeStamp"|"Time"|"TimeEnd"|"FunctionCall"|"ProbeSample"|"ConsoleProfile"|"RequestAnimationFrame"|"CancelAnimationFrame"|"FireAnimationFrame"|"ObserverCallback";
+    export type EventType = "EventDispatch"|"ScheduleStyleRecalculation"|"RecalculateStyles"|"InvalidateLayout"|"Layout"|"Paint"|"Composite"|"RenderingFrame"|"TimerInstall"|"TimerRemove"|"TimerFire"|"EvaluateScript"|"TimeStamp"|"Time"|"TimeEnd"|"FunctionCall"|"ProbeSample"|"ConsoleProfile"|"RequestAnimationFrame"|"CancelAnimationFrame"|"FireAnimationFrame"|"ObserverCallback"|"Screenshot";
     /**
      * Instrument types.
      */
-    export type Instrument = "ScriptProfiler"|"Timeline"|"CPU"|"Memory"|"Heap"|"Animation";
+    export type Instrument = "ScriptProfiler"|"Timeline"|"CPU"|"Memory"|"Heap"|"Animation"|"Screenshot";
     /**
      * Timeline record contains information about the recorded activity.
      */
@@ -8749,7 +8917,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "CSS.styleSheetChanged": CSS.styleSheetChangedPayload;
     "CSS.styleSheetAdded": CSS.styleSheetAddedPayload;
     "CSS.styleSheetRemoved": CSS.styleSheetRemovedPayload;
-    "CSS.nodeLayoutContextTypeChanged": CSS.nodeLayoutContextTypeChangedPayload;
+    "CSS.nodeLayoutFlagsChanged": CSS.nodeLayoutFlagsChangedPayload;
     "Canvas.canvasAdded": Canvas.canvasAddedPayload;
     "Canvas.canvasRemoved": Canvas.canvasRemovedPayload;
     "Canvas.canvasMemoryChanged": Canvas.canvasMemoryChangedPayload;
@@ -8846,6 +9014,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Playwright.downloadFinished": Playwright.downloadFinishedPayload;
     "Playwright.screencastFinished": Playwright.screencastFinishedPayload;
     "Runtime.executionContextCreated": Runtime.executionContextCreatedPayload;
+    "Runtime.bindingCalled": Runtime.bindingCalledPayload;
     "Screencast.screencastFrame": Screencast.screencastFramePayload;
     "ScriptProfiler.trackingStart": ScriptProfiler.trackingStartPayload;
     "ScriptProfiler.trackingUpdate": ScriptProfiler.trackingUpdatePayload;
@@ -8991,6 +9160,8 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Debugger.setBreakpointByUrl": Debugger.setBreakpointByUrlParameters;
     "Debugger.setBreakpoint": Debugger.setBreakpointParameters;
     "Debugger.removeBreakpoint": Debugger.removeBreakpointParameters;
+    "Debugger.addSymbolicBreakpoint": Debugger.addSymbolicBreakpointParameters;
+    "Debugger.removeSymbolicBreakpoint": Debugger.removeSymbolicBreakpointParameters;
     "Debugger.continueUntilNextRunLoop": Debugger.continueUntilNextRunLoopParameters;
     "Debugger.continueToLocation": Debugger.continueToLocationParameters;
     "Debugger.stepNext": Debugger.stepNextParameters;
@@ -9002,6 +9173,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Debugger.searchInContent": Debugger.searchInContentParameters;
     "Debugger.getScriptSource": Debugger.getScriptSourceParameters;
     "Debugger.getFunctionDetails": Debugger.getFunctionDetailsParameters;
+    "Debugger.getBreakpointLocations": Debugger.getBreakpointLocationsParameters;
     "Debugger.setPauseOnDebuggerStatements": Debugger.setPauseOnDebuggerStatementsParameters;
     "Debugger.setPauseOnExceptions": Debugger.setPauseOnExceptionsParameters;
     "Debugger.setPauseOnAssertions": Debugger.setPauseOnAssertionsParameters;
@@ -9064,6 +9236,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Network.interceptWithResponse": Network.interceptWithResponseParameters;
     "Network.interceptRequestWithResponse": Network.interceptRequestWithResponseParameters;
     "Network.interceptRequestWithError": Network.interceptRequestWithErrorParameters;
+    "Network.setEmulatedConditions": Network.setEmulatedConditionsParameters;
     "Network.setEmulateOfflineState": Network.setEmulateOfflineStateParameters;
     "Page.enable": Page.enableParameters;
     "Page.disable": Page.disableParameters;
@@ -9087,6 +9260,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.setEmulatedMedia": Page.setEmulatedMediaParameters;
     "Page.setForcedAppearance": Page.setForcedAppearanceParameters;
     "Page.setForcedReducedMotion": Page.setForcedReducedMotionParameters;
+    "Page.setForcedColors": Page.setForcedColorsParameters;
     "Page.setTimeZone": Page.setTimeZoneParameters;
     "Page.setTouchEmulationEnabled": Page.setTouchEmulationEnabledParameters;
     "Page.snapshotNode": Page.snapshotNodeParameters;
@@ -9124,6 +9298,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Runtime.evaluate": Runtime.evaluateParameters;
     "Runtime.awaitPromise": Runtime.awaitPromiseParameters;
     "Runtime.callFunctionOn": Runtime.callFunctionOnParameters;
+    "Runtime.addBinding": Runtime.addBindingParameters;
     "Runtime.getPreview": Runtime.getPreviewParameters;
     "Runtime.getProperties": Runtime.getPropertiesParameters;
     "Runtime.getDisplayableProperties": Runtime.getDisplayablePropertiesParameters;
@@ -9293,6 +9468,8 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Debugger.setBreakpointByUrl": Debugger.setBreakpointByUrlReturnValue;
     "Debugger.setBreakpoint": Debugger.setBreakpointReturnValue;
     "Debugger.removeBreakpoint": Debugger.removeBreakpointReturnValue;
+    "Debugger.addSymbolicBreakpoint": Debugger.addSymbolicBreakpointReturnValue;
+    "Debugger.removeSymbolicBreakpoint": Debugger.removeSymbolicBreakpointReturnValue;
     "Debugger.continueUntilNextRunLoop": Debugger.continueUntilNextRunLoopReturnValue;
     "Debugger.continueToLocation": Debugger.continueToLocationReturnValue;
     "Debugger.stepNext": Debugger.stepNextReturnValue;
@@ -9304,6 +9481,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Debugger.searchInContent": Debugger.searchInContentReturnValue;
     "Debugger.getScriptSource": Debugger.getScriptSourceReturnValue;
     "Debugger.getFunctionDetails": Debugger.getFunctionDetailsReturnValue;
+    "Debugger.getBreakpointLocations": Debugger.getBreakpointLocationsReturnValue;
     "Debugger.setPauseOnDebuggerStatements": Debugger.setPauseOnDebuggerStatementsReturnValue;
     "Debugger.setPauseOnExceptions": Debugger.setPauseOnExceptionsReturnValue;
     "Debugger.setPauseOnAssertions": Debugger.setPauseOnAssertionsReturnValue;
@@ -9366,6 +9544,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Network.interceptWithResponse": Network.interceptWithResponseReturnValue;
     "Network.interceptRequestWithResponse": Network.interceptRequestWithResponseReturnValue;
     "Network.interceptRequestWithError": Network.interceptRequestWithErrorReturnValue;
+    "Network.setEmulatedConditions": Network.setEmulatedConditionsReturnValue;
     "Network.setEmulateOfflineState": Network.setEmulateOfflineStateReturnValue;
     "Page.enable": Page.enableReturnValue;
     "Page.disable": Page.disableReturnValue;
@@ -9389,6 +9568,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.setEmulatedMedia": Page.setEmulatedMediaReturnValue;
     "Page.setForcedAppearance": Page.setForcedAppearanceReturnValue;
     "Page.setForcedReducedMotion": Page.setForcedReducedMotionReturnValue;
+    "Page.setForcedColors": Page.setForcedColorsReturnValue;
     "Page.setTimeZone": Page.setTimeZoneReturnValue;
     "Page.setTouchEmulationEnabled": Page.setTouchEmulationEnabledReturnValue;
     "Page.snapshotNode": Page.snapshotNodeReturnValue;
@@ -9426,6 +9606,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Runtime.evaluate": Runtime.evaluateReturnValue;
     "Runtime.awaitPromise": Runtime.awaitPromiseReturnValue;
     "Runtime.callFunctionOn": Runtime.callFunctionOnReturnValue;
+    "Runtime.addBinding": Runtime.addBindingReturnValue;
     "Runtime.getPreview": Runtime.getPreviewReturnValue;
     "Runtime.getProperties": Runtime.getPropertiesReturnValue;
     "Runtime.getDisplayableProperties": Runtime.getDisplayablePropertiesReturnValue;

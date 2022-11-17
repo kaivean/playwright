@@ -17,22 +17,31 @@
 import fs from 'fs';
 import * as os from 'os';
 import path from 'path';
-import { BrowserContext, normalizeProxySettings, validateBrowserContextOptions } from './browserContext';
-import { registry, BrowserName } from '../utils/registry';
-import { ConnectionTransport, WebSocketTransport } from './transport';
-import { BrowserOptions, Browser, BrowserProcess, PlaywrightOptions } from './browser';
-import { launchProcess, Env, envArrayToObject } from '../utils/processLauncher';
+import type { BrowserContext } from './browserContext';
+import { normalizeProxySettings, validateBrowserContextOptions } from './browserContext';
+import type { BrowserName } from './registry';
+import { registry } from './registry';
+import type { ConnectionTransport } from './transport';
+import { WebSocketTransport } from './transport';
+import type { BrowserOptions, Browser, BrowserProcess, PlaywrightOptions } from './browser';
+import type { Env } from '../utils/processLauncher';
+import { launchProcess, envArrayToObject } from '../utils/processLauncher';
 import { PipeTransport } from './pipeTransport';
-import { Progress, ProgressController } from './progress';
-import * as types from './types';
-import { DEFAULT_TIMEOUT, TimeoutSettings } from '../utils/timeoutSettings';
-import { debugMode, existsAsync } from '../utils/utils';
+import type { Progress } from './progress';
+import { ProgressController } from './progress';
+import type * as types from './types';
+import type * as channels from '@protocol/channels';
+import { DEFAULT_TIMEOUT, TimeoutSettings } from '../common/timeoutSettings';
+import { debugMode } from '../utils';
+import { existsAsync } from '../utils/fileUtils';
 import { helper } from './helper';
-import { RecentLogsCollector } from '../utils/debugLogger';
-import { CallMetadata, SdkObject } from './instrumentation';
+import { RecentLogsCollector } from '../common/debugLogger';
+import type { CallMetadata } from './instrumentation';
+import { SdkObject } from './instrumentation';
+import { ManualPromise } from '../utils/manualPromise';
 
 export const kNoXServerRunningError = 'Looks like you launched a headed browser without having a XServer running.\n' +
-  'Set either \'headless: false\' or use \'xvfb-run <your-playwright-app>\' before running Playwright.\n\n<3 Playwright Team';
+  'Set either \'headless: true\' or use \'xvfb-run <your-playwright-app>\' before running Playwright.\n\n<3 Playwright Team';
 
 export abstract class BrowserType extends SdkObject {
   private _name: BrowserName;
@@ -62,22 +71,22 @@ export abstract class BrowserType extends SdkObject {
       if (seleniumHubUrl)
         return this._launchWithSeleniumHub(progress, seleniumHubUrl, options);
       return this._innerLaunchWithRetries(progress, options, undefined, helper.debugProtocolLogger(protocolLogger)).catch(e => { throw this._rewriteStartupError(e); });
-    }, TimeoutSettings.timeout(options));
+    }, TimeoutSettings.launchTimeout(options));
     return browser;
   }
 
-  async launchPersistentContext(metadata: CallMetadata, userDataDir: string, options: types.LaunchPersistentOptions): Promise<BrowserContext> {
+  async launchPersistentContext(metadata: CallMetadata, userDataDir: string, options: channels.BrowserTypeLaunchPersistentContextOptions & { useWebSocket?: boolean }): Promise<BrowserContext> {
     options = this._validateLaunchOptions(options);
     const controller = new ProgressController(metadata, this);
-    const persistent: types.BrowserContextOptions = options;
+    const persistent: channels.BrowserNewContextParams = options;
     controller.setLogName('browser');
     const browser = await controller.run(progress => {
       return this._innerLaunchWithRetries(progress, options, persistent, helper.debugProtocolLogger(), userDataDir).catch(e => { throw this._rewriteStartupError(e); });
-    }, TimeoutSettings.timeout(options));
+    }, TimeoutSettings.launchTimeout(options));
     return browser._defaultContext!;
   }
 
-  async _innerLaunchWithRetries(progress: Progress, options: types.LaunchOptions, persistent: types.BrowserContextOptions | undefined, protocolLogger: types.ProtocolLogger, userDataDir?: string): Promise<Browser> {
+  async _innerLaunchWithRetries(progress: Progress, options: types.LaunchOptions, persistent: channels.BrowserNewContextParams | undefined, protocolLogger: types.ProtocolLogger, userDataDir?: string): Promise<Browser> {
     try {
       return await this._innerLaunch(progress, options, persistent, protocolLogger, userDataDir);
     } catch (error) {
@@ -91,10 +100,10 @@ export abstract class BrowserType extends SdkObject {
     }
   }
 
-  async _innerLaunch(progress: Progress, options: types.LaunchOptions, persistent: types.BrowserContextOptions | undefined, protocolLogger: types.ProtocolLogger, userDataDir?: string): Promise<Browser> {
+  async _innerLaunch(progress: Progress, options: types.LaunchOptions, persistent: channels.BrowserNewContextParams | undefined, protocolLogger: types.ProtocolLogger, maybeUserDataDir?: string): Promise<Browser> {
     options.proxy = options.proxy ? normalizeProxySettings(options.proxy) : undefined;
     const browserLogsCollector = new RecentLogsCollector();
-    const { browserProcess, artifactsDir, transport } = await this._launchProcess(progress, options, !!persistent, browserLogsCollector, userDataDir);
+    const { browserProcess, userDataDir, artifactsDir, transport } = await this._launchProcess(progress, options, !!persistent, browserLogsCollector, maybeUserDataDir);
     if ((options as any).__testHookBeforeCreateBrowser)
       await (options as any).__testHookBeforeCreateBrowser();
     const browserOptions: BrowserOptions = {
@@ -114,18 +123,20 @@ export abstract class BrowserType extends SdkObject {
       protocolLogger,
       browserLogsCollector,
       wsEndpoint: options.useWebSocket ? (transport as WebSocketTransport).wsEndpoint : undefined,
+      originalLaunchOptions: options,
     };
     if (persistent)
       validateBrowserContextOptions(persistent, browserOptions);
     copyTestHooks(options, browserOptions);
     const browser = await this._connectToTransport(transport, browserOptions);
+    (browser as any)._userDataDirForTest = userDataDir;
     // We assume no control when using custom arguments, and do not prepare the default context in that case.
     if (persistent && !options.ignoreAllDefaultArgs)
       await browser._defaultContext!._loadDefaultContext(progress);
     return browser;
   }
 
-  private async _launchProcess(progress: Progress, options: types.LaunchOptions, isPersistent: boolean, browserLogsCollector: RecentLogsCollector, userDataDir?: string): Promise<{ browserProcess: BrowserProcess, artifactsDir: string, transport: ConnectionTransport }> {
+  private async _launchProcess(progress: Progress, options: types.LaunchOptions, isPersistent: boolean, browserLogsCollector: RecentLogsCollector, userDataDir?: string): Promise<{ browserProcess: BrowserProcess, artifactsDir: string, userDataDir: string, transport: ConnectionTransport }> {
     const {
       ignoreDefaultArgs,
       ignoreAllDefaultArgs,
@@ -177,9 +188,8 @@ export abstract class BrowserType extends SdkObject {
       await registryExecutable.validateHostRequirements(this._playwrightOptions.sdkLanguage);
     }
 
-    let wsEndpointCallback: ((wsEndpoint: string) => void) | undefined;
-    const shouldWaitForWSListening = options.useWebSocket || options.args?.some(a => a.startsWith('--remote-debugging-port'));
-    const waitForWSEndpoint = shouldWaitForWSListening ? new Promise<string>(f => wsEndpointCallback = f) : undefined;
+    const waitForWSEndpoint = (options.useWebSocket || options.args?.some(a => a.startsWith('--remote-debugging-port'))) ? new ManualPromise<string>() : undefined;
+    const waitForJuggler = this._name === 'firefox' ? new ManualPromise<void>() : undefined;
     // Note: it is important to define these variables before launchProcess, so that we don't get
     // "Cannot access 'browserServer' before initialization" if something went wrong.
     let transport: ConnectionTransport | undefined = undefined;
@@ -192,11 +202,13 @@ export abstract class BrowserType extends SdkObject {
       handleSIGTERM,
       handleSIGHUP,
       log: (message: string) => {
-        if (wsEndpointCallback) {
+        if (waitForWSEndpoint) {
           const match = message.match(/DevTools listening on (.*)/);
           if (match)
-            wsEndpointCallback(match[1]);
+            waitForWSEndpoint.resolve(match[1]);
         }
+        if (waitForJuggler && message.includes('Juggler listening to the pipe'))
+          waitForJuggler.resolve();
         progress.log(message);
         browserLogsCollector.log(message);
       },
@@ -211,6 +223,8 @@ export abstract class BrowserType extends SdkObject {
         this._attemptToGracefullyCloseBrowser(transport!);
       },
       onExit: (exitCode, signal) => {
+        // Unblock launch when browser prematurely exits.
+        waitForJuggler?.resolve();
         if (browserProcess && browserProcess.onclose)
           browserProcess.onclose(exitCode, signal);
       },
@@ -235,16 +249,15 @@ export abstract class BrowserType extends SdkObject {
       kill
     };
     progress.cleanupWhenAborted(() => closeOrKill(progress.timeUntilDeadline()));
-    let wsEndpoint: string | undefined;
-    if (shouldWaitForWSListening)
-      wsEndpoint = await waitForWSEndpoint;
+    const wsEndpoint = await waitForWSEndpoint;
+    await waitForJuggler;
     if (options.useWebSocket) {
       transport = await WebSocketTransport.connect(progress, wsEndpoint!);
     } else {
       const stdio = launchedProcess.stdio as unknown as [NodeJS.ReadableStream, NodeJS.WritableStream, NodeJS.WritableStream, NodeJS.WritableStream, NodeJS.ReadableStream];
       transport = new PipeTransport(stdio[3], stdio[4]);
     }
-    return { browserProcess, artifactsDir, transport };
+    return { browserProcess, artifactsDir, userDataDir, transport };
   }
 
   async connectOverCDP(metadata: CallMetadata, endpointURL: string, options: { slowMo?: number }, timeout?: number): Promise<Browser> {

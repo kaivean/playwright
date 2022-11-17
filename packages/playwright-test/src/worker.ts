@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { Console } from 'console';
+import type { WriteStream } from 'tty';
 import * as util from 'util';
-import { RunPayload, TeardownErrorsPayload, TestOutputPayload, WorkerInitParams } from './ipc';
+import type { RunPayload, TeardownErrorsPayload, TestOutputPayload, TtyParams, WorkerInitParams } from './ipc';
 import { startProfiling, stopProfiling } from './profiler';
 import { serializeError } from './util';
 import { WorkerRunner } from './workerRunner';
@@ -25,15 +25,9 @@ let closed = false;
 
 sendMessageToParent('ready');
 
-global.console = new Console({
-  stdout: process.stdout,
-  stderr: process.stderr,
-  colorMode: process.env.FORCE_COLOR === '1',
-});
-
 process.stdout.write = (chunk: string | Buffer) => {
   const outPayload: TestOutputPayload = {
-    testId: workerRunner?._currentTest?._test._id,
+    testId: workerRunner?._currentTest?._test.id,
     ...chunkToParams(chunk)
   };
   sendMessageToParent('stdOut', outPayload);
@@ -43,7 +37,7 @@ process.stdout.write = (chunk: string | Buffer) => {
 if (!process.env.PW_RUNNER_DEBUG) {
   process.stderr.write = (chunk: string | Buffer) => {
     const outPayload: TestOutputPayload = {
-      testId: workerRunner?._currentTest?._test._id,
+      testId: workerRunner?._currentTest?._test.id,
       ...chunkToParams(chunk)
     };
     sendMessageToParent('stdErr', outPayload);
@@ -52,8 +46,8 @@ if (!process.env.PW_RUNNER_DEBUG) {
 }
 
 process.on('disconnect', gracefullyCloseAndExit);
-process.on('SIGINT',() => {});
-process.on('SIGTERM',() => {});
+process.on('SIGINT', () => {});
+process.on('SIGTERM', () => {});
 
 let workerRunner: WorkerRunner;
 let workerIndex: number | undefined;
@@ -72,9 +66,10 @@ process.on('message', async message => {
   if (message.method === 'init') {
     const initParams = message.params as WorkerInitParams;
     workerIndex = initParams.workerIndex;
+    initConsoleParameters(initParams);
     startProfiling();
     workerRunner = new WorkerRunner(initParams);
-    for (const event of ['testBegin', 'testEnd', 'stepBegin', 'stepEnd', 'done', 'teardownErrors'])
+    for (const event of ['watchTestResolved', 'testBegin', 'testEnd', 'stepBegin', 'stepEnd', 'done', 'teardownErrors'])
       workerRunner.on(event, sendMessageToParent.bind(null, event));
     return;
   }
@@ -103,8 +98,13 @@ async function gracefullyCloseAndExit() {
     if (workerIndex !== undefined)
       await stopProfiling(workerIndex);
   } catch (e) {
-    const payload: TeardownErrorsPayload = { fatalErrors: [serializeError(e)] };
-    process.send!({ method: 'teardownErrors', params: payload });
+    try {
+      const error = serializeError(e);
+      workerRunner.appendWorkerTeardownDiagnostics(error);
+      const payload: TeardownErrorsPayload = { fatalErrors: [error] };
+      process.send!({ method: 'teardownErrors', params: payload });
+    } catch {
+    }
   }
   process.exit(0);
 }
@@ -123,4 +123,25 @@ function chunkToParams(chunk: Buffer | string):  { text?: string, buffer?: strin
   if (typeof chunk !== 'string')
     return { text: util.inspect(chunk) };
   return { text: chunk };
+}
+
+function initConsoleParameters(initParams: WorkerInitParams) {
+  // Make sure the output supports colors.
+  setTtyParams(process.stdout, initParams.stdoutParams);
+  setTtyParams(process.stderr, initParams.stderrParams);
+}
+
+function setTtyParams(stream: WriteStream, params: TtyParams) {
+  stream.isTTY = true;
+  if (params.rows)
+    stream.rows = params.rows;
+  if (params.columns)
+    stream.columns = params.columns;
+  stream.getColorDepth = () => params.colorDepth;
+  stream.hasColors = ((count = 16) => {
+    // count is optional and the first argument may actually be env.
+    if (typeof count !== 'number')
+      count = 16;
+    return count <= 2 ** params.colorDepth;
+  })as any;
 }

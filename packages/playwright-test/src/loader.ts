@@ -14,71 +14,96 @@
  * limitations under the License.
  */
 
-import { installTransform, setCurrentlyLoadingTestFile } from './transform';
-import type { FullConfig, Config, FullProject, Project, ReporterDescription, PreserveOutput } from './types';
-import { mergeObjects, errorWithFile } from './util';
-import { setCurrentlyLoadingFileSuite } from './globals';
-import { Suite } from './test';
-import { SerializedLoaderData } from './ipc';
-import * as path from 'path';
-import * as url from 'url';
 import * as fs from 'fs';
-import { ProjectImpl } from './project';
-import { Reporter } from '../types/testReporter';
-import { BuiltInReporter, builtInReporters } from './runner';
-import { isRegExp } from 'playwright-core/lib/utils/utils';
-import { serializeError } from './util';
+import * as os from 'os';
+import * as path from 'path';
+import { calculateSha1, isRegExp } from 'playwright-core/lib/utils';
+import * as url from 'url';
+import type { Reporter } from '../types/testReporter';
+import { FixturePool, isFixtureOption } from './fixtures';
+import { setCurrentlyLoadingFileSuite } from './globals';
+import type { SerializedLoaderData, WorkerIsolation } from './ipc';
+import type { BuiltInReporter, ConfigCLIOverrides } from './runner';
+import { builtInReporters } from './runner';
+import { Suite, type TestCase } from './test';
+import type { TestTypeImpl } from './testType';
+import { installTransform } from './transform';
+import type { Config, Fixtures, FixturesWithLocation, FullConfigInternal, FullProjectInternal, Project, ReporterDescription } from './types';
+import { errorWithFile, getPackageJsonPath, mergeObjects, serializeError } from './util';
+
+export const defaultTimeout = 30000;
 
 // To allow multiple loaders in the same process without clearing require cache,
 // we make these maps global.
 const cachedFileSuites = new Map<string, Suite>();
 
 export class Loader {
-  private _defaultConfig: Config;
-  private _configOverrides: Config;
-  private _fullConfig: FullConfig;
+  private _configCLIOverrides: ConfigCLIOverrides;
+  private _fullConfig: FullConfigInternal;
   private _configDir: string = '';
   private _configFile: string | undefined;
-  private _projects: ProjectImpl[] = [];
+  private _projectSuiteBuilders = new Map<FullProjectInternal, ProjectSuiteBuilder>();
 
-  constructor(defaultConfig: Config, configOverrides: Config) {
-    this._defaultConfig = defaultConfig;
-    this._configOverrides = configOverrides;
+  constructor(configCLIOverrides?: ConfigCLIOverrides) {
+    this._configCLIOverrides = configCLIOverrides || {};
     this._fullConfig = { ...baseFullConfig };
   }
 
   static async deserialize(data: SerializedLoaderData): Promise<Loader> {
-    const loader = new Loader(data.defaultConfig, data.overrides);
-    if ('file' in data.configFile)
-      await loader.loadConfigFile(data.configFile.file);
+    const loader = new Loader(data.configCLIOverrides);
+    if (data.configFile)
+      await loader.loadConfigFile(data.configFile);
     else
-      loader.loadEmptyConfig(data.configFile.configDir);
+      await loader.loadEmptyConfig(data.configDir);
     return loader;
   }
 
-  async loadConfigFile(file: string): Promise<Config> {
+  async loadConfigFile(file: string): Promise<FullConfigInternal> {
     if (this._configFile)
       throw new Error('Cannot load two config files');
-    let config = await this._requireOrImport(file);
-    if (config && typeof config === 'object' && ('default' in config))
-      config = config['default'];
+    const config = await this._requireOrImportDefaultObject(file) as Config;
     this._configFile = file;
-    const rawConfig = { ...config };
-    this._processConfigObject(config, path.dirname(file));
-    return rawConfig;
+    await this._processConfigObject(config, path.dirname(file));
+    return this._fullConfig;
   }
 
-  loadEmptyConfig(configDir: string): Config {
-    this._processConfigObject({}, configDir);
+  async loadEmptyConfig(configDir: string): Promise<Config> {
+    await this._processConfigObject({}, configDir);
     return {};
   }
 
-  private _processConfigObject(config: Config, configDir: string) {
+  private async _processConfigObject(config: Config, configDir: string) {
+    // 1. Validate data provided in the config file.
+    validateConfig(this._configFile || '<default config>', config);
+
+    // 2. Override settings from CLI.
+    config.forbidOnly = takeFirst(this._configCLIOverrides.forbidOnly, config.forbidOnly);
+    config.fullyParallel = takeFirst(this._configCLIOverrides.fullyParallel, config.fullyParallel);
+    config.globalTimeout = takeFirst(this._configCLIOverrides.globalTimeout, config.globalTimeout);
+    config.maxFailures = takeFirst(this._configCLIOverrides.maxFailures, config.maxFailures);
+    config.outputDir = takeFirst(this._configCLIOverrides.outputDir, config.outputDir);
+    config.quiet = takeFirst(this._configCLIOverrides.quiet, config.quiet);
+    config.repeatEach = takeFirst(this._configCLIOverrides.repeatEach, config.repeatEach);
+    config.retries = takeFirst(this._configCLIOverrides.retries, config.retries);
+    if (this._configCLIOverrides.reporter)
+      config.reporter = toReporters(this._configCLIOverrides.reporter as any);
+    config.shard = takeFirst(this._configCLIOverrides.shard, config.shard);
+    config.timeout = takeFirst(this._configCLIOverrides.timeout, config.timeout);
+    config.updateSnapshots = takeFirst(this._configCLIOverrides.updateSnapshots, config.updateSnapshots);
+    config.ignoreSnapshots = takeFirst(this._configCLIOverrides.ignoreSnapshots, config.ignoreSnapshots);
+    if (this._configCLIOverrides.projects && config.projects)
+      throw new Error(`Cannot use --browser option when configuration file defines projects. Specify browserName in the projects instead.`);
+    config.projects = takeFirst(this._configCLIOverrides.projects, config.projects as any);
+    config.workers = takeFirst(this._configCLIOverrides.workers, config.workers);
+    config.use = mergeObjects(config.use, this._configCLIOverrides.use);
+    for (const project of config.projects || [])
+      this._applyCLIOverridesToProject(project);
+
+    // 3. Resolve config.
     this._configDir = configDir;
     const packageJsonPath = getPackageJsonPath(configDir);
     const packageJsonDir = packageJsonPath ? path.dirname(packageJsonPath) : undefined;
     const throwawayArtifactsPath = packageJsonDir || process.cwd();
-    validateConfig(this._configFile || '<default config>', config);
 
     // Resolve script hooks relative to the root dir.
     if (config.globalSetup)
@@ -90,46 +115,78 @@ export class Loader {
       config.testDir = path.resolve(configDir, config.testDir);
     if (config.outputDir !== undefined)
       config.outputDir = path.resolve(configDir, config.outputDir);
-    if (config.screenshotsDir !== undefined)
-      config.screenshotsDir = path.resolve(configDir, config.screenshotsDir);
     if (config.snapshotDir !== undefined)
       config.snapshotDir = path.resolve(configDir, config.snapshotDir);
 
-    const configUse = mergeObjects(this._defaultConfig.use, config.use);
-    config = mergeObjects(mergeObjects(this._defaultConfig, config), { use: configUse });
-
+    this._fullConfig._configDir = configDir;
+    this._fullConfig._storageDir = path.resolve(configDir, '.playwright-storage');
+    this._fullConfig.configFile = this._configFile;
     this._fullConfig.rootDir = config.testDir || this._configDir;
-    this._fullConfig.forbidOnly = takeFirst(this._configOverrides.forbidOnly, config.forbidOnly, baseFullConfig.forbidOnly);
-    this._fullConfig.fullyParallel = takeFirst(this._configOverrides.fullyParallel, config.fullyParallel, baseFullConfig.fullyParallel);
-    this._fullConfig.globalSetup = takeFirst(this._configOverrides.globalSetup, config.globalSetup, baseFullConfig.globalSetup);
-    this._fullConfig.globalTeardown = takeFirst(this._configOverrides.globalTeardown, config.globalTeardown, baseFullConfig.globalTeardown);
-    this._fullConfig.globalTimeout = takeFirst(this._configOverrides.globalTimeout, this._configOverrides.globalTimeout, config.globalTimeout, baseFullConfig.globalTimeout);
-    this._fullConfig.grep = takeFirst(this._configOverrides.grep, config.grep, baseFullConfig.grep);
-    this._fullConfig.grepInvert = takeFirst(this._configOverrides.grepInvert, config.grepInvert, baseFullConfig.grepInvert);
-    this._fullConfig.maxFailures = takeFirst(this._configOverrides.maxFailures, config.maxFailures, baseFullConfig.maxFailures);
-    this._fullConfig.preserveOutput = takeFirst<PreserveOutput>(this._configOverrides.preserveOutput, config.preserveOutput, baseFullConfig.preserveOutput);
-    this._fullConfig.reporter = takeFirst(toReporters(this._configOverrides.reporter as any), resolveReporters(config.reporter, configDir), baseFullConfig.reporter);
-    this._fullConfig.reportSlowTests = takeFirst(this._configOverrides.reportSlowTests, config.reportSlowTests, baseFullConfig.reportSlowTests);
-    this._fullConfig.quiet = takeFirst(this._configOverrides.quiet, config.quiet, baseFullConfig.quiet);
-    this._fullConfig.shard = takeFirst(this._configOverrides.shard, config.shard, baseFullConfig.shard);
-    this._fullConfig.updateSnapshots = takeFirst(this._configOverrides.updateSnapshots, config.updateSnapshots, baseFullConfig.updateSnapshots);
-    this._fullConfig.workers = takeFirst(this._configOverrides.workers, config.workers, baseFullConfig.workers);
-    this._fullConfig.webServer = takeFirst(this._configOverrides.webServer, config.webServer, baseFullConfig.webServer);
+    this._fullConfig._globalOutputDir = takeFirst(config.outputDir, throwawayArtifactsPath, baseFullConfig._globalOutputDir);
+    this._fullConfig.forbidOnly = takeFirst(config.forbidOnly, baseFullConfig.forbidOnly);
+    this._fullConfig.fullyParallel = takeFirst(config.fullyParallel, baseFullConfig.fullyParallel);
+    this._fullConfig.globalSetup = takeFirst(config.globalSetup, baseFullConfig.globalSetup);
+    this._fullConfig.globalTeardown = takeFirst(config.globalTeardown, baseFullConfig.globalTeardown);
+    this._fullConfig.globalTimeout = takeFirst(config.globalTimeout, baseFullConfig.globalTimeout);
+    this._fullConfig.grep = takeFirst(config.grep, baseFullConfig.grep);
+    this._fullConfig.grepInvert = takeFirst(config.grepInvert, baseFullConfig.grepInvert);
+    this._fullConfig.maxFailures = takeFirst(config.maxFailures, baseFullConfig.maxFailures);
+    this._fullConfig.preserveOutput = takeFirst(config.preserveOutput, baseFullConfig.preserveOutput);
+    this._fullConfig.reporter = takeFirst(resolveReporters(config.reporter, configDir), baseFullConfig.reporter);
+    this._fullConfig.reportSlowTests = takeFirst(config.reportSlowTests, baseFullConfig.reportSlowTests);
+    this._fullConfig.quiet = takeFirst(config.quiet, baseFullConfig.quiet);
+    this._fullConfig.shard = takeFirst(config.shard, baseFullConfig.shard);
+    this._fullConfig._ignoreSnapshots = takeFirst(config.ignoreSnapshots, baseFullConfig._ignoreSnapshots);
+    this._fullConfig.updateSnapshots = takeFirst(config.updateSnapshots, baseFullConfig.updateSnapshots);
 
-    const projects: Project[] = ('projects' in config) && config.projects !== undefined ? config.projects : [config];
-    for (const project of projects)
-      this._addProject(config, project, throwawayArtifactsPath);
-    this._fullConfig.projects = this._projects.map(p => p.config);
+    const workers = takeFirst(config.workers, '50%');
+    if (typeof workers === 'string') {
+      if (workers.endsWith('%')) {
+        const cpus = os.cpus().length;
+        this._fullConfig.workers = Math.max(1, Math.floor(cpus * (parseInt(workers, 10) / 100)));
+      } else {
+        this._fullConfig.workers = parseInt(workers, 10);
+      }
+    } else {
+      this._fullConfig.workers = workers;
+    }
+
+    const webServers = takeFirst(config.webServer, baseFullConfig.webServer);
+    if (Array.isArray(webServers)) { // multiple web server mode
+      // Due to previous choices, this value shows up to the user in globalSetup as part of FullConfig. Arrays are not supported by the old type.
+      this._fullConfig.webServer = null;
+      this._fullConfig._webServers = webServers;
+    } else if (webServers) { // legacy singleton mode
+      this._fullConfig.webServer = webServers;
+      this._fullConfig._webServers = [webServers];
+    }
+    this._fullConfig.metadata = takeFirst(config.metadata, baseFullConfig.metadata);
+    this._fullConfig.projects = (config.projects || [config]).map(p => this._resolveProject(config, this._fullConfig, p, throwawayArtifactsPath));
+    this._assignUniqueProjectIds(this._fullConfig.projects);
+  }
+
+  private _assignUniqueProjectIds(projects: FullProjectInternal[]) {
+    const usedNames = new Set();
+    for (const p of projects) {
+      const name = p.name || '';
+      for (let i = 0; i < projects.length; ++i) {
+        const candidate = name + (i ? i : '');
+        if (usedNames.has(candidate))
+          continue;
+        p._id = candidate;
+        usedNames.add(candidate);
+        break;
+      }
+    }
   }
 
   async loadTestFile(file: string, environment: 'runner' | 'worker') {
     if (cachedFileSuites.has(file))
       return cachedFileSuites.get(file)!;
-    const suite = new Suite(path.relative(this._fullConfig.rootDir, file) || path.basename(file));
+    const suite = new Suite(path.relative(this._fullConfig.rootDir, file) || path.basename(file), 'file');
     suite._requireFile = file;
     suite.location = { file, line: 0, column: 0 };
 
-    setCurrentlyLoadingTestFile(file);
     setCurrentlyLoadingFileSuite(suite);
     try {
       await this._requireOrImport(file);
@@ -139,7 +196,6 @@ export class Loader {
         throw e;
       suite._loadError = serializeError(e);
     } finally {
-      setCurrentlyLoadingTestFile(null);
       setCurrentlyLoadingFileSuite(undefined);
     }
 
@@ -166,76 +222,84 @@ export class Loader {
     return suite;
   }
 
-  async loadGlobalHook(file: string, name: string): Promise<(config: FullConfig) => any> {
-    let hook = await this._requireOrImport(file);
-    if (hook && typeof hook === 'object' && ('default' in hook))
-      hook = hook['default'];
-    if (typeof hook !== 'function')
-      throw errorWithFile(file, `${name} file must export a single function.`);
-    return hook;
+  async loadGlobalHook(file: string): Promise<(config: FullConfigInternal) => any> {
+    return this._requireOrImportDefaultFunction(path.resolve(this._fullConfig.rootDir, file), false);
   }
 
   async loadReporter(file: string): Promise<new (arg?: any) => Reporter> {
-    let func = await this._requireOrImport(path.resolve(this._fullConfig.rootDir, file));
-    if (func && typeof func === 'object' && ('default' in func))
-      func = func['default'];
-    if (typeof func !== 'function')
-      throw errorWithFile(file, `reporter file must export a single class.`);
-    return func;
+    return this._requireOrImportDefaultFunction(path.resolve(this._fullConfig.rootDir, file), true);
   }
 
-  fullConfig(): FullConfig {
+  fullConfig(): FullConfigInternal {
     return this._fullConfig;
   }
 
-  projects() {
-    return this._projects;
+  buildFileSuiteForProject(project: FullProjectInternal, suite: Suite, repeatEachIndex: number, filter: (test: TestCase) => boolean): Suite | undefined {
+    if (!this._projectSuiteBuilders.has(project))
+      this._projectSuiteBuilders.set(project, new ProjectSuiteBuilder(project));
+    const builder = this._projectSuiteBuilders.get(project)!;
+    return builder.cloneFileSuite(suite, 'isolate-pools', repeatEachIndex, filter);
   }
 
   serialize(): SerializedLoaderData {
-    return {
-      defaultConfig: this._defaultConfig,
-      configFile: this._configFile ? { file: this._configFile } : { configDir: this._configDir },
-      overrides: this._configOverrides,
+    const result: SerializedLoaderData = {
+      configFile: this._configFile,
+      configDir: this._configDir,
+      configCLIOverrides: this._configCLIOverrides,
     };
+    return result;
   }
 
-  private _addProject(config: Config, projectConfig: Project, throwawayArtifactsPath: string) {
+  private _applyCLIOverridesToProject(projectConfig: Project) {
+    projectConfig.fullyParallel = takeFirst(this._configCLIOverrides.fullyParallel, projectConfig.fullyParallel);
+    projectConfig.outputDir = takeFirst(this._configCLIOverrides.outputDir, projectConfig.outputDir);
+    projectConfig.repeatEach = takeFirst(this._configCLIOverrides.repeatEach, projectConfig.repeatEach);
+    projectConfig.retries = takeFirst(this._configCLIOverrides.retries, projectConfig.retries);
+    projectConfig.timeout = takeFirst(this._configCLIOverrides.timeout, projectConfig.timeout);
+    projectConfig.use = mergeObjects(projectConfig.use, this._configCLIOverrides.use);
+  }
+
+  private _resolveProject(config: Config, fullConfig: FullConfigInternal, projectConfig: Project, throwawayArtifactsPath: string): FullProjectInternal {
     // Resolve all config dirs relative to configDir.
     if (projectConfig.testDir !== undefined)
       projectConfig.testDir = path.resolve(this._configDir, projectConfig.testDir);
     if (projectConfig.outputDir !== undefined)
       projectConfig.outputDir = path.resolve(this._configDir, projectConfig.outputDir);
-    if (projectConfig.screenshotsDir !== undefined)
-      projectConfig.screenshotsDir = path.resolve(this._configDir, projectConfig.screenshotsDir);
     if (projectConfig.snapshotDir !== undefined)
       projectConfig.snapshotDir = path.resolve(this._configDir, projectConfig.snapshotDir);
 
-    const testDir = takeFirst(this._configOverrides.testDir, projectConfig.testDir, config.testDir, this._configDir);
+    const testDir = takeFirst(projectConfig.testDir, config.testDir, this._configDir);
+    const respectGitIgnore = !projectConfig.testDir && !config.testDir;
 
-    const outputDir = takeFirst(this._configOverrides.outputDir, projectConfig.outputDir, config.outputDir, path.join(throwawayArtifactsPath, 'test-results'));
-    const snapshotDir = takeFirst(this._configOverrides.snapshotDir, projectConfig.snapshotDir, config.snapshotDir, testDir);
-    const name = takeFirst(this._configOverrides.name, projectConfig.name, config.name, '');
-    const screenshotsDir = takeFirst(this._configOverrides.screenshotsDir, projectConfig.screenshotsDir, config.screenshotsDir, path.join(testDir, '__screenshots__', process.platform, name));
-    const fullProject: FullProject = {
-      fullyParallel: takeFirst(this._configOverrides.fullyParallel, projectConfig.fullyParallel, config.fullyParallel, undefined),
-      expect: takeFirst(this._configOverrides.expect, projectConfig.expect, config.expect, undefined),
-      grep: takeFirst(this._configOverrides.grep, projectConfig.grep, config.grep, baseFullConfig.grep),
-      grepInvert: takeFirst(this._configOverrides.grepInvert, projectConfig.grepInvert, config.grepInvert, baseFullConfig.grepInvert),
+    const outputDir = takeFirst(projectConfig.outputDir, config.outputDir, path.join(throwawayArtifactsPath, 'test-results'));
+    const snapshotDir = takeFirst(projectConfig.snapshotDir, config.snapshotDir, testDir);
+    const name = takeFirst(projectConfig.name, config.name, '');
+    const _setup = takeFirst(projectConfig.setup, []);
+
+    const defaultSnapshotPathTemplate = '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}';
+    const snapshotPathTemplate = takeFirst(projectConfig.snapshotPathTemplate, config.snapshotPathTemplate, defaultSnapshotPathTemplate);
+    return {
+      _id: '',
+      _fullConfig: fullConfig,
+      _fullyParallel: takeFirst(projectConfig.fullyParallel, config.fullyParallel, undefined),
+      _expect: takeFirst(projectConfig.expect, config.expect, {}),
+      grep: takeFirst(projectConfig.grep, config.grep, baseFullConfig.grep),
+      grepInvert: takeFirst(projectConfig.grepInvert, config.grepInvert, baseFullConfig.grepInvert),
       outputDir,
-      repeatEach: takeFirst(this._configOverrides.repeatEach, projectConfig.repeatEach, config.repeatEach, 1),
-      retries: takeFirst(this._configOverrides.retries, projectConfig.retries, config.retries, 0),
-      metadata: takeFirst(this._configOverrides.metadata, projectConfig.metadata, config.metadata, undefined),
+      repeatEach: takeFirst(projectConfig.repeatEach, config.repeatEach, 1),
+      retries: takeFirst(projectConfig.retries, config.retries, 0),
+      metadata: takeFirst(projectConfig.metadata, config.metadata, undefined),
       name,
       testDir,
+      _setup,
+      _respectGitIgnore: respectGitIgnore,
       snapshotDir,
-      screenshotsDir,
-      testIgnore: takeFirst(this._configOverrides.testIgnore, projectConfig.testIgnore, config.testIgnore, []),
-      testMatch: takeFirst(this._configOverrides.testMatch, projectConfig.testMatch, config.testMatch, '**/?(*.)@(spec|test).*'),
-      timeout: takeFirst(this._configOverrides.timeout, projectConfig.timeout, config.timeout, 10000),
-      use: mergeObjects(mergeObjects(config.use, projectConfig.use), this._configOverrides.use),
+      snapshotPathTemplate,
+      testIgnore: takeFirst(projectConfig.testIgnore, config.testIgnore, []),
+      testMatch: takeFirst(projectConfig.testMatch, config.testMatch, '**/?(*.)@(spec|test).*'),
+      timeout: takeFirst(projectConfig.timeout, config.timeout, defaultTimeout),
+      use: mergeObjects(config.use, projectConfig.use),
     };
-    this._projects.push(new ProjectImpl(fullProject, this._projects.length));
   }
 
   private async _requireOrImport(file: string) {
@@ -246,22 +310,144 @@ export class Loader {
       if (isModule)
         return await esmImport();
       return require(file);
-    } catch (error) {
-      if (error.code === 'ERR_MODULE_NOT_FOUND' && error.message.includes('Did you mean to import')) {
-        const didYouMean = /Did you mean to import (.*)\?/.exec(error.message)?.[1];
-        if (didYouMean?.endsWith('.ts'))
-          throw errorWithFile(file, 'Cannot import a typescript file from an esmodule.');
-      }
-      if (error.code === 'ERR_UNKNOWN_FILE_EXTENSION' && error.message.includes('.ts'))
-        throw errorWithFile(file, 'Cannot import a typescript file from an esmodule.');
-
-      if (error instanceof SyntaxError && error.message.includes('Cannot use import statement outside a module'))
-        throw errorWithFile(file, 'JavaScript files must end with .mjs to use import.');
-
-      throw error;
     } finally {
       revertBabelRequire();
     }
+  }
+
+  private async _requireOrImportDefaultFunction(file: string, expectConstructor: boolean) {
+    let func = await this._requireOrImport(file);
+    if (func && typeof func === 'object' && ('default' in func))
+      func = func['default'];
+    if (typeof func !== 'function')
+      throw errorWithFile(file, `file must export a single ${expectConstructor ? 'class' : 'function'}.`);
+    return func;
+  }
+
+  private async _requireOrImportDefaultObject(file: string) {
+    let object = await this._requireOrImport(file);
+    if (object && typeof object === 'object' && ('default' in object))
+      object = object['default'];
+    return object;
+  }
+}
+
+class ProjectSuiteBuilder {
+  private _project: FullProjectInternal;
+  private _testTypePools = new Map<TestTypeImpl, FixturePool>();
+  private _testPools = new Map<TestCase, FixturePool>();
+
+  constructor(project: FullProjectInternal) {
+    this._project = project;
+  }
+
+  private _buildTestTypePool(testType: TestTypeImpl): FixturePool {
+    if (!this._testTypePools.has(testType)) {
+      const fixtures = this._applyConfigUseOptions(testType, this._project.use || {});
+      const pool = new FixturePool(fixtures);
+      this._testTypePools.set(testType, pool);
+    }
+    return this._testTypePools.get(testType)!;
+  }
+
+  // TODO: we can optimize this function by building the pool inline in cloneSuite
+  private _buildPool(test: TestCase): FixturePool {
+    if (!this._testPools.has(test)) {
+      let pool = this._buildTestTypePool(test._testType);
+
+      const parents: Suite[] = [];
+      for (let parent: Suite | undefined = test.parent; parent; parent = parent.parent)
+        parents.push(parent);
+      parents.reverse();
+
+      for (const parent of parents) {
+        if (parent._use.length)
+          pool = new FixturePool(parent._use, pool, parent._type === 'describe');
+        for (const hook of parent._hooks)
+          pool.validateFunction(hook.fn, hook.type + ' hook', hook.location);
+        for (const modifier of parent._modifiers)
+          pool.validateFunction(modifier.fn, modifier.type + ' modifier', modifier.location);
+      }
+
+      pool.validateFunction(test.fn, 'Test', test.location);
+      this._testPools.set(test, pool);
+    }
+    return this._testPools.get(test)!;
+  }
+
+  private _cloneEntries(from: Suite, to: Suite, workerIsolation: WorkerIsolation, repeatEachIndex: number, filter: (test: TestCase) => boolean): boolean {
+    for (const entry of from._entries) {
+      if (entry instanceof Suite) {
+        const suite = entry._clone();
+        suite._fileId = to._fileId;
+        to._addSuite(suite);
+        // Ignore empty titles, similar to Suite.titlePath().
+        if (!this._cloneEntries(entry, suite, workerIsolation, repeatEachIndex, filter)) {
+          to._entries.pop();
+          to.suites.pop();
+        }
+      } else {
+        const test = entry._clone();
+        to._addTest(test);
+        test.retries = this._project.retries;
+        for (let parentSuite: Suite | undefined = to; parentSuite; parentSuite = parentSuite.parent) {
+          if (parentSuite._retries !== undefined) {
+            test.retries = parentSuite._retries;
+            break;
+          }
+        }
+        const repeatEachIndexSuffix = repeatEachIndex ? ` (repeat:${repeatEachIndex})` : '';
+        // At the point of the query, suite is not yet attached to the project, so we only get file, describe and test titles.
+        const testIdExpression = `[project=${this._project._id}]${test.titlePath().join('\x1e')}${repeatEachIndexSuffix}`;
+        const testId = to._fileId + '-' + calculateSha1(testIdExpression).slice(0, 20);
+        test.id = testId;
+        test.repeatEachIndex = repeatEachIndex;
+        test._projectId = this._project._id;
+        if (!filter(test)) {
+          to._entries.pop();
+          to.tests.pop();
+        } else {
+          const pool = this._buildPool(entry);
+          if (this._project._fullConfig._workerIsolation === 'isolate-pools')
+            test._workerHash = `run${this._project._id}-${pool.digest}-repeat${repeatEachIndex}`;
+          else
+            test._workerHash = `run${this._project._id}-repeat${repeatEachIndex}`;
+          test._pool = pool;
+        }
+      }
+    }
+    if (!to._entries.length)
+      return false;
+    return true;
+  }
+
+  cloneFileSuite(suite: Suite, workerIsolation: WorkerIsolation, repeatEachIndex: number, filter: (test: TestCase) => boolean): Suite | undefined {
+    const result = suite._clone();
+    const relativeFile = path.relative(this._project.testDir, suite.location!.file).split(path.sep).join('/');
+    result._fileId = calculateSha1(relativeFile).slice(0, 20);
+    return this._cloneEntries(suite, result, workerIsolation, repeatEachIndex, filter) ? result : undefined;
+  }
+
+  private _applyConfigUseOptions(testType: TestTypeImpl, configUse: Fixtures): FixturesWithLocation[] {
+    const configKeys = new Set(Object.keys(configUse));
+    if (!configKeys.size)
+      return testType.fixtures;
+    const result: FixturesWithLocation[] = [];
+    for (const f of testType.fixtures) {
+      const optionsFromConfig: Fixtures = {};
+      const originalFixtures: Fixtures = {};
+      for (const [key, value] of Object.entries(f.fixtures)) {
+        if (isFixtureOption(value) && configKeys.has(key))
+          (optionsFromConfig as any)[key] = [(configUse as any)[key], value[1]];
+        else
+          (originalFixtures as any)[key] = value;
+      }
+      if (Object.entries(optionsFromConfig).length)
+        result.push({ fixtures: optionsFromConfig, location: { file: `project#${this._project._id}`, line: 1, column: 1 } });
+      if (Object.entries(originalFixtures).length)
+        result.push({ fixtures: originalFixtures, location: f.location });
+    }
+    return result;
   }
 }
 
@@ -277,7 +463,7 @@ function toReporters(reporters: BuiltInReporter | ReporterDescription[] | undefi
   if (!reporters)
     return;
   if (typeof reporters === 'string')
-    return [ [reporters] ];
+    return [[reporters]];
   return reporters;
 }
 
@@ -325,7 +511,7 @@ function validateConfig(file: string, config: Config) {
           throw errorWithFile(file, `config.grepInvert[${index}] must be a RegExp`);
       });
     } else if (!isRegExp(config.grepInvert)) {
-      throw errorWithFile(file, `config.grep must be a RegExp`);
+      throw errorWithFile(file, `config.grepInvert must be a RegExp`);
     }
   }
 
@@ -381,14 +567,21 @@ function validateConfig(file: string, config: Config) {
       throw errorWithFile(file, `config.shard.current must be a positive number, not greater than config.shard.total`);
   }
 
+  if ('ignoreSnapshots' in config && config.ignoreSnapshots !== undefined) {
+    if (typeof config.ignoreSnapshots !== 'boolean')
+      throw errorWithFile(file, `config.ignoreSnapshots must be a boolean`);
+  }
+
   if ('updateSnapshots' in config && config.updateSnapshots !== undefined) {
     if (typeof config.updateSnapshots !== 'string' || !['all', 'none', 'missing'].includes(config.updateSnapshots))
       throw errorWithFile(file, `config.updateSnapshots must be one of "all", "none" or "missing"`);
   }
 
   if ('workers' in config && config.workers !== undefined) {
-    if (typeof config.workers !== 'number' || config.workers <= 0)
+    if (typeof config.workers === 'number' && config.workers <= 0)
       throw errorWithFile(file, `config.workers must be a positive number`);
+    else if (typeof config.workers === 'string' && !config.workers.endsWith('%'))
+      throw errorWithFile(file, `config.workers must be a number or percentage`);
   }
 }
 
@@ -421,7 +614,7 @@ function validateProject(file: string, project: Project, title: string) {
       throw errorWithFile(file, `${title}.testDir must be a string`);
   }
 
-  for (const prop of ['testIgnore', 'testMatch'] as const) {
+  for (const prop of ['testIgnore', 'testMatch', 'setup'] as const) {
     if (prop in project && project[prop] !== undefined) {
       const value = project[prop];
       if (Array.isArray(value)) {
@@ -446,7 +639,7 @@ function validateProject(file: string, project: Project, title: string) {
   }
 }
 
-const baseFullConfig: FullConfig = {
+export const baseFullConfig: FullConfigInternal = {
   forbidOnly: false,
   fullyParallel: false,
   globalSetup: null,
@@ -455,25 +648,33 @@ const baseFullConfig: FullConfig = {
   grep: /.*/,
   grepInvert: null,
   maxFailures: 0,
+  metadata: {},
   preserveOutput: 'always',
   projects: [],
-  reporter: [ ['list'] ],
-  reportSlowTests: null,
+  reporter: [[process.env.CI ? 'dot' : 'list']],
+  reportSlowTests: { max: 5, threshold: 15000 },
+  configFile: '',
   rootDir: path.resolve(process.cwd()),
   quiet: false,
   shard: null,
   updateSnapshots: 'missing',
   version: require('../package.json').version,
-  workers: 1,
+  workers: 0,
   webServer: null,
-  attachments: [],
+  _webServers: [],
+  _globalOutputDir: path.resolve(process.cwd()),
+  _configDir: '',
+  _storageDir: '',
+  _maxConcurrentTestGroups: 0,
+  _ignoreSnapshots: false,
+  _workerIsolation: 'isolate-pools',
 };
 
 function resolveReporters(reporters: Config['reporter'], rootDir: string): ReporterDescription[]|undefined {
   return toReporters(reporters as any)?.map(([id, arg]) => {
     if (builtInReporters.includes(id as any))
       return [id, arg];
-    return [require.resolve(id, { paths: [ rootDir ] }), arg];
+    return [require.resolve(id, { paths: [rootDir] }), arg];
   });
 }
 
@@ -492,30 +693,6 @@ export function fileIsModule(file: string): boolean {
   return folderIsModule(folder);
 }
 
-const folderToPackageJsonPath = new Map<string, string>();
-
-function getPackageJsonPath(folderPath: string): string {
-  const cached = folderToPackageJsonPath.get(folderPath);
-  if (cached !== undefined)
-    return cached;
-
-  const packageJsonPath = path.join(folderPath, 'package.json');
-  if (fs.existsSync(packageJsonPath)) {
-    folderToPackageJsonPath.set(folderPath, packageJsonPath);
-    return packageJsonPath;
-  }
-
-  const parentFolder = path.dirname(folderPath);
-  if (folderPath === parentFolder) {
-    folderToPackageJsonPath.set(folderPath, '');
-    return '';
-  }
-
-  const result = getPackageJsonPath(parentFolder);
-  folderToPackageJsonPath.set(folderPath, result);
-  return result;
-}
-
 export function folderIsModule(folder: string): boolean {
   const packageJsonPath = getPackageJsonPath(folder);
   if (!packageJsonPath)
@@ -523,4 +700,3 @@ export function folderIsModule(folder: string): boolean {
   // Rely on `require` internal caching logic.
   return require(packageJsonPath).type === 'module';
 }
-

@@ -6,7 +6,7 @@ title: "API testing"
 Playwright can be used to get access to the [REST](https://en.wikipedia.org/wiki/Representational_state_transfer) API of
 your application.
 
-Sometimes you may want to send requests to the server directly from Node.js without loading a page and running js code in it.
+Sometimes you may want to send requests to the server directly from Python without loading a page and running js code in it.
 A few examples where it may come in handy:
 - Test your server API.
 - Prepare server side state before visiting the web application in a test.
@@ -114,7 +114,7 @@ def test_should_create_feature_request(api_request_context: APIRequestContext) -
 
 ### Setup and teardown
 
-These tests assume that repository exists. You probably want to create a new one before running tests and delete it afterwards. Use a [session fixture](https://docs.pytest.org/en/6.2.x/fixture.html#fixture-scopes) for that. The part before `yield` is the before all and after is the after all.
+These tests assume that repository exists. You probably want to create a new one before running tests and delete it afterwards. Use a [session fixture](https://docs.pytest.org/en/stable/fixture.html#fixture-scopes) for that. The part before `yield` is the before all and after is the after all.
 
 ```python
 # ...
@@ -254,10 +254,10 @@ it was created:
 ```python
 def test_last_created_issue_should_be_on_the_server(api_request_context: APIRequestContext, page: Page) -> None:
     page.goto(f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/issues")
-    page.click("text=New issue")
-    page.fill("[aria-label='Title']", "Bug report 1")
-    page.fill("[aria-label='Comment body']", "Bug description")
-    page.click("text=Submit new issue")
+    page.locator("text=New issue").click()
+    page.locator("[aria-label='Title']").fill("Bug report 1")
+    page.locator("[aria-label='Comment body']").fill("Bug description")
+    page.locator("text=Submit new issue").click()
     issue_id = page.url.split("/")[-1]
 
     new_issue = api_request_context.get(f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/issues/{issue_id}")

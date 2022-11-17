@@ -54,24 +54,45 @@ async function testWaiting(page, after) {
   await promise;
   expect(done).toBe(true);
 }
+
 it('should wait for display:none to become visible', async ({ page, server }) => {
   await page.setContent('<div style="display:none">Hello</div>');
   await testWaiting(page, div => div.style.display = 'block');
 });
 
-it('should wait for display:contents to become visible', async ({ page, server }) => {
-  await page.setContent('<div style="display:contents">Hello</div>');
-  await testWaiting(page, div => div.style.display = 'block');
+it('should scroll display:contents into view', async ({ page, browserName, browserMajorVersion }) => {
+  it.skip(browserName === 'chromium' && browserMajorVersion < 105, 'Needs https://chromium-review.googlesource.com/c/chromium/src/+/3758670');
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/15034' });
+
+  await page.setContent(`
+    <style>
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+      ::-webkit-scrollbar { display: none; }
+      * { scrollbar-width: none; }
+    </style>
+    <div id=container style="width:200px;height:200px;overflow:scroll;border:1px solid black;">
+      <div style="margin-top:500px;background:red;">
+        <div style="height:50px;width:100px;background:cyan;">
+          <div id=target style="display:contents">Hello</div>
+        </div>
+      <div>
+    </div>
+  `);
+  const div = await page.$('#target');
+  await div.scrollIntoViewIfNeeded();
+  expect(await page.$eval('#container', e => e.scrollTop)).toBe(350);
 });
 
-it('should wait for visibility:hidden to become visible', async ({ page, server }) => {
+it('should work for visibility:hidden element', async ({ page }) => {
   await page.setContent('<div style="visibility:hidden">Hello</div>');
-  await testWaiting(page, div => div.style.visibility = 'visible');
+  const div = await page.$('div');
+  await div.scrollIntoViewIfNeeded();
 });
 
-it('should wait for zero-sized element to become visible', async ({ page, server }) => {
+it('should work for zero-sized element', async ({ page }) => {
   await page.setContent('<div style="height:0">Hello</div>');
-  await testWaiting(page, div => div.style.height = '100px');
+  const div = await page.$('div');
+  await div.scrollIntoViewIfNeeded();
 });
 
 it('should wait for nested display:none to become visible', async ({ page, server }) => {
@@ -99,5 +120,5 @@ it('should timeout waiting for visible', async ({ page, server }) => {
   await page.setContent('<div style="display:none">Hello</div>');
   const div = await page.$('div');
   const error = await div.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(e => e);
-  expect(error.message).toContain('element is not visible');
+  expect(error.message).toContain('element is not displayed, retrying in 100ms');
 });
