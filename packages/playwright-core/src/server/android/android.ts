@@ -366,37 +366,60 @@ export class AndroidDevice extends SdkObject {
     socket.close();
   }
 
+  // 有些常见不是 webview_devtools_remote_{pid}形式, 应该都存起来，让用户选择
   private async _refreshWebViews() {
-    // possible socketName, eg: webview_devtools_remote_32327, webview_devtools_remote_32327_zeus, webview_devtools_remote_zeus
-    const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep webview_devtools_remote`)).toString().split('\n');
+    const sockets = (await this._backend.runCommand(`shell:cat /proc/net/unix | grep devtools_remote`)).toString().split('\n');
     if (this._isClosed)
       return;
 
+    const newPids = new Set<number>();
     const socketNames = new Set<string>();
     for (const line of sockets) {
-      const matchSocketName = line.match(/[^@]+@(.*?webview_devtools_remote_?.*)/);
-      if (!matchSocketName)
+      const match = line.match(/[^@]+@.*?devtools_remote_?(\d*)/);
+      const macthSocketName = line.match(/[^@]+@(.*?_devtools_remote_?.*)/);
+
+      if (!macthSocketName)
         continue;
 
-      const socketName = matchSocketName[1];
+      const socketName = macthSocketName[1];
       socketNames.add(socketName);
-      if (this._webViews.has(socketName))
+
+      if (!match) {
+        if (this._webViews.has(socketName))
+          continue;
+        const webView = { pid: -1, pkg: '', socketName };
+        this._webViews.set(socketName, webView);
+        this.emit(AndroidDevice.Events.WebViewAdded, webView);
         continue;
+      }
 
-      // possible line: 0000000000000000: 00000002 00000000 00010000 0001 01 5841881 @webview_devtools_remote_zeus
-      // the result: match[1] = ''
-      const match = line.match(/[^@]+@.*?webview_devtools_remote_?(\d*)/);
-      let pid = -1;
-      if (match && match[1])
-        pid = +match[1];
 
-      const pkg = await this._extractPkg(pid);
-      if (this._isClosed)
-        return;
+      const pid = +match[1];
+      if (!newPids.has(pid)) {
 
-      const webView = { pid, pkg, socketName };
-      this._webViews.set(socketName, webView);
-      this.emit(AndroidDevice.Events.WebViewAdded, webView);
+        if (this._webViews.has(socketName))
+          continue;
+
+        const procs = (await this._backend.runCommand(`shell:ps -A | grep ${pid}`)).toString().split('\n');
+        if (this._isClosed)
+          return;
+        let pkg = '';
+        for (const proc of procs) {
+          const match = proc.match(/[^\s]+\s+(\d+).*$/);
+          if (!match)
+            continue;
+          const p = match[1];
+          if (+p !== pid)
+            continue;
+          pkg = proc.substring(proc.lastIndexOf(' ') + 1);
+        }
+        const webView = { pid, pkg, socketName };
+        this._webViews.set(socketName, webView);
+
+        this.emit(AndroidDevice.Events.WebViewAdded, webView);
+      }
+
+      newPids.add(pid);
     }
     for (const p of this._webViews.keys()) {
       if (!socketNames.has(p)) {

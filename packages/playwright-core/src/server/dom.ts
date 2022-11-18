@@ -259,7 +259,24 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _scrollRectIntoViewIfNeeded(rect?: types.Rect): Promise<'error:notvisible' | 'error:notconnected' | 'done'> {
-    return await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
+    // 部分稍低点webview不支持DOM.scrollIntoViewIfNeeded
+    try {
+      const res = await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
+      return res;
+    } catch (e) {
+      if (e.message.includes(`'DOM.scrollIntoViewIfNeeded' wasn't found`)) {
+        // console.error('DOM.scrollIntoViewIfNeeded Failed. Try `node.scrollIntoViewIfNeeded` ');
+        // try: window.scrollTo
+        await this.evaluate((node: any, rect: any) => {
+          if (rect)
+            node.scrollTo(rect.x, rect.y);
+          else
+            node.scrollIntoViewIfNeeded && node.scrollIntoViewIfNeeded();
+
+        }, rect);
+      }
+    }
+    return 'done';
   }
 
   async _waitAndScrollIntoViewIfNeeded(progress: Progress, waitForVisible: boolean): Promise<void> {

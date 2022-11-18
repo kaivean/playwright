@@ -1414,6 +1414,13 @@ Page:
       tracing:
         snapshot: true
 
+    touchscreenDown:
+      parameters:
+        startX: number
+        startY: number
+
+    touchscreenUp:
+
     accessibilitySnapshot:
       parameters:
         interestingOnly: boolean?

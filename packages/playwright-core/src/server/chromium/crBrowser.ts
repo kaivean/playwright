@@ -52,36 +52,44 @@ export class CRBrowser extends Browser {
   private _userAgent: string = '';
 
   static async connect(transport: ConnectionTransport, options: BrowserOptions, devtools?: CRDevTools): Promise<CRBrowser> {
-    // Make a copy in case we need to update `headful` property below.
-    options = { ...options };
     const connection = new CRConnection(transport, options.protocolLogger, options.browserLogsCollector);
     const browser = new CRBrowser(connection, options);
     browser._devtools = devtools;
     const session = connection.rootSession;
-    if ((options as any).__testHookOnConnectToBrowser)
-      await (options as any).__testHookOnConnectToBrowser();
-
     const version = await session.send('Browser.getVersion');
     browser._version = version.product.substring(version.product.indexOf('/') + 1);
-    browser._userAgent = version.userAgent;
-    // We don't trust the option as it may lie in case of connectOverCDP where remote browser
-    // may have been launched with different options.
-    browser.options.headful = !version.userAgent.includes('Headless');
     if (!options.persistent) {
       await session.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
       return browser;
     }
     browser._defaultContext = new CRBrowserContext(browser, undefined, options.persistent);
+
+    const existingTargetAttachPromises: Promise<any>[] = [];
+    // First page, background pages and their service workers in the persistent context
+    // are created automatically and may be initialized before we enable auto-attach.
+    function attachToExistingPage({ targetInfo }: Protocol.Target.targetCreatedPayload) {
+      if (targetInfo.type !== 'page' && targetInfo.type !== 'background_page' && targetInfo.type !== 'service_worker')
+        return;
+      // TODO: should we handle the error during 'Target.attachToTarget'? Can the target disappear?
+      existingTargetAttachPromises.push(session.send('Target.attachToTarget', { targetId: targetInfo.targetId, flatten: true }));
+    }
+    session.on('Target.targetCreated', attachToExistingPage);
+
+    const startDiscover = session.send('Target.setDiscoverTargets', { discover: true });
+    const autoAttachAndStopDiscover = session.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }).then(() => {
+      // All targets collected before setAutoAttach response will not be auto-attached, the rest will be.
+      // TODO: We should fix this upstream and remove this tricky logic.
+      session.off('Target.targetCreated', attachToExistingPage);
+      return session.send('Target.setDiscoverTargets', { discover: false });
+    });
     await Promise.all([
-      session.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }).then(async () => {
-        // Target.setAutoAttach has a bug where it does not wait for new Targets being attached.
-        // However making a dummy call afterwards fixes this.
-        // This can be removed after https://chromium-review.googlesource.com/c/chromium/src/+/2885888 lands in stable.
-        await session.send('Target.getTargetInfo');
-      }),
+      startDiscover,
+      autoAttachAndStopDiscover,
       (browser._defaultContext as CRBrowserContext)._initialize(),
     ]);
-    await browser._waitForAllPagesToBeInitialized();
+
+    // Wait for initial targets to arrive.
+    await Promise.all(existingTargetAttachPromises);
     return browser;
   }
 

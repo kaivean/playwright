@@ -22,10 +22,10 @@ import { Protocol } from './protocol';
 import { Serializable, EvaluationArgument, PageFunction, PageFunctionOn, SmartHandle, ElementHandleForTag, BindingSource } from './structs';
 
 type PageWaitForSelectorOptionsNotHidden = PageWaitForSelectorOptions & {
-  state?: 'visible'|'attached';
+  state?: 'visible' | 'attached';
 };
 type ElementHandleWaitForSelectorOptionsNotHidden = ElementHandleWaitForSelectorOptions & {
-  state?: 'visible'|'attached';
+  state?: 'visible' | 'attached';
 };
 
 /**
@@ -744,7 +744,7 @@ export interface Page {
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options
    */
-  waitForSelector(selector: string, options: PageWaitForSelectorOptions): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
+  waitForSelector(selector: string, options: PageWaitForSelectorOptions): Promise<null | ElementHandle<SVGElement | HTMLElement>>;
 
   /**
    * The method adds a function called `name` on the `window` object of every frame in this page. When called, the function
@@ -1907,7 +1907,7 @@ export interface Page {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -1928,7 +1928,7 @@ export interface Page {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -2028,7 +2028,7 @@ export interface Page {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
@@ -2044,7 +2044,7 @@ export interface Page {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -2245,25 +2245,25 @@ export interface Page {
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. Passing
      * `null` disables color scheme emulation.
      */
-    colorScheme?: null|"light"|"dark"|"no-preference";
+    colorScheme?: null | "light" | "dark" | "no-preference";
 
     /**
      * Emulates `'forced-colors'` media feature, supported values are `'active'` and `'none'`. Passing `null` disables forced
      * colors emulation.
      */
-    forcedColors?: null|"active"|"none";
+    forcedColors?: null | "active" | "none";
 
     /**
      * Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null`
      * disables CSS media emulation.
      */
-    media?: null|"screen"|"print";
+    media?: null | "screen" | "print";
 
     /**
      * Emulates `'prefers-reduced-motion'` media feature, supported values are `'reduce'`, `'no-preference'`. Passing `null`
      * disables reduced motion emulation.
      */
-    reducedMotion?: null|"reduce"|"no-preference";
+    reducedMotion?: null | "reduce" | "no-preference";
   }): Promise<void>;
 
   /**
@@ -2392,7 +2392,7 @@ export interface Page {
    *
    * @param frameSelector Frame name or other frame lookup options.
    */
-  frame(frameSelector: string|{
+  frame(frameSelector: string | {
     /**
      * Frame name specified in the `iframe`'s `name` attribute. Optional.
      */
@@ -2401,8 +2401,8 @@ export interface Page {
     /**
      * A glob pattern, regex pattern or predicate receiving frame's `url` as a [URL] object. Optional.
      */
-    url?: string|RegExp|((url: URL) => boolean);
-  }): null|Frame;
+    url?: string | RegExp | ((url: URL) => boolean);
+  }): null | Frame;
 
   /**
    * When working with iframes, you can create a frame locator that will enter the iframe and allow selecting elements in
@@ -2443,7 +2443,7 @@ export interface Page {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Allows locating elements by their alt text. For example, this method will find the image by alt text "Castle":
@@ -2455,7 +2455,7 @@ export interface Page {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByAltText(text: string|RegExp, options?: {
+  getByAltText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -2475,7 +2475,7 @@ export interface Page {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByLabel(text: string|RegExp, options?: {
+  getByLabel(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -2494,7 +2494,7 @@ export interface Page {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByPlaceholder(text: string|RegExp, options?: {
+  getByPlaceholder(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -2515,7 +2515,7 @@ export interface Page {
    * @param role Required aria role.
    * @param options
    */
-  getByRole(role: "alert"|"alertdialog"|"application"|"article"|"banner"|"blockquote"|"button"|"caption"|"cell"|"checkbox"|"code"|"columnheader"|"combobox"|"complementary"|"contentinfo"|"definition"|"deletion"|"dialog"|"directory"|"document"|"emphasis"|"feed"|"figure"|"form"|"generic"|"grid"|"gridcell"|"group"|"heading"|"img"|"insertion"|"link"|"list"|"listbox"|"listitem"|"log"|"main"|"marquee"|"math"|"meter"|"menu"|"menubar"|"menuitem"|"menuitemcheckbox"|"menuitemradio"|"navigation"|"none"|"note"|"option"|"paragraph"|"presentation"|"progressbar"|"radio"|"radiogroup"|"region"|"row"|"rowgroup"|"rowheader"|"scrollbar"|"search"|"searchbox"|"separator"|"slider"|"spinbutton"|"status"|"strong"|"subscript"|"superscript"|"switch"|"tab"|"table"|"tablist"|"tabpanel"|"term"|"textbox"|"time"|"timer"|"toolbar"|"tooltip"|"tree"|"treegrid"|"treeitem", options?: {
+  getByRole(role: "alert" | "alertdialog" | "application" | "article" | "banner" | "blockquote" | "button" | "caption" | "cell" | "checkbox" | "code" | "columnheader" | "combobox" | "complementary" | "contentinfo" | "definition" | "deletion" | "dialog" | "directory" | "document" | "emphasis" | "feed" | "figure" | "form" | "generic" | "grid" | "gridcell" | "group" | "heading" | "img" | "insertion" | "link" | "list" | "listbox" | "listitem" | "log" | "main" | "marquee" | "math" | "meter" | "menu" | "menubar" | "menuitem" | "menuitemcheckbox" | "menuitemradio" | "navigation" | "none" | "note" | "option" | "paragraph" | "presentation" | "progressbar" | "radio" | "radiogroup" | "region" | "row" | "rowgroup" | "rowheader" | "scrollbar" | "search" | "searchbox" | "separator" | "slider" | "spinbutton" | "status" | "strong" | "subscript" | "superscript" | "switch" | "tab" | "table" | "tablist" | "tabpanel" | "term" | "textbox" | "time" | "timer" | "toolbar" | "tooltip" | "tree" | "treegrid" | "treeitem", options?: {
     /**
      * An attribute that is usually set by `aria-checked` or native `<input type=checkbox>` controls.
      *
@@ -2566,7 +2566,7 @@ export interface Page {
      *
      * Learn more about [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
      */
-    name?: string|RegExp;
+    name?: string | RegExp;
 
     /**
      * An attribute that is usually set by `aria-pressed`.
@@ -2636,7 +2636,7 @@ export interface Page {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByText(text: string|RegExp, options?: {
+  getByText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -2654,7 +2654,7 @@ export interface Page {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByTitle(text: string|RegExp, options?: {
+  getByTitle(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -2687,8 +2687,8 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * Returns the main resource response. In case of multiple redirects, the navigation will resolve with the response of the
@@ -2715,8 +2715,8 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * Returns the main resource response. In case of multiple redirects, the navigation will resolve with the first
@@ -2767,8 +2767,8 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * This method hovers over an element matching `selector` by performing the following steps:
@@ -2797,7 +2797,7 @@ export interface Page {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -3061,7 +3061,7 @@ export interface Page {
      * [string], matching is case-insensitive and searches for a substring. For example, `"Playwright"` matches
      * `<article><div>Playwright</div></article>`.
      */
-    hasText?: string|RegExp;
+    hasText?: string | RegExp;
   }): Locator;
 
   /**
@@ -3074,7 +3074,7 @@ export interface Page {
   /**
    * Returns the opener for popup pages and `null` for others. If the opener has been closed already the returns `null`.
    */
-  opener(): Promise<null|Page>;
+  opener(): Promise<null | Page>;
 
   /**
    * Pauses script execution. Playwright will stop executing the script and wait for the user to either press 'Resume' button
@@ -3167,7 +3167,7 @@ export interface Page {
     /**
      * Paper height, accepts values labeled with units.
      */
-    height?: string|number;
+    height?: string | number;
 
     /**
      * Paper orientation. Defaults to `false`.
@@ -3181,22 +3181,22 @@ export interface Page {
       /**
        * Top margin, accepts values labeled with units. Defaults to `0`.
        */
-      top?: string|number;
+      top?: string | number;
 
       /**
        * Right margin, accepts values labeled with units. Defaults to `0`.
        */
-      right?: string|number;
+      right?: string | number;
 
       /**
        * Bottom margin, accepts values labeled with units. Defaults to `0`.
        */
-      bottom?: string|number;
+      bottom?: string | number;
 
       /**
        * Left margin, accepts values labeled with units. Defaults to `0`.
        */
-      left?: string|number;
+      left?: string | number;
     };
 
     /**
@@ -3229,7 +3229,7 @@ export interface Page {
     /**
      * Paper width, accepts values labeled with units.
      */
-    width?: string|number;
+    width?: string | number;
   }): Promise<Buffer>;
 
   /**
@@ -3320,8 +3320,8 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * API testing helper associated with this page. This method returns the same instance as
@@ -3385,7 +3385,7 @@ export interface Page {
    * @param handler handler function to route the request.
    * @param options
    */
-  route(url: string|RegExp|((url: URL) => boolean), handler: ((route: Route, request: Request) => void), options?: {
+  route(url: string | RegExp | ((url: URL) => boolean), handler: ((route: Route, request: Request) => void), options?: {
     /**
      * How often a route should be used. By default it will be used every time.
      */
@@ -3409,7 +3409,7 @@ export interface Page {
      *
      * Defaults to abort.
      */
-    notFound?: "abort"|"fallback";
+    notFound?: "abort" | "fallback";
 
     /**
      * If specified, updates the given HAR with the actual network information instead of serving from file. The file is
@@ -3422,7 +3422,7 @@ export interface Page {
      * A glob pattern, regular expression or predicate to match the request URL. Only requests with URL matching the pattern
      * will be served from the HAR file. If not specified, all requests are served from the HAR file.
      */
-    url?: string|RegExp;
+    url?: string | RegExp;
   }): Promise<void>;
 
   /**
@@ -3462,7 +3462,7 @@ export interface Page {
    * is considered matching if all specified properties match.
    * @param options
    */
-  selectOption(selector: string, values: null|string|ElementHandle|Array<string>|{
+  selectOption(selector: string, values: null | string | ElementHandle | Array<string> | {
     /**
      * Matches by `option.value`. Optional.
      */
@@ -3477,7 +3477,7 @@ export interface Page {
      * Matches by the index. Optional.
      */
     index?: number;
-  }|Array<ElementHandle>|Array<{
+  } | Array<ElementHandle> | Array<{
     /**
      * Matches by `option.value`. Optional.
      */
@@ -3607,7 +3607,7 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
   }): Promise<void>;
 
   /**
@@ -3663,7 +3663,7 @@ export interface Page {
    * @param files
    * @param options
    */
-  setInputFiles(selector: string, files: string|Array<string>|{
+  setInputFiles(selector: string, files: string | Array<string> | {
     /**
      * File name
      */
@@ -3678,7 +3678,7 @@ export interface Page {
      * File content
      */
     buffer: Buffer;
-  }|Array<{
+  } | Array<{
     /**
      * File name
      */
@@ -3781,7 +3781,7 @@ export interface Page {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -3840,7 +3840,7 @@ export interface Page {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Returns the page's title. Shortcut for main frame's
@@ -3968,7 +3968,7 @@ export interface Page {
    * @param url A glob pattern, regex pattern or predicate receiving [URL] to match while routing.
    * @param handler Optional handler function to route the request.
    */
-  unroute(url: string|RegExp|((url: URL) => boolean), handler?: ((route: Route, request: Request) => void)): Promise<void>;
+  unroute(url: string | RegExp | ((url: URL) => boolean), handler?: ((route: Route, request: Request) => void)): Promise<void>;
 
   /**
    * Shortcut for main frame's [frame.url()](https://playwright.dev/docs/api/class-frame#frame-url).
@@ -3978,9 +3978,9 @@ export interface Page {
   /**
    * Video object associated with this page.
    */
-  video(): null|Video;
+  video(): null | Video;
 
-  viewportSize(): null|{
+  viewportSize(): null | {
     /**
      * page width in pixels.
      */
@@ -4224,7 +4224,7 @@ export interface Page {
    * - `'networkidle'` - wait until there are no network connections for at least `500` ms.
    * @param options
    */
-  waitForLoadState(state?: "load"|"domcontentloaded"|"networkidle", options?: {
+  waitForLoadState(state?: "load" | "domcontentloaded" | "networkidle", options?: {
     /**
      * Maximum operation time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be
      * changed by using the
@@ -4279,7 +4279,7 @@ export interface Page {
      * parameter is a string without wildcard characters, the method will wait for navigation to URL that is exactly equal to
      * the string.
      */
-    url?: string|RegExp|((url: URL) => boolean);
+    url?: string | RegExp | ((url: URL) => boolean);
 
     /**
      * When to consider operation succeeded, defaults to `load`. Events can be either:
@@ -4288,8 +4288,8 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * Waits for the matching request and returns it. See [waiting for event](https://playwright.dev/docs/events#waiting-for-event) for more details
@@ -4317,7 +4317,7 @@ export interface Page {
    * @param urlOrPredicate Request URL string, regex or predicate receiving [Request] object.
    * @param options
    */
-  waitForRequest(urlOrPredicate: string|RegExp|((request: Request) => boolean|Promise<boolean>), options?: {
+  waitForRequest(urlOrPredicate: string | RegExp | ((request: Request) => boolean | Promise<boolean>), options?: {
     /**
      * Maximum wait time in milliseconds, defaults to 30 seconds, pass `0` to disable the timeout. The default value can be
      * changed by using the
@@ -4352,7 +4352,7 @@ export interface Page {
    * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
    * @param options
    */
-  waitForResponse(urlOrPredicate: string|RegExp|((response: Response) => boolean|Promise<boolean>), options?: {
+  waitForResponse(urlOrPredicate: string | RegExp | ((response: Response) => boolean | Promise<boolean>), options?: {
     /**
      * Maximum wait time in milliseconds, defaults to 30 seconds, pass `0` to disable the timeout. The default value can be
      * changed by using the
@@ -4393,7 +4393,7 @@ export interface Page {
    * the string.
    * @param options
    */
-  waitForURL(url: string|RegExp|((url: URL) => boolean), options?: {
+  waitForURL(url: string | RegExp | ((url: URL) => boolean), options?: {
     /**
      * Maximum operation time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be
      * changed by using the
@@ -4411,7 +4411,7 @@ export interface Page {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
   }): Promise<void>;
 
   /**
@@ -4420,7 +4420,8 @@ export interface Page {
    *
    * > NOTE: This does not contain ServiceWorkers
    */
-  workers(): Array<Worker>;}
+  workers(): Array<Worker>;
+}
 
 /**
  * At every point of time, page exposes its current frame tree via the
@@ -5080,7 +5081,7 @@ export interface Frame {
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options
    */
-  waitForSelector(selector: string, options: PageWaitForSelectorOptions): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
+  waitForSelector(selector: string, options: PageWaitForSelectorOptions): Promise<null | ElementHandle<SVGElement | HTMLElement>>;
   /**
    * Returns the added tag when the script's onload fires or when the script content was injected into frame.
    *
@@ -5218,7 +5219,7 @@ export interface Frame {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -5239,7 +5240,7 @@ export interface Frame {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -5306,7 +5307,7 @@ export interface Frame {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
@@ -5322,7 +5323,7 @@ export interface Frame {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -5589,7 +5590,7 @@ export interface Frame {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Allows locating elements by their alt text. For example, this method will find the image by alt text "Castle":
@@ -5601,7 +5602,7 @@ export interface Frame {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByAltText(text: string|RegExp, options?: {
+  getByAltText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -5621,7 +5622,7 @@ export interface Frame {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByLabel(text: string|RegExp, options?: {
+  getByLabel(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -5640,7 +5641,7 @@ export interface Frame {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByPlaceholder(text: string|RegExp, options?: {
+  getByPlaceholder(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -5661,7 +5662,7 @@ export interface Frame {
    * @param role Required aria role.
    * @param options
    */
-  getByRole(role: "alert"|"alertdialog"|"application"|"article"|"banner"|"blockquote"|"button"|"caption"|"cell"|"checkbox"|"code"|"columnheader"|"combobox"|"complementary"|"contentinfo"|"definition"|"deletion"|"dialog"|"directory"|"document"|"emphasis"|"feed"|"figure"|"form"|"generic"|"grid"|"gridcell"|"group"|"heading"|"img"|"insertion"|"link"|"list"|"listbox"|"listitem"|"log"|"main"|"marquee"|"math"|"meter"|"menu"|"menubar"|"menuitem"|"menuitemcheckbox"|"menuitemradio"|"navigation"|"none"|"note"|"option"|"paragraph"|"presentation"|"progressbar"|"radio"|"radiogroup"|"region"|"row"|"rowgroup"|"rowheader"|"scrollbar"|"search"|"searchbox"|"separator"|"slider"|"spinbutton"|"status"|"strong"|"subscript"|"superscript"|"switch"|"tab"|"table"|"tablist"|"tabpanel"|"term"|"textbox"|"time"|"timer"|"toolbar"|"tooltip"|"tree"|"treegrid"|"treeitem", options?: {
+  getByRole(role: "alert" | "alertdialog" | "application" | "article" | "banner" | "blockquote" | "button" | "caption" | "cell" | "checkbox" | "code" | "columnheader" | "combobox" | "complementary" | "contentinfo" | "definition" | "deletion" | "dialog" | "directory" | "document" | "emphasis" | "feed" | "figure" | "form" | "generic" | "grid" | "gridcell" | "group" | "heading" | "img" | "insertion" | "link" | "list" | "listbox" | "listitem" | "log" | "main" | "marquee" | "math" | "meter" | "menu" | "menubar" | "menuitem" | "menuitemcheckbox" | "menuitemradio" | "navigation" | "none" | "note" | "option" | "paragraph" | "presentation" | "progressbar" | "radio" | "radiogroup" | "region" | "row" | "rowgroup" | "rowheader" | "scrollbar" | "search" | "searchbox" | "separator" | "slider" | "spinbutton" | "status" | "strong" | "subscript" | "superscript" | "switch" | "tab" | "table" | "tablist" | "tabpanel" | "term" | "textbox" | "time" | "timer" | "toolbar" | "tooltip" | "tree" | "treegrid" | "treeitem", options?: {
     /**
      * An attribute that is usually set by `aria-checked` or native `<input type=checkbox>` controls.
      *
@@ -5712,7 +5713,7 @@ export interface Frame {
      *
      * Learn more about [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
      */
-    name?: string|RegExp;
+    name?: string | RegExp;
 
     /**
      * An attribute that is usually set by `aria-pressed`.
@@ -5782,7 +5783,7 @@ export interface Frame {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByText(text: string|RegExp, options?: {
+  getByText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -5800,7 +5801,7 @@ export interface Frame {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByTitle(text: string|RegExp, options?: {
+  getByTitle(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -5854,8 +5855,8 @@ export interface Frame {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * This method hovers over an element matching `selector` by performing the following steps:
@@ -5882,7 +5883,7 @@ export interface Frame {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -6146,7 +6147,7 @@ export interface Frame {
      * [string], matching is case-insensitive and searches for a substring. For example, `"Playwright"` matches
      * `<article><div>Playwright</div></article>`.
      */
-    hasText?: string|RegExp;
+    hasText?: string | RegExp;
   }): Locator;
 
   /**
@@ -6166,7 +6167,7 @@ export interface Frame {
   /**
    * Parent frame, if any. Detached frames and main frames return `null`.
    */
-  parentFrame(): null|Frame;
+  parentFrame(): null | Frame;
 
   /**
    * `key` can specify the intended [keyboardEvent.key](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key)
@@ -6245,7 +6246,7 @@ export interface Frame {
    * is considered matching if all specified properties match.
    * @param options
    */
-  selectOption(selector: string, values: null|string|ElementHandle|Array<string>|{
+  selectOption(selector: string, values: null | string | ElementHandle | Array<string> | {
     /**
      * Matches by `option.value`. Optional.
      */
@@ -6260,7 +6261,7 @@ export interface Frame {
      * Matches by the index. Optional.
      */
     index?: number;
-  }|Array<ElementHandle>|Array<{
+  } | Array<ElementHandle> | Array<{
     /**
      * Matches by `option.value`. Optional.
      */
@@ -6387,7 +6388,7 @@ export interface Frame {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
   }): Promise<void>;
 
   /**
@@ -6402,7 +6403,7 @@ export interface Frame {
    * @param files
    * @param options
    */
-  setInputFiles(selector: string, files: string|Array<string>|{
+  setInputFiles(selector: string, files: string | Array<string> | {
     /**
      * File name
      */
@@ -6417,7 +6418,7 @@ export interface Frame {
      * File content
      */
     buffer: Buffer;
-  }|Array<{
+  } | Array<{
     /**
      * File name
      */
@@ -6482,7 +6483,7 @@ export interface Frame {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -6541,7 +6542,7 @@ export interface Frame {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Returns the page title.
@@ -6676,7 +6677,7 @@ export interface Frame {
    * - `'networkidle'` - wait until there are no network connections for at least `500` ms.
    * @param options
    */
-  waitForLoadState(state?: "load"|"domcontentloaded"|"networkidle", options?: {
+  waitForLoadState(state?: "load" | "domcontentloaded" | "networkidle", options?: {
     /**
      * Maximum operation time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be
      * changed by using the
@@ -6723,7 +6724,7 @@ export interface Frame {
      * parameter is a string without wildcard characters, the method will wait for navigation to URL that is exactly equal to
      * the string.
      */
-    url?: string|RegExp|((url: URL) => boolean);
+    url?: string | RegExp | ((url: URL) => boolean);
 
     /**
      * When to consider operation succeeded, defaults to `load`. Events can be either:
@@ -6732,8 +6733,8 @@ export interface Frame {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<null|Response>;
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<null | Response>;
 
   /**
    * Waits for the given `timeout` in milliseconds.
@@ -6756,7 +6757,7 @@ export interface Frame {
    * the string.
    * @param options
    */
-  waitForURL(url: string|RegExp|((url: URL) => boolean), options?: {
+  waitForURL(url: string | RegExp | ((url: URL) => boolean), options?: {
     /**
      * Maximum operation time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be
      * changed by using the
@@ -6774,8 +6775,9 @@ export interface Frame {
      * - `'networkidle'` - consider operation to be finished when there are no network connections for at least `500` ms.
      * - `'commit'` - consider operation to be finished when network response is received and the document started loading.
      */
-    waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit";
-  }): Promise<void>;}
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit";
+  }): Promise<void>;
+}
 
 /**
  * - extends: [EventEmitter]
@@ -7370,7 +7372,7 @@ export interface BrowserContext {
     /**
      * Optional.
      */
-    sameSite?: "Strict"|"Lax"|"None";
+    sameSite?: "Strict" | "Lax" | "None";
   }>): Promise<void>;
 
   /**
@@ -7383,7 +7385,7 @@ export interface BrowserContext {
   /**
    * Returns the browser instance of the context. If it was launched as a persistent context null gets returned.
    */
-  browser(): null|Browser;
+  browser(): null | Browser;
 
   /**
    * Clears context cookies.
@@ -7415,7 +7417,7 @@ export interface BrowserContext {
    * are returned.
    * @param urls Optional list of URLs.
    */
-  cookies(urls?: string|Array<string>): Promise<Array<Cookie>>;
+  cookies(urls?: string | Array<string>): Promise<Array<Cookie>>;
 
   /**
    * The method adds a function called `name` on the `window` object of every frame in every page in the context. When
@@ -7488,7 +7490,7 @@ export interface BrowserContext {
    * Returns the newly created session.
    * @param page Target to create new session for. For backwards-compatibility, this parameter is named `page`, but it can be a `Page` or `Frame` type.
    */
-  newCDPSession(page: Page|Frame): Promise<CDPSession>;
+  newCDPSession(page: Page | Frame): Promise<CDPSession>;
 
   /**
    * Creates a new page in the browser context.
@@ -7559,7 +7561,7 @@ export interface BrowserContext {
    * @param handler handler function to route the request.
    * @param options
    */
-  route(url: string|RegExp|((url: URL) => boolean), handler: ((route: Route, request: Request) => void), options?: {
+  route(url: string | RegExp | ((url: URL) => boolean), handler: ((route: Route, request: Request) => void), options?: {
     /**
      * How often a route should be used. By default it will be used every time.
      */
@@ -7583,7 +7585,7 @@ export interface BrowserContext {
      *
      * Defaults to abort.
      */
-    notFound?: "abort"|"fallback";
+    notFound?: "abort" | "fallback";
 
     /**
      * If specified, updates the given HAR with the actual network information instead of serving from file. The file is
@@ -7596,7 +7598,7 @@ export interface BrowserContext {
      * A glob pattern, regular expression or predicate to match the request URL. Only requests with URL matching the pattern
      * will be served from the HAR file. If not specified, all requests are served from the HAR file.
      */
-    url?: string|RegExp;
+    url?: string | RegExp;
   }): Promise<void>;
 
   /**
@@ -7662,7 +7664,7 @@ export interface BrowserContext {
    * to grant permissions for the browser context pages to read its geolocation.
    * @param geolocation
    */
-  setGeolocation(geolocation: null|{
+  setGeolocation(geolocation: null | {
     /**
      * Latitude between -90 and 90.
      */
@@ -7684,7 +7686,7 @@ export interface BrowserContext {
    * @deprecated
    * @param httpCredentials
    */
-  setHTTPCredentials(httpCredentials: null|{
+  setHTTPCredentials(httpCredentials: null | {
     username: string;
 
     password: string;
@@ -7724,7 +7726,7 @@ export interface BrowserContext {
 
       secure: boolean;
 
-      sameSite: "Strict"|"Lax"|"None";
+      sameSite: "Strict" | "Lax" | "None";
     }>;
 
     origins: Array<{
@@ -7747,7 +7749,7 @@ export interface BrowserContext {
    * @param url A glob pattern, regex pattern or predicate receiving [URL] used to register a routing with [browserContext.route(url, handler[, options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
    * @param handler Optional handler function used to register a routing with [browserContext.route(url, handler[, options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
    */
-  unroute(url: string|RegExp|((url: URL) => boolean), handler?: ((route: Route, request: Request) => void)): Promise<void>;
+  unroute(url: string | RegExp | ((url: URL) => boolean), handler?: ((route: Route, request: Request) => void)): Promise<void>;
 
   /**
    * > NOTE: Only works with Chromium browser's persistent context.
@@ -7958,7 +7960,8 @@ export interface Worker {
    */
   prependListener(event: 'close', listener: (worker: Worker) => void): this;
 
-  url(): string;}
+  url(): string;
+}
 
 /**
  * JSHandle represents an in-page JavaScript object. JSHandles can be created with the
@@ -8087,7 +8090,8 @@ export interface JSHandle<T = any> {
    * Fetches a single property from the referenced object.
    * @param propertyName property to get
    */
-  getProperty(propertyName: string): Promise<JSHandle>;}
+  getProperty(propertyName: string): Promise<JSHandle>;
+}
 
 /**
  * - extends: [JSHandle]
@@ -8135,7 +8139,7 @@ export interface JSHandle<T = any> {
  * ```
  *
  */
-export interface ElementHandle<T=Node> extends JSHandle<T> {
+export interface ElementHandle<T = Node> extends JSHandle<T> {
   /**
    * The method finds an element matching the specified selector in the `ElementHandle`'s subtree. See
    * [Working with selectors](https://playwright.dev/docs/selectors) for more details. If no elements match the selector, returns `null`.
@@ -8463,7 +8467,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options
    */
-  waitForSelector(selector: string, options: ElementHandleWaitForSelectorOptions): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
+  waitForSelector(selector: string, options: ElementHandleWaitForSelectorOptions): Promise<null | ElementHandle<SVGElement | HTMLElement>>;
   /**
    * This method returns the bounding box of the element, or `null` if the element is not visible. The bounding box is
    * calculated relative to the main frame viewport - which is usually the same as the browser window.
@@ -8484,7 +8488,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * ```
    *
    */
-  boundingBox(): Promise<null|{
+  boundingBox(): Promise<null | {
     /**
      * the x coordinate of the element in pixels.
      */
@@ -8578,7 +8582,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -8599,7 +8603,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -8636,7 +8640,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   /**
    * Returns the content frame for element handles referencing iframe nodes, or `null` otherwise
    */
-  contentFrame(): Promise<null|Frame>;
+  contentFrame(): Promise<null | Frame>;
 
   /**
    * This method double clicks the element by performing the following steps:
@@ -8659,7 +8663,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
@@ -8675,7 +8679,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -8788,7 +8792,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * Returns element attribute value.
    * @param name Attribute name to get the value for.
    */
-  getAttribute(name: string): Promise<null|string>;
+  getAttribute(name: string): Promise<null | string>;
 
   /**
    * This method hovers over the element by performing the following steps:
@@ -8814,7 +8818,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -8908,7 +8912,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   /**
    * Returns the frame containing the given element.
    */
-  ownerFrame(): Promise<null|Frame>;
+  ownerFrame(): Promise<null | Frame>;
 
   /**
    * Focuses the element, and then uses [keyboard.down(key)](https://playwright.dev/docs/api/class-keyboard#keyboard-down)
@@ -8975,13 +8979,13 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      *
      * Defaults to `"allow"` that leaves animations untouched.
      */
-    animations?: "disabled"|"allow";
+    animations?: "disabled" | "allow";
 
     /**
      * When set to `"hide"`, screenshot will hide text caret. When set to `"initial"`, text caret behavior will not be changed.
      * Defaults to `"hide"`.
      */
-    caret?: "hide"|"initial";
+    caret?: "hide" | "initial";
 
     /**
      * Specify locators that should be masked when the screenshot is taken. Masked elements will be overlaid with a pink box
@@ -9014,7 +9018,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      *
      * Defaults to `"device"`.
      */
-    scale?: "css"|"device";
+    scale?: "css" | "device";
 
     /**
      * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
@@ -9027,7 +9031,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
     /**
      * Specify screenshot type, defaults to `png`.
      */
-    type?: "png"|"jpeg";
+    type?: "png" | "jpeg";
   }): Promise<Buffer>;
 
   /**
@@ -9076,7 +9080,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * is considered matching if all specified properties match.
    * @param options
    */
-  selectOption(values: null|string|ElementHandle|Array<string>|{
+  selectOption(values: null | string | ElementHandle | Array<string> | {
     /**
      * Matches by `option.value`. Optional.
      */
@@ -9091,7 +9095,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Matches by the index. Optional.
      */
     index?: number;
-  }|Array<ElementHandle>|Array<{
+  } | Array<ElementHandle> | Array<{
     /**
      * Matches by `option.value`. Optional.
      */
@@ -9217,7 +9221,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * @param files
    * @param options
    */
-  setInputFiles(files: string|Array<string>|{
+  setInputFiles(files: string | Array<string> | {
     /**
      * File name
      */
@@ -9232,7 +9236,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * File content
      */
     buffer: Buffer;
-  }|Array<{
+  } | Array<{
     /**
      * File name
      */
@@ -9290,7 +9294,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -9327,7 +9331,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   /**
    * Returns the `node.textContent`.
    */
-  textContent(): Promise<null|string>;
+  textContent(): Promise<null | string>;
 
   /**
    * Focuses the element, and then sends a `keydown`, `keypress`/`input`, and `keyup` event for each character in the text.
@@ -9445,7 +9449,7 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * @param state A state to wait for, see below for more details.
    * @param options
    */
-  waitForElementState(state: "visible"|"hidden"|"stable"|"enabled"|"disabled"|"editable", options?: {
+  waitForElementState(state: "visible" | "hidden" | "stable" | "enabled" | "disabled" | "editable", options?: {
     /**
      * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
      * using the
@@ -9453,7 +9457,8 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<void>;}
+  }): Promise<void>;
+}
 
 /**
  * Locators are the central piece of Playwright's auto-waiting and retry-ability. In a nutshell, locators represent a way
@@ -9552,7 +9557,7 @@ export interface Locator {
    */
   elementHandle(options?: {
     timeout?: number;
-  }): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
+  }): Promise<null | ElementHandle<SVGElement | HTMLElement>>;
   /**
    * Returns an array of `node.innerText` values for all matching nodes.
    */
@@ -9606,7 +9611,7 @@ export interface Locator {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|{
+  }): Promise<null | {
     /**
      * the x coordinate of the element in pixels.
      */
@@ -9732,7 +9737,7 @@ export interface Locator {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -9753,7 +9758,7 @@ export interface Locator {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -9813,7 +9818,7 @@ export interface Locator {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
@@ -9829,7 +9834,7 @@ export interface Locator {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -10002,7 +10007,7 @@ export interface Locator {
    * @param arg Optional argument to pass to `pageFunction`.
    * @param options
    */
-  evaluateHandle(pageFunction: Function|string, arg?: EvaluationArgument, options?: {
+  evaluateHandle(pageFunction: Function | string, arg?: EvaluationArgument, options?: {
     /**
      * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
      * using the
@@ -10077,7 +10082,7 @@ export interface Locator {
      * [string], matching is case-insensitive and searches for a substring. For example, `"Playwright"` matches
      * `<article><div>Playwright</div></article>`.
      */
-    hasText?: string|RegExp;
+    hasText?: string | RegExp;
   }): Locator;
 
   /**
@@ -10125,7 +10130,7 @@ export interface Locator {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Allows locating elements by their alt text. For example, this method will find the image by alt text "Castle":
@@ -10137,7 +10142,7 @@ export interface Locator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByAltText(text: string|RegExp, options?: {
+  getByAltText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -10157,7 +10162,7 @@ export interface Locator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByLabel(text: string|RegExp, options?: {
+  getByLabel(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -10176,7 +10181,7 @@ export interface Locator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByPlaceholder(text: string|RegExp, options?: {
+  getByPlaceholder(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -10197,7 +10202,7 @@ export interface Locator {
    * @param role Required aria role.
    * @param options
    */
-  getByRole(role: "alert"|"alertdialog"|"application"|"article"|"banner"|"blockquote"|"button"|"caption"|"cell"|"checkbox"|"code"|"columnheader"|"combobox"|"complementary"|"contentinfo"|"definition"|"deletion"|"dialog"|"directory"|"document"|"emphasis"|"feed"|"figure"|"form"|"generic"|"grid"|"gridcell"|"group"|"heading"|"img"|"insertion"|"link"|"list"|"listbox"|"listitem"|"log"|"main"|"marquee"|"math"|"meter"|"menu"|"menubar"|"menuitem"|"menuitemcheckbox"|"menuitemradio"|"navigation"|"none"|"note"|"option"|"paragraph"|"presentation"|"progressbar"|"radio"|"radiogroup"|"region"|"row"|"rowgroup"|"rowheader"|"scrollbar"|"search"|"searchbox"|"separator"|"slider"|"spinbutton"|"status"|"strong"|"subscript"|"superscript"|"switch"|"tab"|"table"|"tablist"|"tabpanel"|"term"|"textbox"|"time"|"timer"|"toolbar"|"tooltip"|"tree"|"treegrid"|"treeitem", options?: {
+  getByRole(role: "alert" | "alertdialog" | "application" | "article" | "banner" | "blockquote" | "button" | "caption" | "cell" | "checkbox" | "code" | "columnheader" | "combobox" | "complementary" | "contentinfo" | "definition" | "deletion" | "dialog" | "directory" | "document" | "emphasis" | "feed" | "figure" | "form" | "generic" | "grid" | "gridcell" | "group" | "heading" | "img" | "insertion" | "link" | "list" | "listbox" | "listitem" | "log" | "main" | "marquee" | "math" | "meter" | "menu" | "menubar" | "menuitem" | "menuitemcheckbox" | "menuitemradio" | "navigation" | "none" | "note" | "option" | "paragraph" | "presentation" | "progressbar" | "radio" | "radiogroup" | "region" | "row" | "rowgroup" | "rowheader" | "scrollbar" | "search" | "searchbox" | "separator" | "slider" | "spinbutton" | "status" | "strong" | "subscript" | "superscript" | "switch" | "tab" | "table" | "tablist" | "tabpanel" | "term" | "textbox" | "time" | "timer" | "toolbar" | "tooltip" | "tree" | "treegrid" | "treeitem", options?: {
     /**
      * An attribute that is usually set by `aria-checked` or native `<input type=checkbox>` controls.
      *
@@ -10248,7 +10253,7 @@ export interface Locator {
      *
      * Learn more about [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
      */
-    name?: string|RegExp;
+    name?: string | RegExp;
 
     /**
      * An attribute that is usually set by `aria-pressed`.
@@ -10318,7 +10323,7 @@ export interface Locator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByText(text: string|RegExp, options?: {
+  getByText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -10336,7 +10341,7 @@ export interface Locator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByTitle(text: string|RegExp, options?: {
+  getByTitle(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -10374,7 +10379,7 @@ export interface Locator {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -10564,7 +10569,7 @@ export interface Locator {
      * [string], matching is case-insensitive and searches for a substring. For example, `"Playwright"` matches
      * `<article><div>Playwright</div></article>`.
      */
-    hasText?: string|RegExp;
+    hasText?: string | RegExp;
   }): Locator;
 
   /**
@@ -10679,7 +10684,7 @@ export interface Locator {
    * is considered matching if all specified properties match.
    * @param options
    */
-  selectOption(values: null|string|ElementHandle|Array<string>|{
+  selectOption(values: null | string | ElementHandle | Array<string> | {
     /**
      * Matches by `option.value`. Optional.
      */
@@ -10694,7 +10699,7 @@ export interface Locator {
      * Matches by the index. Optional.
      */
     index?: number;
-  }|Array<ElementHandle>|Array<{
+  } | Array<ElementHandle> | Array<{
     /**
      * Matches by `option.value`. Optional.
      */
@@ -10820,7 +10825,7 @@ export interface Locator {
    * @param files
    * @param options
    */
-  setInputFiles(files: string|Array<string>|{
+  setInputFiles(files: string | Array<string> | {
     /**
      * File name
      */
@@ -10835,7 +10840,7 @@ export interface Locator {
      * File content
      */
     buffer: Buffer;
-  }|Array<{
+  } | Array<{
     /**
      * File name
      */
@@ -10893,7 +10898,7 @@ export interface Locator {
      * Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
      * modifiers back. If not specified, currently pressed modifiers are used.
      */
-    modifiers?: Array<"Alt"|"Control"|"Meta"|"Shift">;
+    modifiers?: Array<"Alt" | "Control" | "Meta" | "Shift">;
 
     /**
      * Actions that initiate navigations are waiting for these navigations to happen and for pages to start loading. You can
@@ -10939,7 +10944,7 @@ export interface Locator {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<null|string>;
+  }): Promise<null | string>;
 
   /**
    * Focuses the element, and then sends a `keydown`, `keypress`/`input`, and `keyup` event for each character in the text.
@@ -11062,7 +11067,7 @@ export interface Locator {
      * - `'hidden'` - wait for element to be either detached from DOM, or have an empty bounding box or `visibility:hidden`.
      *   This is opposite to the `'visible'` option.
      */
-    state?: "attached"|"detached"|"visible"|"hidden";
+    state?: "attached" | "detached" | "visible" | "hidden";
 
     /**
      * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
@@ -11071,7 +11076,8 @@ export interface Locator {
      * or [page.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-page#page-set-default-timeout) methods.
      */
     timeout?: number;
-  }): Promise<void>;}
+  }): Promise<void>;
+}
 
 /**
  * BrowserType provides methods to launch a specific browser instance or connect to an existing one. The following is a
@@ -11247,7 +11253,7 @@ export interface BrowserType<Unused = {}> {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'light'`.
      */
-    colorScheme?: null|"light"|"dark"|"no-preference";
+    colorScheme?: null | "light" | "dark" | "no-preference";
 
     /**
      * Specify device scale factor (can be thought of as dpr). Defaults to `1`.
@@ -11270,7 +11276,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
      */
-    env?: { [key: string]: string|number|boolean; };
+    env?: { [key: string]: string | number | boolean; };
 
     /**
      * Path to a browser executable to run instead of the bundled one. If `executablePath` is a relative path, then it is
@@ -11289,7 +11295,7 @@ export interface BrowserType<Unused = {}> {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'none'`.
      */
-    forcedColors?: null|"active"|"none";
+    forcedColors?: null | "active" | "none";
 
     geolocation?: {
       /**
@@ -11349,7 +11355,7 @@ export interface BrowserType<Unused = {}> {
      * If `true`, Playwright does not pass its own configurations args and only uses the ones from `args`. If an array is
      * given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
      */
-    ignoreDefaultArgs?: boolean|Array<string>;
+    ignoreDefaultArgs?: boolean | Array<string>;
 
     /**
      * Whether to ignore HTTPS errors when sending network requests. Defaults to `false`.
@@ -11435,7 +11441,7 @@ export interface BrowserType<Unused = {}> {
        * is stored inline the HAR file as per HAR specification. Defaults to `attach` for `.zip` output files and to `embed` for
        * all other file extensions.
        */
-      content?: "omit"|"embed"|"attach";
+      content?: "omit" | "embed" | "attach";
 
       /**
        * Path on the filesystem to write the HAR file to. If the file name ends with `.zip`, `content: 'attach'` is used by
@@ -11447,14 +11453,14 @@ export interface BrowserType<Unused = {}> {
        * When set to `minimal`, only record information necessary for routing from HAR. This omits sizes, timing, page, cookies,
        * security and other types of HAR information that are not used when replaying from HAR. Defaults to `full`.
        */
-      mode?: "full"|"minimal";
+      mode?: "full" | "minimal";
 
       /**
        * A glob or regex pattern to filter requests that are stored in the HAR. When a `baseURL` via the context options was
        * provided and the passed URL is a path, it gets merged via the
        * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
        */
-      urlFilter?: string|RegExp;
+      urlFilter?: string | RegExp;
     };
 
     /**
@@ -11491,7 +11497,7 @@ export interface BrowserType<Unused = {}> {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'no-preference'`.
      */
-    reducedMotion?: null|"reduce"|"no-preference";
+    reducedMotion?: null | "reduce" | "no-preference";
 
     /**
      * Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the `viewport`
@@ -11514,7 +11520,7 @@ export interface BrowserType<Unused = {}> {
      * - `'allow'`: [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) can be registered.
      * - `'block'`: Playwright will block all registration of Service Workers.
      */
-    serviceWorkers?: "allow"|"block";
+    serviceWorkers?: "allow" | "block";
 
     /**
      * Slows down Playwright operations by the specified amount of milliseconds. Useful so that you can see what is going on.
@@ -11576,7 +11582,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
      */
-    viewport?: null|{
+    viewport?: null | {
       /**
        * page width in pixels.
        */
@@ -11647,7 +11653,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
      */
-    env?: { [key: string]: string|number|boolean; };
+    env?: { [key: string]: string | number | boolean; };
 
     /**
      * Path to a browser executable to run instead of the bundled one. If `executablePath` is a relative path, then it is
@@ -11660,7 +11666,7 @@ export interface BrowserType<Unused = {}> {
      * Firefox user preferences. Learn more about the Firefox user preferences at
      * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
      */
-    firefoxUserPrefs?: { [key: string]: string|number|boolean; };
+    firefoxUserPrefs?: { [key: string]: string | number | boolean; };
 
     /**
      * Close the browser process on SIGHUP. Defaults to `true`.
@@ -11689,7 +11695,7 @@ export interface BrowserType<Unused = {}> {
      * If `true`, Playwright does not pass its own configurations args and only uses the ones from `args`. If an array is
      * given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
      */
-    ignoreDefaultArgs?: boolean|Array<string>;
+    ignoreDefaultArgs?: boolean | Array<string>;
 
     /**
      * Logger sink for Playwright logging.
@@ -11750,7 +11756,8 @@ export interface BrowserType<Unused = {}> {
   /**
    * Returns browser name. For example: `'chromium'`, `'webkit'` or `'firefox'`.
    */
-  name(): string;}
+  name(): string;
+}
 
 /**
  * - extends: [EventEmitter]
@@ -11795,7 +11802,8 @@ export interface CDPSession {
    * Detaches the CDPSession from the target. Once detached, the CDPSession object won't emit any events and can't be used to
    * send messages.
    */
-  detach(): Promise<void>;}
+  detach(): Promise<void>;
+}
 
 type DeviceDescriptor = {
   viewport: ViewportSize;
@@ -11808,34 +11816,34 @@ type DeviceDescriptor = {
 
 export namespace errors {
 
-/**
- * - extends: [Error]
- *
- * TimeoutError is emitted whenever certain operations are terminated due to timeout, e.g.
- * [locator.waitFor([options])](https://playwright.dev/docs/api/class-locator#locator-wait-for) or
- * [browserType.launch([options])](https://playwright.dev/docs/api/class-browsertype#browser-type-launch).
- *
- * ```js
- * const playwright = require('playwright');
- *
- * (async () => {
- *   const browser = await playwright.chromium.launch();
- *   const context = await browser.newContext();
- *   const page = await context.newPage();
- *   try {
- *     await page.locator("text=Foo").click({
- *       timeout: 100,
- *     })
- *   } catch (error) {
- *     if (error instanceof playwright.errors.TimeoutError)
- *       console.log("Timeout!")
- *   }
- *   await browser.close();
- * })();
- * ```
- *
- */
-class TimeoutError extends Error {}
+  /**
+   * - extends: [Error]
+   *
+   * TimeoutError is emitted whenever certain operations are terminated due to timeout, e.g.
+   * [locator.waitFor([options])](https://playwright.dev/docs/api/class-locator#locator-wait-for) or
+   * [browserType.launch([options])](https://playwright.dev/docs/api/class-browsertype#browser-type-launch).
+   *
+   * ```js
+   * const playwright = require('playwright');
+   *
+   * (async () => {
+   *   const browser = await playwright.chromium.launch();
+   *   const context = await browser.newContext();
+   *   const page = await context.newPage();
+   *   try {
+   *     await page.locator("text=Foo").click({
+   *       timeout: 100,
+   *     })
+   *   } catch (error) {
+   *     if (error instanceof playwright.errors.TimeoutError)
+   *       console.log("Timeout!")
+   *   }
+   *   await browser.close();
+   * })();
+   * ```
+   *
+   */
+  class TimeoutError extends Error { }
 
 }
 
@@ -11899,13 +11907,13 @@ export interface Accessibility {
    * @deprecated
    * @param options
    */
-  snapshot(options?: AccessibilitySnapshotOptions): Promise<null|AccessibilityNode>;
+  snapshot(options?: AccessibilitySnapshotOptions): Promise<null | AccessibilityNode>;
 }
 
 type AccessibilityNode = {
   role: string;
   name: string;
-  value?: string|number;
+  value?: string | number;
   description?: string;
   keyshortcuts?: string;
   roledescription?: string;
@@ -11919,8 +11927,8 @@ type AccessibilityNode = {
   readonly?: boolean;
   required?: boolean;
   selected?: boolean;
-  checked?: boolean|"mixed";
-  pressed?: boolean|"mixed";
+  checked?: boolean | "mixed";
+  pressed?: boolean | "mixed";
   level?: number;
   valuemin?: number;
   valuemax?: number;
@@ -12165,7 +12173,8 @@ export interface ElectronApplication {
   /**
    * Convenience method that returns all the opened windows.
    */
-  windows(): Array<Page>;}
+  windows(): Array<Page>;
+}
 
 export type AndroidElementInfo = {
   clazz: string;
@@ -12211,7 +12220,7 @@ export type AndroidKey =
   'Home' |
   'Back' |
   'Call' | 'EndCall' |
-  '0' |  '1' |  '2' |  '3' |  '4' |  '5' |  '6' |  '7' |  '8' |  '9' |
+  '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' |
   'Star' | 'Pound' | '*' | '#' |
   'DialUp' | 'DialDown' | 'DialLeft' | 'DialRight' | 'DialCenter' |
   'VolumeUp' | 'VolumeDown' |
@@ -12259,7 +12268,7 @@ export const _electron: Electron;
 export const _android: Android;
 
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459
-export {};
+export { };
 
 
 /**
@@ -12590,7 +12599,7 @@ export interface AndroidDevice {
    * @param direction Fling direction.
    * @param options
    */
-  fling(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", options?: {
+  fling(selector: AndroidSelector, direction: "down" | "up" | "left" | "right", options?: {
     /**
      * Optional speed of the fling in pixels per second.
      */
@@ -12618,7 +12627,7 @@ export interface AndroidDevice {
    * @param file Either a path to the apk file, or apk file content.
    * @param options
    */
-  installApk(file: string|Buffer, options?: {
+  installApk(file: string | Buffer, options?: {
     /**
      * Optional arguments to pass to the `shell:cmd package install` call. Defaults to `-r -t -S`.
      */
@@ -12660,7 +12669,7 @@ export interface AndroidDevice {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'light'`.
      */
-    colorScheme?: null|"light"|"dark"|"no-preference";
+    colorScheme?: null | "light" | "dark" | "no-preference";
 
     /**
      * Optional package name to launch instead of default Chrome for Android.
@@ -12682,7 +12691,7 @@ export interface AndroidDevice {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'none'`.
      */
-    forcedColors?: null|"active"|"none";
+    forcedColors?: null | "active" | "none";
 
     geolocation?: {
       /**
@@ -12773,7 +12782,7 @@ export interface AndroidDevice {
        * is stored inline the HAR file as per HAR specification. Defaults to `attach` for `.zip` output files and to `embed` for
        * all other file extensions.
        */
-      content?: "omit"|"embed"|"attach";
+      content?: "omit" | "embed" | "attach";
 
       /**
        * Path on the filesystem to write the HAR file to. If the file name ends with `.zip`, `content: 'attach'` is used by
@@ -12785,14 +12794,14 @@ export interface AndroidDevice {
        * When set to `minimal`, only record information necessary for routing from HAR. This omits sizes, timing, page, cookies,
        * security and other types of HAR information that are not used when replaying from HAR. Defaults to `full`.
        */
-      mode?: "full"|"minimal";
+      mode?: "full" | "minimal";
 
       /**
        * A glob or regex pattern to filter requests that are stored in the HAR. When a `baseURL` via the context options was
        * provided and the passed URL is a path, it gets merged via the
        * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
        */
-      urlFilter?: string|RegExp;
+      urlFilter?: string | RegExp;
     };
 
     /**
@@ -12829,7 +12838,7 @@ export interface AndroidDevice {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'no-preference'`.
      */
-    reducedMotion?: null|"reduce"|"no-preference";
+    reducedMotion?: null | "reduce" | "no-preference";
 
     /**
      * Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the `viewport`
@@ -12852,7 +12861,7 @@ export interface AndroidDevice {
      * - `'allow'`: [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) can be registered.
      * - `'block'`: Playwright will block all registration of Service Workers.
      */
-    serviceWorkers?: "allow"|"block";
+    serviceWorkers?: "allow" | "block";
 
     /**
      * If specified, enables strict selectors mode for this context. In the strict selectors mode all operations on selectors
@@ -12898,7 +12907,7 @@ export interface AndroidDevice {
     /**
      * Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
      */
-    viewport?: null|{
+    viewport?: null | {
       /**
        * page width in pixels.
        */
@@ -13001,7 +13010,7 @@ export interface AndroidDevice {
    * @param path Path to the file on the device.
    * @param options
    */
-  push(file: string|Buffer, path: string, options?: {
+  push(file: string | Buffer, path: string, options?: {
     /**
      * Optional file mode, defaults to `644` (`rw-r--r--`).
      */
@@ -13027,7 +13036,7 @@ export interface AndroidDevice {
    * @param percent Distance to scroll as a percentage of the widget's size.
    * @param options
    */
-  scroll(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", percent: number, options?: {
+  scroll(selector: AndroidSelector, direction: "down" | "up" | "left" | "right", percent: number, options?: {
     /**
      * Optional speed of the scroll in pixels per second.
      */
@@ -13066,7 +13075,7 @@ export interface AndroidDevice {
    * @param percent Distance to swipe as a percentage of the widget's size.
    * @param options
    */
-  swipe(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", percent: number, options?: {
+  swipe(selector: AndroidSelector, direction: "down" | "up" | "left" | "right", percent: number, options?: {
     /**
      * Optional speed of the swipe in pixels per second.
      */
@@ -13340,6 +13349,11 @@ export interface AndroidWebView {
   page(): Promise<Page>;
 
   /**
+   * Connects to the WebView and returns a regular Playwright [Page] to interact with.
+   */
+  pages(): Promise<Page[]>;
+
+  /**
    * WebView process PID.
    */
   pid(): number;
@@ -13348,6 +13362,16 @@ export interface AndroidWebView {
    * WebView package identifier.
    */
   pkg(): string;
+
+  /**
+   * Get socketName
+   */
+  socketName(): string;
+
+  /**
+   * Get socketName
+   */
+  _socketName(): string;
 }
 
 /**
@@ -13432,7 +13456,7 @@ export interface APIRequest {
      * [apiRequestContext.storageState([options])](https://playwright.dev/docs/api/class-apirequestcontext#api-request-context-storage-state)
      * methods.
      */
-    storageState?: string|{
+    storageState?: string | {
       cookies: Array<{
         name: string;
 
@@ -13451,7 +13475,7 @@ export interface APIRequest {
 
         secure: boolean;
 
-        sameSite: "Strict"|"Lax"|"None";
+        sameSite: "Strict" | "Lax" | "None";
       }>;
 
       origins: Array<{
@@ -13517,7 +13541,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -13529,7 +13553,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -13553,27 +13577,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -13636,13 +13662,13 @@ export interface APIRequestContext {
    * @param urlOrRequest Target URL or Request to get all parameters from.
    * @param options
    */
-  fetch(urlOrRequest: string|Request, options?: {
+  fetch(urlOrRequest: string | Request, options?: {
     /**
      * Allows to set post data of the request. If the data parameter is an object, it will be serialized to json string and
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -13654,7 +13680,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -13684,27 +13710,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -13737,7 +13765,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -13749,7 +13777,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -13773,27 +13801,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -13814,7 +13844,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -13826,7 +13856,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -13850,27 +13880,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -13891,7 +13923,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -13903,7 +13935,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -13927,27 +13959,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -14016,7 +14050,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -14028,7 +14062,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -14052,27 +14086,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -14093,7 +14129,7 @@ export interface APIRequestContext {
      * `content-type` header will be set to `application/json` if not explicitly set. Otherwise the `content-type` header will
      * be set to `application/octet-stream` if not explicitly set.
      */
-    data?: string|Buffer|Serializable;
+    data?: string | Buffer | Serializable;
 
     /**
      * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status codes.
@@ -14105,7 +14141,7 @@ export interface APIRequestContext {
      * this request body. If this parameter is specified `content-type` header will be set to
      * `application/x-www-form-urlencoded` unless explicitly provided.
      */
-    form?: { [key: string]: string|number|boolean; };
+    form?: { [key: string]: string | number | boolean; };
 
     /**
      * Allows to set HTTP headers.
@@ -14129,27 +14165,29 @@ export interface APIRequestContext {
      * provided. File values can be passed either as [`fs.ReadStream`](https://nodejs.org/api/fs.html#fs_class_fs_readstream)
      * or as file-like object containing file name, mime-type and its content.
      */
-    multipart?: { [key: string]: string|number|boolean|ReadStream|{
-      /**
-       * File name
-       */
-      name: string;
+    multipart?: {
+      [key: string]: string | number | boolean | ReadStream | {
+        /**
+         * File name
+         */
+        name: string;
 
-      /**
-       * File type
-       */
-      mimeType: string;
+        /**
+         * File type
+         */
+        mimeType: string;
 
-      /**
-       * File content
-       */
-      buffer: Buffer;
-    }; };
+        /**
+         * File content
+         */
+        buffer: Buffer;
+      };
+    };
 
     /**
      * Query parameters to be sent with the URL.
      */
-    params?: { [key: string]: string|number|boolean; };
+    params?: { [key: string]: string | number | boolean; };
 
     /**
      * Request timeout in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
@@ -14187,7 +14225,7 @@ export interface APIRequestContext {
 
       secure: boolean;
 
-      sameSite: "Strict"|"Lax"|"None";
+      sameSite: "Strict" | "Lax" | "None";
     }>;
 
     origins: Array<{
@@ -14447,7 +14485,7 @@ export interface Browser extends EventEmitter {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'light'`.
      */
-    colorScheme?: null|"light"|"dark"|"no-preference";
+    colorScheme?: null | "light" | "dark" | "no-preference";
 
     /**
      * Specify device scale factor (can be thought of as dpr). Defaults to `1`.
@@ -14464,7 +14502,7 @@ export interface Browser extends EventEmitter {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'none'`.
      */
-    forcedColors?: null|"active"|"none";
+    forcedColors?: null | "active" | "none";
 
     geolocation?: {
       /**
@@ -14585,7 +14623,7 @@ export interface Browser extends EventEmitter {
        * is stored inline the HAR file as per HAR specification. Defaults to `attach` for `.zip` output files and to `embed` for
        * all other file extensions.
        */
-      content?: "omit"|"embed"|"attach";
+      content?: "omit" | "embed" | "attach";
 
       /**
        * Path on the filesystem to write the HAR file to. If the file name ends with `.zip`, `content: 'attach'` is used by
@@ -14597,14 +14635,14 @@ export interface Browser extends EventEmitter {
        * When set to `minimal`, only record information necessary for routing from HAR. This omits sizes, timing, page, cookies,
        * security and other types of HAR information that are not used when replaying from HAR. Defaults to `full`.
        */
-      mode?: "full"|"minimal";
+      mode?: "full" | "minimal";
 
       /**
        * A glob or regex pattern to filter requests that are stored in the HAR. When a `baseURL` via the context options was
        * provided and the passed URL is a path, it gets merged via the
        * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
        */
-      urlFilter?: string|RegExp;
+      urlFilter?: string | RegExp;
     };
 
     /**
@@ -14641,7 +14679,7 @@ export interface Browser extends EventEmitter {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'no-preference'`.
      */
-    reducedMotion?: null|"reduce"|"no-preference";
+    reducedMotion?: null | "reduce" | "no-preference";
 
     /**
      * Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the `viewport`
@@ -14664,7 +14702,7 @@ export interface Browser extends EventEmitter {
      * - `'allow'`: [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) can be registered.
      * - `'block'`: Playwright will block all registration of Service Workers.
      */
-    serviceWorkers?: "allow"|"block";
+    serviceWorkers?: "allow" | "block";
 
     /**
      * Populates context with given storage state. This option can be used to initialize context with logged-in information
@@ -14672,7 +14710,7 @@ export interface Browser extends EventEmitter {
      * [browserContext.storageState([options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state).
      * Either a path to the file with saved storage, or an object with the following fields:
      */
-    storageState?: string|{
+    storageState?: string | {
       /**
        * cookies to set for context
        */
@@ -14703,7 +14741,7 @@ export interface Browser extends EventEmitter {
         /**
          * sameSite flag
          */
-        sameSite: "Strict"|"Lax"|"None";
+        sameSite: "Strict" | "Lax" | "None";
       }>;
 
       /**
@@ -14764,7 +14802,7 @@ export interface Browser extends EventEmitter {
     /**
      * Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
      */
-    viewport?: null|{
+    viewport?: null | {
       /**
        * page width in pixels.
        */
@@ -15170,7 +15208,7 @@ export interface Download {
   /**
    * Returns readable stream for current download or `null` if download failed.
    */
-  createReadStream(): Promise<null|Readable>;
+  createReadStream(): Promise<null | Readable>;
 
   /**
    * Deletes the downloaded file. Will wait for the download to finish if necessary.
@@ -15180,7 +15218,7 @@ export interface Download {
   /**
    * Returns download error if any. Will wait for the download to finish if necessary.
    */
-  failure(): Promise<null|string>;
+  failure(): Promise<null | string>;
 
   /**
    * Get the page that the download belongs to.
@@ -15195,7 +15233,7 @@ export interface Download {
    * [download.suggestedFilename()](https://playwright.dev/docs/api/class-download#download-suggested-filename) to get
    * suggested file name.
    */
-  path(): Promise<null|string>;
+  path(): Promise<null | string>;
 
   /**
    * Copy the download to a user-specified path. It is safe to call this method while the download is still in progress. Will
@@ -15295,7 +15333,7 @@ export interface Electron {
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
      * `null` resets emulation to system defaults. Defaults to `'light'`.
      */
-    colorScheme?: null|"light"|"dark"|"no-preference";
+    colorScheme?: null | "light" | "dark" | "no-preference";
 
     /**
      * Current working directory to launch application from.
@@ -15379,7 +15417,7 @@ export interface Electron {
        * is stored inline the HAR file as per HAR specification. Defaults to `attach` for `.zip` output files and to `embed` for
        * all other file extensions.
        */
-      content?: "omit"|"embed"|"attach";
+      content?: "omit" | "embed" | "attach";
 
       /**
        * Path on the filesystem to write the HAR file to. If the file name ends with `.zip`, `content: 'attach'` is used by
@@ -15391,14 +15429,14 @@ export interface Electron {
        * When set to `minimal`, only record information necessary for routing from HAR. This omits sizes, timing, page, cookies,
        * security and other types of HAR information that are not used when replaying from HAR. Defaults to `full`.
        */
-      mode?: "full"|"minimal";
+      mode?: "full" | "minimal";
 
       /**
        * A glob or regex pattern to filter requests that are stored in the HAR. When a `baseURL` via the context options was
        * provided and the passed URL is a path, it gets merged via the
        * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
        */
-      urlFilter?: string|RegExp;
+      urlFilter?: string | RegExp;
     };
 
     /**
@@ -15484,7 +15522,7 @@ export interface FileChooser {
    * @param files
    * @param options
    */
-  setFiles(files: string|Array<string>|{
+  setFiles(files: string | Array<string> | {
     /**
      * File name
      */
@@ -15499,7 +15537,7 @@ export interface FileChooser {
      * File content
      */
     buffer: Buffer;
-  }|Array<{
+  } | Array<{
     /**
      * File name
      */
@@ -15589,7 +15627,7 @@ export interface FrameLocator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByAltText(text: string|RegExp, options?: {
+  getByAltText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -15609,7 +15647,7 @@ export interface FrameLocator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByLabel(text: string|RegExp, options?: {
+  getByLabel(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -15628,7 +15666,7 @@ export interface FrameLocator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByPlaceholder(text: string|RegExp, options?: {
+  getByPlaceholder(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -15649,7 +15687,7 @@ export interface FrameLocator {
    * @param role Required aria role.
    * @param options
    */
-  getByRole(role: "alert"|"alertdialog"|"application"|"article"|"banner"|"blockquote"|"button"|"caption"|"cell"|"checkbox"|"code"|"columnheader"|"combobox"|"complementary"|"contentinfo"|"definition"|"deletion"|"dialog"|"directory"|"document"|"emphasis"|"feed"|"figure"|"form"|"generic"|"grid"|"gridcell"|"group"|"heading"|"img"|"insertion"|"link"|"list"|"listbox"|"listitem"|"log"|"main"|"marquee"|"math"|"meter"|"menu"|"menubar"|"menuitem"|"menuitemcheckbox"|"menuitemradio"|"navigation"|"none"|"note"|"option"|"paragraph"|"presentation"|"progressbar"|"radio"|"radiogroup"|"region"|"row"|"rowgroup"|"rowheader"|"scrollbar"|"search"|"searchbox"|"separator"|"slider"|"spinbutton"|"status"|"strong"|"subscript"|"superscript"|"switch"|"tab"|"table"|"tablist"|"tabpanel"|"term"|"textbox"|"time"|"timer"|"toolbar"|"tooltip"|"tree"|"treegrid"|"treeitem", options?: {
+  getByRole(role: "alert" | "alertdialog" | "application" | "article" | "banner" | "blockquote" | "button" | "caption" | "cell" | "checkbox" | "code" | "columnheader" | "combobox" | "complementary" | "contentinfo" | "definition" | "deletion" | "dialog" | "directory" | "document" | "emphasis" | "feed" | "figure" | "form" | "generic" | "grid" | "gridcell" | "group" | "heading" | "img" | "insertion" | "link" | "list" | "listbox" | "listitem" | "log" | "main" | "marquee" | "math" | "meter" | "menu" | "menubar" | "menuitem" | "menuitemcheckbox" | "menuitemradio" | "navigation" | "none" | "note" | "option" | "paragraph" | "presentation" | "progressbar" | "radio" | "radiogroup" | "region" | "row" | "rowgroup" | "rowheader" | "scrollbar" | "search" | "searchbox" | "separator" | "slider" | "spinbutton" | "status" | "strong" | "subscript" | "superscript" | "switch" | "tab" | "table" | "tablist" | "tabpanel" | "term" | "textbox" | "time" | "timer" | "toolbar" | "tooltip" | "tree" | "treegrid" | "treeitem", options?: {
     /**
      * An attribute that is usually set by `aria-checked` or native `<input type=checkbox>` controls.
      *
@@ -15700,7 +15738,7 @@ export interface FrameLocator {
      *
      * Learn more about [accessible name](https://w3c.github.io/accname/#dfn-accessible-name).
      */
-    name?: string|RegExp;
+    name?: string | RegExp;
 
     /**
      * An attribute that is usually set by `aria-pressed`.
@@ -15770,7 +15808,7 @@ export interface FrameLocator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByText(text: string|RegExp, options?: {
+  getByText(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -15788,7 +15826,7 @@ export interface FrameLocator {
    * @param text Text to locate the element for.
    * @param options
    */
-  getByTitle(text: string|RegExp, options?: {
+  getByTitle(text: string | RegExp, options?: {
     /**
      * Whether to find an exact match: case-sensitive and whole-string. Default to false. Ignored when locating by a regular
      * expression. Note that exact match still trims whitespace.
@@ -15823,7 +15861,7 @@ export interface FrameLocator {
      * [string], matching is case-insensitive and searches for a substring. For example, `"Playwright"` matches
      * `<article><div>Playwright</div></article>`.
      */
-    hasText?: string|RegExp;
+    hasText?: string | RegExp;
   }): Locator;
 
   /**
@@ -16015,7 +16053,7 @@ export interface Logger {
    * @param name logger name
    * @param severity
    */
-  isEnabled(name: string, severity: "verbose"|"info"|"warning"|"error"): boolean;
+  isEnabled(name: string, severity: "verbose" | "info" | "warning" | "error"): boolean;
 
   /**
    * @param name logger name
@@ -16024,7 +16062,7 @@ export interface Logger {
    * @param args message arguments
    * @param hints optional formatting hints
    */
-  log(name: string, severity: "verbose"|"info"|"warning"|"error", message: string|Error, args: Array<Object>, hints: {
+  log(name: string, severity: "verbose" | "info" | "warning" | "error", message: string | Error, args: Array<Object>, hints: {
     /**
      * Optional preferred logger color.
      */
@@ -16063,7 +16101,7 @@ export interface Mouse {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -16090,7 +16128,7 @@ export interface Mouse {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * Time to wait between `mousedown` and `mouseup` in milliseconds. Defaults to 0.
@@ -16106,7 +16144,7 @@ export interface Mouse {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -16135,7 +16173,7 @@ export interface Mouse {
     /**
      * Defaults to `left`.
      */
-    button?: "left"|"right"|"middle";
+    button?: "left" | "right" | "middle";
 
     /**
      * defaults to 1. See [UIEvent.detail].
@@ -16215,7 +16253,7 @@ export interface Request {
    * ```
    *
    */
-  failure(): null|{
+  failure(): null | {
     /**
      * Human-readable error message, e.g. `'net::ERR_FAILED'`.
      */
@@ -16256,7 +16294,7 @@ export interface Request {
    * Returns the value of the header matching the name. The name is case insensitive.
    * @param name Name of the header.
    */
-  headerValue(name: string): Promise<null|string>;
+  headerValue(name: string): Promise<null | string>;
 
   /**
    * Whether this request is driving frame's navigation.
@@ -16271,12 +16309,12 @@ export interface Request {
   /**
    * Request's post body, if any.
    */
-  postData(): null|string;
+  postData(): null | string;
 
   /**
    * Request's post body in a binary form, if any.
    */
-  postDataBuffer(): null|Buffer;
+  postDataBuffer(): null | Buffer;
 
   /**
    * Returns parsed request's body for `form-urlencoded` and JSON as a fallback if any.
@@ -16284,7 +16322,7 @@ export interface Request {
    * When the response is `application/x-www-form-urlencoded` then a key/value object of the values will be returned.
    * Otherwise it will be parsed as JSON.
    */
-  postDataJSON(): null|Serializable;
+  postDataJSON(): null | Serializable;
 
   /**
    * Request that was redirected by the server to this one, if any.
@@ -16308,7 +16346,7 @@ export interface Request {
    * ```
    *
    */
-  redirectedFrom(): null|Request;
+  redirectedFrom(): null | Request;
 
   /**
    * New request issued by the browser if the server responded with redirect.
@@ -16321,7 +16359,7 @@ export interface Request {
    * ```
    *
    */
-  redirectedTo(): null|Request;
+  redirectedTo(): null | Request;
 
   /**
    * Contains the request's resource type as it was perceived by the rendering engine. ResourceType will be one of the
@@ -16333,14 +16371,14 @@ export interface Request {
   /**
    * Returns the matching [Response] object, or `null` if the response was not received due to error.
    */
-  response(): Promise<null|Response>;
+  response(): Promise<null | Response>;
 
   /**
    * > NOTE: This field is Chromium only. It's safe to call when using other browsers, but it will always be `null`.
    *
    * The Service [Worker] that is performing the request.
    */
-  serviceWorker(): null|Worker;
+  serviceWorker(): null | Worker;
 
   /**
    * Returns resource size information for given request.
@@ -16459,7 +16497,7 @@ export interface Response {
   /**
    * Waits for this response to finish, returns always `null`.
    */
-  finished(): Promise<null|Error>;
+  finished(): Promise<null | Error>;
 
   /**
    * Returns the [Frame] that initiated this response.
@@ -16503,7 +16541,7 @@ export interface Response {
    * no headers are found, `null` is returned.
    * @param name Name of the header.
    */
-  headerValue(name: string): Promise<null|string>;
+  headerValue(name: string): Promise<null | string>;
 
   /**
    * Returns all values of the headers matching the name, for example `set-cookie`. The name is case insensitive.
@@ -16531,7 +16569,7 @@ export interface Response {
   /**
    * Returns SSL and other security information.
    */
-  securityDetails(): Promise<null|{
+  securityDetails(): Promise<null | {
     /**
      * Common Name component of the Issuer field. from the certificate. This should only be used for informational purposes.
      * Optional.
@@ -16563,7 +16601,7 @@ export interface Response {
   /**
    * Returns the IP address and port of the server.
    */
-  serverAddr(): Promise<null|{
+  serverAddr(): Promise<null | {
     /**
      * IPv4 or IPV6 address of the server.
      */
@@ -16654,7 +16692,7 @@ export interface Route {
     /**
      * If set changes the post data of request
      */
-    postData?: string|Buffer;
+    postData?: string | Buffer;
 
     /**
      * If set changes the request URL. New URL must have same protocol as original one.
@@ -16739,7 +16777,7 @@ export interface Route {
     /**
      * If set changes the post data of request
      */
-    postData?: string|Buffer;
+    postData?: string | Buffer;
 
     /**
      * If set changes the request URL. New URL must have same protocol as original one. Changing the URL won't affect the route
@@ -16775,7 +16813,7 @@ export interface Route {
     /**
      * Response body.
      */
-    body?: string|Buffer;
+    body?: string | Buffer;
 
     /**
      * If set, equals to setting `Content-Type` response header.
@@ -16858,7 +16896,7 @@ export interface Selectors {
    * @param script Script that evaluates to a selector engine instance. The script is evaluated in the page context.
    * @param options
    */
-  register(name: string, script: Function|string|{
+  register(name: string, script: Function | string | {
     /**
      * Path to the JavaScript file. If `path` is a relative path, then it is resolved relative to the current working
      * directory. Optional.
@@ -17058,21 +17096,21 @@ export interface WebSocket {
    * Fired when the websocket receives a frame.
    */
   on(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket sends a frame.
    */
   on(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket has an error.
@@ -17088,21 +17126,21 @@ export interface WebSocket {
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
   once(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
   once(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
@@ -17118,21 +17156,21 @@ export interface WebSocket {
    * Fired when the websocket receives a frame.
    */
   addListener(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket sends a frame.
    */
   addListener(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket has an error.
@@ -17148,21 +17186,21 @@ export interface WebSocket {
    * Removes an event listener added by `on` or `addListener`.
    */
   removeListener(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
   removeListener(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
@@ -17178,21 +17216,21 @@ export interface WebSocket {
    * Removes an event listener added by `on` or `addListener`.
    */
   off(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
   off(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
@@ -17208,21 +17246,21 @@ export interface WebSocket {
    * Fired when the websocket receives a frame.
    */
   prependListener(event: 'framereceived', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket sends a frame.
    */
   prependListener(event: 'framesent', listener: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => void): this;
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => void): this;
 
   /**
    * Fired when the websocket has an error.
@@ -17247,42 +17285,46 @@ export interface WebSocket {
   /**
    * Fired when the websocket receives a frame.
    */
-  waitForEvent(event: 'framereceived', optionsOrPredicate?: { predicate?: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => boolean | Promise<boolean>, timeout?: number } | ((data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => boolean | Promise<boolean>)): Promise<{
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}>;
+  waitForEvent(event: 'framereceived', optionsOrPredicate?: {
+    predicate?: (data: {
+      /**
+       * frame payload
+       */
+      payload: string | Buffer;
+    }) => boolean | Promise<boolean>, timeout?: number
+  } | ((data: {
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => boolean | Promise<boolean>)): Promise<{
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }>;
 
   /**
    * Fired when the websocket sends a frame.
    */
-  waitForEvent(event: 'framesent', optionsOrPredicate?: { predicate?: (data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => boolean | Promise<boolean>, timeout?: number } | ((data: {
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}) => boolean | Promise<boolean>)): Promise<{
-  /**
-   * frame payload
-   */
-  payload: string|Buffer;
-}>;
+  waitForEvent(event: 'framesent', optionsOrPredicate?: {
+    predicate?: (data: {
+      /**
+       * frame payload
+       */
+      payload: string | Buffer;
+    }) => boolean | Promise<boolean>, timeout?: number
+  } | ((data: {
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }) => boolean | Promise<boolean>)): Promise<{
+    /**
+     * frame payload
+     */
+    payload: string | Buffer;
+  }>;
 
   /**
    * Fired when the websocket has an error.
@@ -17322,7 +17364,7 @@ export interface BrowserContextOptions {
    * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
    * `null` resets emulation to system defaults. Defaults to `'light'`.
    */
-  colorScheme?: null|"light"|"dark"|"no-preference";
+  colorScheme?: null | "light" | "dark" | "no-preference";
 
   /**
    * Specify device scale factor (can be thought of as dpr). Defaults to `1`.
@@ -17339,7 +17381,7 @@ export interface BrowserContextOptions {
    * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
    * `null` resets emulation to system defaults. Defaults to `'none'`.
    */
-  forcedColors?: null|"active"|"none";
+  forcedColors?: null | "active" | "none";
 
   geolocation?: Geolocation;
 
@@ -17441,7 +17483,7 @@ export interface BrowserContextOptions {
      * is stored inline the HAR file as per HAR specification. Defaults to `attach` for `.zip` output files and to `embed` for
      * all other file extensions.
      */
-    content?: "omit"|"embed"|"attach";
+    content?: "omit" | "embed" | "attach";
 
     /**
      * Path on the filesystem to write the HAR file to. If the file name ends with `.zip`, `content: 'attach'` is used by
@@ -17453,14 +17495,14 @@ export interface BrowserContextOptions {
      * When set to `minimal`, only record information necessary for routing from HAR. This omits sizes, timing, page, cookies,
      * security and other types of HAR information that are not used when replaying from HAR. Defaults to `full`.
      */
-    mode?: "full"|"minimal";
+    mode?: "full" | "minimal";
 
     /**
      * A glob or regex pattern to filter requests that are stored in the HAR. When a `baseURL` via the context options was
      * provided and the passed URL is a path, it gets merged via the
      * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
      */
-    urlFilter?: string|RegExp;
+    urlFilter?: string | RegExp;
   };
 
   /**
@@ -17497,7 +17539,7 @@ export interface BrowserContextOptions {
    * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details. Passing
    * `null` resets emulation to system defaults. Defaults to `'no-preference'`.
    */
-  reducedMotion?: null|"reduce"|"no-preference";
+  reducedMotion?: null | "reduce" | "no-preference";
 
   /**
    * Emulates consistent window screen size available inside web page via `window.screen`. Is only used when the `viewport`
@@ -17520,7 +17562,7 @@ export interface BrowserContextOptions {
    * - `'allow'`: [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) can be registered.
    * - `'block'`: Playwright will block all registration of Service Workers.
    */
-  serviceWorkers?: "allow"|"block";
+  serviceWorkers?: "allow" | "block";
 
   /**
    * Populates context with given storage state. This option can be used to initialize context with logged-in information
@@ -17528,7 +17570,7 @@ export interface BrowserContextOptions {
    * [browserContext.storageState([options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state).
    * Either a path to the file with saved storage, or an object with the following fields:
    */
-  storageState?: string|{
+  storageState?: string | {
     /**
      * cookies to set for context
      */
@@ -17559,7 +17601,7 @@ export interface BrowserContextOptions {
       /**
        * sameSite flag
        */
-      sameSite: "Strict"|"Lax"|"None";
+      sameSite: "Strict" | "Lax" | "None";
     }>;
 
     /**
@@ -17620,7 +17662,7 @@ export interface BrowserContextOptions {
   /**
    * Emulates consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
    */
-  viewport?: null|ViewportSize;
+  viewport?: null | ViewportSize;
 }
 
 export interface ViewportSize {
@@ -17705,7 +17747,7 @@ export interface LaunchOptions {
   /**
    * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
    */
-  env?: { [key: string]: string|number|boolean; };
+  env?: { [key: string]: string | number | boolean; };
 
   /**
    * Path to a browser executable to run instead of the bundled one. If `executablePath` is a relative path, then it is
@@ -17718,7 +17760,7 @@ export interface LaunchOptions {
    * Firefox user preferences. Learn more about the Firefox user preferences at
    * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
    */
-  firefoxUserPrefs?: { [key: string]: string|number|boolean; };
+  firefoxUserPrefs?: { [key: string]: string | number | boolean; };
 
   /**
    * Close the browser process on SIGHUP. Defaults to `true`.
@@ -17747,7 +17789,7 @@ export interface LaunchOptions {
    * If `true`, Playwright does not pass its own configurations args and only uses the ones from `args`. If an array is
    * given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
    */
-  ignoreDefaultArgs?: boolean|Array<string>;
+  ignoreDefaultArgs?: boolean | Array<string>;
 
   /**
    * Logger sink for Playwright logging.
@@ -17858,13 +17900,13 @@ export interface LocatorScreenshotOptions {
    *
    * Defaults to `"allow"` that leaves animations untouched.
    */
-  animations?: "disabled"|"allow";
+  animations?: "disabled" | "allow";
 
   /**
    * When set to `"hide"`, screenshot will hide text caret. When set to `"initial"`, text caret behavior will not be changed.
    * Defaults to `"hide"`.
    */
-  caret?: "hide"|"initial";
+  caret?: "hide" | "initial";
 
   /**
    * Specify locators that should be masked when the screenshot is taken. Masked elements will be overlaid with a pink box
@@ -17897,7 +17939,7 @@ export interface LocatorScreenshotOptions {
    *
    * Defaults to `"device"`.
    */
-  scale?: "css"|"device";
+  scale?: "css" | "device";
 
   /**
    * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
@@ -17910,7 +17952,7 @@ export interface LocatorScreenshotOptions {
   /**
    * Specify screenshot type, defaults to `png`.
    */
-  type?: "png"|"jpeg";
+  type?: "png" | "jpeg";
 }
 
 interface ElementHandleWaitForSelectorOptions {
@@ -17923,7 +17965,7 @@ interface ElementHandleWaitForSelectorOptions {
    * - `'hidden'` - wait for element to be either detached from DOM, or have an empty bounding box or `visibility:hidden`.
    *   This is opposite to the `'visible'` option.
    */
-  state?: "attached"|"detached"|"visible"|"hidden";
+  state?: "attached" | "detached" | "visible" | "hidden";
 
   /**
    * When true, the call requires selector to resolve to a single element. If given selector resolves to more than one
@@ -17958,7 +18000,7 @@ export interface Cookie {
 
   secure: boolean;
 
-  sameSite: "Strict"|"Lax"|"None";
+  sameSite: "Strict" | "Lax" | "None";
 }
 
 interface PageWaitForSelectorOptions {
@@ -17971,7 +18013,7 @@ interface PageWaitForSelectorOptions {
    * - `'hidden'` - wait for element to be either detached from DOM, or have an empty bounding box or `visibility:hidden`.
    *   This is opposite to the `'visible'` option.
    */
-  state?: "attached"|"detached"|"visible"|"hidden";
+  state?: "attached" | "detached" | "visible" | "hidden";
 
   /**
    * When true, the call requires selector to resolve to a single element. If given selector resolves to more than one
@@ -17993,7 +18035,7 @@ interface PageWaitForFunctionOptions {
    * If `polling` is `'raf'`, then `pageFunction` is constantly executed in `requestAnimationFrame` callback. If `polling` is
    * a number, then it is treated as an interval in milliseconds at which the function would be executed. Defaults to `raf`.
    */
-  polling?: number|"raf";
+  polling?: number | "raf";
 
   /**
    * maximum time to wait for in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default
@@ -18012,13 +18054,13 @@ export interface PageScreenshotOptions {
    *
    * Defaults to `"allow"` that leaves animations untouched.
    */
-  animations?: "disabled"|"allow";
+  animations?: "disabled" | "allow";
 
   /**
    * When set to `"hide"`, screenshot will hide text caret. When set to `"initial"`, text caret behavior will not be changed.
    * Defaults to `"hide"`.
    */
-  caret?: "hide"|"initial";
+  caret?: "hide" | "initial";
 
   /**
    * An object which specifies clipping of the resulting image. Should have the following fields:
@@ -18082,7 +18124,7 @@ export interface PageScreenshotOptions {
    *
    * Defaults to `"device"`.
    */
-  scale?: "css"|"device";
+  scale?: "css" | "device";
 
   /**
    * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
@@ -18095,7 +18137,7 @@ export interface PageScreenshotOptions {
   /**
    * Specify screenshot type, defaults to `png`.
    */
-  type?: "png"|"jpeg";
+  type?: "png" | "jpeg";
 }
 
 type Devices = {

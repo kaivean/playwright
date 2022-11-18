@@ -1,0 +1,1 @@
+module.exports = require('./packages/playwright-core/index');
