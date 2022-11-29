@@ -1099,19 +1099,14 @@ scheme.PageTouchscreenTapParams = tObject({
   x: tNumber,
   y: tNumber,
 });
-
-scheme.PageTouchscreenMoveParams = tObject({
-  startX: tNumber,
-  startY: tNumber,
-  endX: tNumber,
-  endY: tNumber
-});
+scheme.PageTouchscreenTapResult = tOptional(tObject({}));
 scheme.PageTouchscreenDownParams = tObject({
   startX: tNumber,
   startY: tNumber,
 });
+scheme.PageTouchscreenDownResult = tOptional(tObject({}));
 scheme.PageTouchscreenUpParams = tOptional(tObject({}));
-scheme.PageTouchscreenTapResult = tOptional(tObject({}));
+scheme.PageTouchscreenUpResult = tOptional(tObject({}));
 scheme.PageAccessibilitySnapshotParams = tObject({
   interestingOnly: tOptional(tBoolean),
   root: tOptional(tChannel(['ElementHandle'])),

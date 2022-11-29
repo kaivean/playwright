@@ -254,26 +254,25 @@ onChanges.push({
   script: 'utils/generate_channels.js',
 });
 
-// 不要编译生成，自己写了几个方法编译后导出类型没有
 // Generate types.
-// onChanges.push({
-//   committed: false,
-//   inputs: [
-//     'docs/src/api/',
-//     'docs/src/test-api/',
-//     'docs/src/test-reporter-api/',
-//     'utils/generate_types/overrides.d.ts',
-//     'utils/generate_types/overrides-test.d.ts',
-//     'utils/generate_types/overrides-testReporter.d.ts',
-//     'utils/generate_types/exported.json',
-//     'packages/playwright-core/src/server/chromium/protocol.d.ts',
-//   ],
-//   mustExist: [
-//     'packages/playwright-core/lib/server/deviceDescriptors.js',
-//     'packages/playwright-core/lib/server/deviceDescriptorsSource.json',
-//   ],
-//   script: 'utils/generate_types/index.js',
-// });
+onChanges.push({
+  committed: false,
+  inputs: [
+    'docs/src/api/',
+    'docs/src/test-api/',
+    'docs/src/test-reporter-api/',
+    'utils/generate_types/overrides.d.ts',
+    'utils/generate_types/overrides-test.d.ts',
+    'utils/generate_types/overrides-testReporter.d.ts',
+    'utils/generate_types/exported.json',
+    'packages/playwright-core/src/server/chromium/protocol.d.ts',
+  ],
+  mustExist: [
+    'packages/playwright-core/lib/server/deviceDescriptors.js',
+    'packages/playwright-core/lib/server/deviceDescriptorsSource.json',
+  ],
+  script: 'utils/generate_types/index.js',
+});
 
 // Rebuild web projects on change.
 for (const webPackage of ['html-reporter', 'recorder', 'trace-viewer']) {

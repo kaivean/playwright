@@ -23,117 +23,117 @@ export interface Channel {
 
 // ----------- Initializer Traits -----------
 export type InitializerTraits<T> =
-  T extends JsonPipeChannel ? JsonPipeInitializer :
-  T extends AndroidDeviceChannel ? AndroidDeviceInitializer :
-  T extends AndroidSocketChannel ? AndroidSocketInitializer :
-  T extends AndroidChannel ? AndroidInitializer :
-  T extends ElectronApplicationChannel ? ElectronApplicationInitializer :
-  T extends ElectronChannel ? ElectronInitializer :
-  T extends CDPSessionChannel ? CDPSessionInitializer :
-  T extends WritableStreamChannel ? WritableStreamInitializer :
-  T extends StreamChannel ? StreamInitializer :
-  T extends ArtifactChannel ? ArtifactInitializer :
-  T extends TracingChannel ? TracingInitializer :
-  T extends DialogChannel ? DialogInitializer :
-  T extends BindingCallChannel ? BindingCallInitializer :
-  T extends ConsoleMessageChannel ? ConsoleMessageInitializer :
-  T extends WebSocketChannel ? WebSocketInitializer :
-  T extends ResponseChannel ? ResponseInitializer :
-  T extends RouteChannel ? RouteInitializer :
-  T extends RequestChannel ? RequestInitializer :
-  T extends ElementHandleChannel ? ElementHandleInitializer :
-  T extends JSHandleChannel ? JSHandleInitializer :
-  T extends WorkerChannel ? WorkerInitializer :
-  T extends FrameChannel ? FrameInitializer :
-  T extends PageChannel ? PageInitializer :
-  T extends BrowserContextChannel ? BrowserContextInitializer :
-  T extends EventTargetChannel ? EventTargetInitializer :
-  T extends BrowserChannel ? BrowserInitializer :
-  T extends BrowserTypeChannel ? BrowserTypeInitializer :
-  T extends SelectorsChannel ? SelectorsInitializer :
-  T extends SocksSupportChannel ? SocksSupportInitializer :
-  T extends DebugControllerChannel ? DebugControllerInitializer :
-  T extends PlaywrightChannel ? PlaywrightInitializer :
-  T extends RootChannel ? RootInitializer :
-  T extends LocalUtilsChannel ? LocalUtilsInitializer :
-  T extends APIRequestContextChannel ? APIRequestContextInitializer :
-  object;
+    T extends JsonPipeChannel ? JsonPipeInitializer :
+    T extends AndroidDeviceChannel ? AndroidDeviceInitializer :
+    T extends AndroidSocketChannel ? AndroidSocketInitializer :
+    T extends AndroidChannel ? AndroidInitializer :
+    T extends ElectronApplicationChannel ? ElectronApplicationInitializer :
+    T extends ElectronChannel ? ElectronInitializer :
+    T extends CDPSessionChannel ? CDPSessionInitializer :
+    T extends WritableStreamChannel ? WritableStreamInitializer :
+    T extends StreamChannel ? StreamInitializer :
+    T extends ArtifactChannel ? ArtifactInitializer :
+    T extends TracingChannel ? TracingInitializer :
+    T extends DialogChannel ? DialogInitializer :
+    T extends BindingCallChannel ? BindingCallInitializer :
+    T extends ConsoleMessageChannel ? ConsoleMessageInitializer :
+    T extends WebSocketChannel ? WebSocketInitializer :
+    T extends ResponseChannel ? ResponseInitializer :
+    T extends RouteChannel ? RouteInitializer :
+    T extends RequestChannel ? RequestInitializer :
+    T extends ElementHandleChannel ? ElementHandleInitializer :
+    T extends JSHandleChannel ? JSHandleInitializer :
+    T extends WorkerChannel ? WorkerInitializer :
+    T extends FrameChannel ? FrameInitializer :
+    T extends PageChannel ? PageInitializer :
+    T extends BrowserContextChannel ? BrowserContextInitializer :
+    T extends EventTargetChannel ? EventTargetInitializer :
+    T extends BrowserChannel ? BrowserInitializer :
+    T extends BrowserTypeChannel ? BrowserTypeInitializer :
+    T extends SelectorsChannel ? SelectorsInitializer :
+    T extends SocksSupportChannel ? SocksSupportInitializer :
+    T extends DebugControllerChannel ? DebugControllerInitializer :
+    T extends PlaywrightChannel ? PlaywrightInitializer :
+    T extends RootChannel ? RootInitializer :
+    T extends LocalUtilsChannel ? LocalUtilsInitializer :
+    T extends APIRequestContextChannel ? APIRequestContextInitializer :
+    object;
 
 // ----------- Event Traits -----------
 export type EventsTraits<T> =
-  T extends JsonPipeChannel ? JsonPipeEvents :
-  T extends AndroidDeviceChannel ? AndroidDeviceEvents :
-  T extends AndroidSocketChannel ? AndroidSocketEvents :
-  T extends AndroidChannel ? AndroidEvents :
-  T extends ElectronApplicationChannel ? ElectronApplicationEvents :
-  T extends ElectronChannel ? ElectronEvents :
-  T extends CDPSessionChannel ? CDPSessionEvents :
-  T extends WritableStreamChannel ? WritableStreamEvents :
-  T extends StreamChannel ? StreamEvents :
-  T extends ArtifactChannel ? ArtifactEvents :
-  T extends TracingChannel ? TracingEvents :
-  T extends DialogChannel ? DialogEvents :
-  T extends BindingCallChannel ? BindingCallEvents :
-  T extends ConsoleMessageChannel ? ConsoleMessageEvents :
-  T extends WebSocketChannel ? WebSocketEvents :
-  T extends ResponseChannel ? ResponseEvents :
-  T extends RouteChannel ? RouteEvents :
-  T extends RequestChannel ? RequestEvents :
-  T extends ElementHandleChannel ? ElementHandleEvents :
-  T extends JSHandleChannel ? JSHandleEvents :
-  T extends WorkerChannel ? WorkerEvents :
-  T extends FrameChannel ? FrameEvents :
-  T extends PageChannel ? PageEvents :
-  T extends BrowserContextChannel ? BrowserContextEvents :
-  T extends EventTargetChannel ? EventTargetEvents :
-  T extends BrowserChannel ? BrowserEvents :
-  T extends BrowserTypeChannel ? BrowserTypeEvents :
-  T extends SelectorsChannel ? SelectorsEvents :
-  T extends SocksSupportChannel ? SocksSupportEvents :
-  T extends DebugControllerChannel ? DebugControllerEvents :
-  T extends PlaywrightChannel ? PlaywrightEvents :
-  T extends RootChannel ? RootEvents :
-  T extends LocalUtilsChannel ? LocalUtilsEvents :
-  T extends APIRequestContextChannel ? APIRequestContextEvents :
-  undefined;
+    T extends JsonPipeChannel ? JsonPipeEvents :
+    T extends AndroidDeviceChannel ? AndroidDeviceEvents :
+    T extends AndroidSocketChannel ? AndroidSocketEvents :
+    T extends AndroidChannel ? AndroidEvents :
+    T extends ElectronApplicationChannel ? ElectronApplicationEvents :
+    T extends ElectronChannel ? ElectronEvents :
+    T extends CDPSessionChannel ? CDPSessionEvents :
+    T extends WritableStreamChannel ? WritableStreamEvents :
+    T extends StreamChannel ? StreamEvents :
+    T extends ArtifactChannel ? ArtifactEvents :
+    T extends TracingChannel ? TracingEvents :
+    T extends DialogChannel ? DialogEvents :
+    T extends BindingCallChannel ? BindingCallEvents :
+    T extends ConsoleMessageChannel ? ConsoleMessageEvents :
+    T extends WebSocketChannel ? WebSocketEvents :
+    T extends ResponseChannel ? ResponseEvents :
+    T extends RouteChannel ? RouteEvents :
+    T extends RequestChannel ? RequestEvents :
+    T extends ElementHandleChannel ? ElementHandleEvents :
+    T extends JSHandleChannel ? JSHandleEvents :
+    T extends WorkerChannel ? WorkerEvents :
+    T extends FrameChannel ? FrameEvents :
+    T extends PageChannel ? PageEvents :
+    T extends BrowserContextChannel ? BrowserContextEvents :
+    T extends EventTargetChannel ? EventTargetEvents :
+    T extends BrowserChannel ? BrowserEvents :
+    T extends BrowserTypeChannel ? BrowserTypeEvents :
+    T extends SelectorsChannel ? SelectorsEvents :
+    T extends SocksSupportChannel ? SocksSupportEvents :
+    T extends DebugControllerChannel ? DebugControllerEvents :
+    T extends PlaywrightChannel ? PlaywrightEvents :
+    T extends RootChannel ? RootEvents :
+    T extends LocalUtilsChannel ? LocalUtilsEvents :
+    T extends APIRequestContextChannel ? APIRequestContextEvents :
+    undefined;
 
 // ----------- EventTarget Traits -----------
 export type EventTargetTraits<T> =
-  T extends JsonPipeChannel ? JsonPipeEventTarget :
-  T extends AndroidDeviceChannel ? AndroidDeviceEventTarget :
-  T extends AndroidSocketChannel ? AndroidSocketEventTarget :
-  T extends AndroidChannel ? AndroidEventTarget :
-  T extends ElectronApplicationChannel ? ElectronApplicationEventTarget :
-  T extends ElectronChannel ? ElectronEventTarget :
-  T extends CDPSessionChannel ? CDPSessionEventTarget :
-  T extends WritableStreamChannel ? WritableStreamEventTarget :
-  T extends StreamChannel ? StreamEventTarget :
-  T extends ArtifactChannel ? ArtifactEventTarget :
-  T extends TracingChannel ? TracingEventTarget :
-  T extends DialogChannel ? DialogEventTarget :
-  T extends BindingCallChannel ? BindingCallEventTarget :
-  T extends ConsoleMessageChannel ? ConsoleMessageEventTarget :
-  T extends WebSocketChannel ? WebSocketEventTarget :
-  T extends ResponseChannel ? ResponseEventTarget :
-  T extends RouteChannel ? RouteEventTarget :
-  T extends RequestChannel ? RequestEventTarget :
-  T extends ElementHandleChannel ? ElementHandleEventTarget :
-  T extends JSHandleChannel ? JSHandleEventTarget :
-  T extends WorkerChannel ? WorkerEventTarget :
-  T extends FrameChannel ? FrameEventTarget :
-  T extends PageChannel ? PageEventTarget :
-  T extends BrowserContextChannel ? BrowserContextEventTarget :
-  T extends EventTargetChannel ? EventTargetEventTarget :
-  T extends BrowserChannel ? BrowserEventTarget :
-  T extends BrowserTypeChannel ? BrowserTypeEventTarget :
-  T extends SelectorsChannel ? SelectorsEventTarget :
-  T extends SocksSupportChannel ? SocksSupportEventTarget :
-  T extends DebugControllerChannel ? DebugControllerEventTarget :
-  T extends PlaywrightChannel ? PlaywrightEventTarget :
-  T extends RootChannel ? RootEventTarget :
-  T extends LocalUtilsChannel ? LocalUtilsEventTarget :
-  T extends APIRequestContextChannel ? APIRequestContextEventTarget :
-  undefined;
+    T extends JsonPipeChannel ? JsonPipeEventTarget :
+    T extends AndroidDeviceChannel ? AndroidDeviceEventTarget :
+    T extends AndroidSocketChannel ? AndroidSocketEventTarget :
+    T extends AndroidChannel ? AndroidEventTarget :
+    T extends ElectronApplicationChannel ? ElectronApplicationEventTarget :
+    T extends ElectronChannel ? ElectronEventTarget :
+    T extends CDPSessionChannel ? CDPSessionEventTarget :
+    T extends WritableStreamChannel ? WritableStreamEventTarget :
+    T extends StreamChannel ? StreamEventTarget :
+    T extends ArtifactChannel ? ArtifactEventTarget :
+    T extends TracingChannel ? TracingEventTarget :
+    T extends DialogChannel ? DialogEventTarget :
+    T extends BindingCallChannel ? BindingCallEventTarget :
+    T extends ConsoleMessageChannel ? ConsoleMessageEventTarget :
+    T extends WebSocketChannel ? WebSocketEventTarget :
+    T extends ResponseChannel ? ResponseEventTarget :
+    T extends RouteChannel ? RouteEventTarget :
+    T extends RequestChannel ? RequestEventTarget :
+    T extends ElementHandleChannel ? ElementHandleEventTarget :
+    T extends JSHandleChannel ? JSHandleEventTarget :
+    T extends WorkerChannel ? WorkerEventTarget :
+    T extends FrameChannel ? FrameEventTarget :
+    T extends PageChannel ? PageEventTarget :
+    T extends BrowserContextChannel ? BrowserContextEventTarget :
+    T extends EventTargetChannel ? EventTargetEventTarget :
+    T extends BrowserChannel ? BrowserEventTarget :
+    T extends BrowserTypeChannel ? BrowserTypeEventTarget :
+    T extends SelectorsChannel ? SelectorsEventTarget :
+    T extends SocksSupportChannel ? SocksSupportEventTarget :
+    T extends DebugControllerChannel ? DebugControllerEventTarget :
+    T extends PlaywrightChannel ? PlaywrightEventTarget :
+    T extends RootChannel ? RootEventTarget :
+    T extends LocalUtilsChannel ? LocalUtilsEventTarget :
+    T extends APIRequestContextChannel ? APIRequestContextEventTarget :
+    undefined;
 
 export type StackFrame = {
   file: string,
@@ -1684,7 +1684,6 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   mouseClick(params: PageMouseClickParams, metadata?: Metadata): Promise<PageMouseClickResult>;
   mouseWheel(params: PageMouseWheelParams, metadata?: Metadata): Promise<PageMouseWheelResult>;
   touchscreenTap(params: PageTouchscreenTapParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
-  touchscreenMove(params: PageTouchscreenMoveParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
   touchscreenDown(params: PageTouchscreenDownParams, metadata?: Metadata): Promise<PageTouchscreenDownResult>;
   touchscreenUp(params?: PageTouchscreenUpParams, metadata?: Metadata): Promise<PageTouchscreenUpResult>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, metadata?: Metadata): Promise<PageAccessibilitySnapshotResult>;
@@ -2015,12 +2014,6 @@ export type PageMouseWheelParams = {
   deltaX: number,
   deltaY: number,
 };
-export type PageTouchscreenMoveParams = {
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-};
 export type PageMouseWheelOptions = {
 
 };
@@ -2029,19 +2022,21 @@ export type PageTouchscreenTapParams = {
   x: number,
   y: number,
 };
-export type PageTouchscreenUpResult = void;
-export type PageTouchscreenUpParams = {};
-
-export type PageTouchscreenDownParams = {
-  startX: number,
-  startY: number,
-};
-
 export type PageTouchscreenTapOptions = {
 
 };
 export type PageTouchscreenTapResult = void;
+export type PageTouchscreenDownParams = {
+  startX: number,
+  startY: number,
+};
+export type PageTouchscreenDownOptions = {
+
+};
 export type PageTouchscreenDownResult = void;
+export type PageTouchscreenUpParams = {};
+export type PageTouchscreenUpOptions = {};
+export type PageTouchscreenUpResult = void;
 export type PageAccessibilitySnapshotParams = {
   interestingOnly?: boolean,
   root?: ElementHandleChannel,
