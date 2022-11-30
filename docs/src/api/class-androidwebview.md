@@ -19,7 +19,7 @@ Connects to the WebView and returns a regular Playwright [Page] to interact with
 * since: v1.9
 - returns: <[Array<Page>]>
 
-Connects to the WebView and returns a regular Playwright [Page[]] to interact with.
+Connects to the WebView and returns a regular Playwright [Array<Page>] to interact with.
 
 ## method: AndroidWebView.pid
 * since: v1.9

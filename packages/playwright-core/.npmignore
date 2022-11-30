@@ -37,3 +37,5 @@ lib/**/injected/
 # Include generated devices descriptors
 !deviceDescriptorsSource.json
 !ThirdPartyNotices.txt
+# Include package descriptors and some file need use.
+!package.json
