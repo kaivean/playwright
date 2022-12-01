@@ -1100,6 +1100,13 @@ scheme.PageTouchscreenTapParams = tObject({
   y: tNumber,
 });
 scheme.PageTouchscreenTapResult = tOptional(tObject({}));
+scheme.PageTouchscreenDownParams = tObject({
+  startX: tNumber,
+  startY: tNumber,
+});
+scheme.PageTouchscreenDownResult = tOptional(tObject({}));
+scheme.PageTouchscreenUpParams = tOptional(tObject({}));
+scheme.PageTouchscreenUpResult = tOptional(tObject({}));
 scheme.PageAccessibilitySnapshotParams = tObject({
   interestingOnly: tOptional(tBoolean),
   root: tOptional(tChannel(['ElementHandle'])),

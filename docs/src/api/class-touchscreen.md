@@ -16,3 +16,35 @@ Dispatches a `touchstart` and `touchend` event with a single touch at the positi
 ### param: Touchscreen.tap.y
 * since: v1.8
 - `y` <[float]>
+
+
+## async method: Touchscreen.move
+* since: v1.8
+Dispatches a `touchstart` and `touchmove` and `touchend` event with a single touch at the position ([`param: startX`],[`param: startY`],[`param: endX`],[`param: endY`]).
+### param: Touchscreen.move.startX
+* since: v1.8
+- `startX` <[float]>
+
+### param: Touchscreen.move.startY
+* since: v1.8
+- `startY` <[float]>
+### param: Touchscreen.move.endX
+* since: v1.8
+- `endX` <[float]>
+
+### param: Touchscreen.move.endY
+* since: v1.8
+- `endY` <[float]>
+
+## async method: Touchscreen.down
+* since: v1.8
+### param: Touchscreen.down.startX
+* since: v1.8
+- `startX` <[float]>
+
+### param: Touchscreen.down.startY
+* since: v1.8
+- `startY` <[float]>
+
+## async method: Touchscreen.up
+* since: v1.8

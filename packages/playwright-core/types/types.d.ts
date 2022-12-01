@@ -13340,6 +13340,11 @@ export interface AndroidWebView {
   page(): Promise<Page>;
 
   /**
+   * Connects to the WebView and returns a regular Playwright [Page[]] to interact with.
+   */
+  pages(): Promise<Array<Page>>;
+
+  /**
    * WebView process PID.
    */
   pid(): number;
@@ -13348,6 +13353,16 @@ export interface AndroidWebView {
    * WebView package identifier.
    */
   pkg(): string;
+
+  /**
+   * Get socketName.
+   */
+  socketName(): string;
+
+  /**
+   * Get socketName.
+   */
+  _socketName(): string;
 }
 
 /**
@@ -16896,6 +16911,22 @@ export interface Touchscreen {
    * @param y
    */
   tap(x: number, y: number): Promise<void>;
+
+  /**
+   * @param startX
+   * @param startY
+   * @param endX
+   * @param endY
+   */
+  move(startX: number, startY: number, endX: number, endY: number): Promise<void>;
+
+  /**
+   * @param startX
+   * @param startY
+   */
+  down(startX: number, startY: number): Promise<void>;
+
+  up(): Promise<void>;
 }
 
 /**
