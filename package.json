@@ -1,7 +1,7 @@
 {
   "name": "@baidu/playwright-expand",
-  "version": "1.27.0-beta4",
-  "description": "A high-level API to automate web browsers",
+  "version": "1.27.0-beta5",
+  "description": "A high-level API to automate web browsers dev====",
   "repository": "github:Microsoft/playwright",
   "homepage": "https://playwright.dev",
   "engines": {
@@ -40,7 +40,8 @@
     "roll": "node utils/roll_browser.js",
     "check-deps": "node utils/check_deps.js",
     "build-android-driver": "./utils/build_android_driver.sh",
-    "innerloop": "playwright run-server --reuse-browser"
+    "innerloop": "playwright run-server --reuse-browser",
+    "prepare": "node install-from-github.js"
   },
   "workspaces": [
     "packages/*"
