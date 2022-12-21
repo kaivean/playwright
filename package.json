@@ -40,8 +40,7 @@
     "roll": "node utils/roll_browser.js",
     "check-deps": "node utils/check_deps.js",
     "build-android-driver": "./utils/build_android_driver.sh",
-    "innerloop": "playwright run-server --reuse-browser",
-    "prepare": "node install-from-github.js"
+    "innerloop": "playwright run-server --reuse-browser"
   },
   "workspaces": [
     "packages/*"
