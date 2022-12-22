@@ -1,6 +1,6 @@
 {
   "name": "@baidu/playwright-expand",
-  "version": "1.27.0-beta6",
+  "version": "1.28.0-beta1",
   "description": "A high-level API to automate web browsers dev",
   "repository": "github:Microsoft/playwright",
   "homepage": "https://playwright.dev",
