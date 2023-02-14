@@ -1414,6 +1414,13 @@ Page:
       tracing:
         snapshot: true
 
+    touchscreenMove:
+      parameters:
+        startX: number
+        startY: number
+        endX: number
+        endY: number
+
     touchscreenDown:
       parameters:
         startX: number
