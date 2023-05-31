@@ -180,23 +180,23 @@ export class AndroidDevice extends SdkObject {
     debug('pw:android')('Stopping the old driver');
     await this.shell(`am force-stop com.microsoft.playwright.androiddriver`);
 
-    // uninstall and install driver on every excution
-    if (!this._options.omitDriverInstall) {
-      debug('pw:android')('Uninstalling the old driver');
-      await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
-      await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
+    // 不要每次都卸载安装，有些手机安装有拦截机制，不易安装，要求用户安装好
+    // if (!this._options.omitDriverInstall) {
+    //   debug('pw:android')('Uninstalling the old driver');
+    //   await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver`);
+    //   await this.shell(`cmd package uninstall com.microsoft.playwright.androiddriver.test`);
 
-      debug('pw:android')('Installing the new driver');
-      const executable = registry.findExecutable('android')!;
-      for (const file of ['android-driver.apk', 'android-driver-target.apk']) {
-        const fullName = path.join(executable.directory!, file);
-        if (!fs.existsSync(fullName))
-          throw new Error('Please install Android driver apk using `npx playwright install android`');
-        await this.installApk(await fs.promises.readFile(fullName));
-      }
-    } else {
-      debug('pw:android')('Skipping the driver installation');
-    }
+    //   debug('pw:android')('Installing the new driver');
+    //   const executable = registry.findExecutable('android')!;
+    //   for (const file of ['android-driver.apk', 'android-driver-target.apk']) {
+    //     const fullName = path.join(executable.directory!, file);
+    //     if (!fs.existsSync(fullName))
+    //       throw new Error('Please install Android driver apk using `npx playwright install android`');
+    //     await this.installApk(await fs.promises.readFile(fullName));
+    //   }
+    // } else {
+    //   debug('pw:android')('Skipping the driver installation');
+    // }
 
     debug('pw:android')('Starting the new driver');
     this.shell('am instrument -w com.microsoft.playwright.androiddriver.test/androidx.test.runner.AndroidJUnitRunner').catch(e => debug('pw:android')(e));

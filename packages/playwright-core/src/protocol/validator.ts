@@ -1100,6 +1100,13 @@ scheme.PageTouchscreenTapParams = tObject({
   y: tNumber,
 });
 scheme.PageTouchscreenTapResult = tOptional(tObject({}));
+scheme.PageTouchscreenMoveParams = tObject({
+  startX: tNumber,
+  startY: tNumber,
+  endX: tNumber,
+  endY: tNumber,
+});
+scheme.PageTouchscreenMoveResult = tOptional(tObject({}));
 scheme.PageTouchscreenDownParams = tObject({
   startX: tNumber,
   startY: tNumber,

@@ -1684,6 +1684,7 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   mouseClick(params: PageMouseClickParams, metadata?: Metadata): Promise<PageMouseClickResult>;
   mouseWheel(params: PageMouseWheelParams, metadata?: Metadata): Promise<PageMouseWheelResult>;
   touchscreenTap(params: PageTouchscreenTapParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
+  touchscreenMove(params: PageTouchscreenMoveParams, metadata?: Metadata): Promise<PageTouchscreenMoveResult>;
   touchscreenDown(params: PageTouchscreenDownParams, metadata?: Metadata): Promise<PageTouchscreenDownResult>;
   touchscreenUp(params?: PageTouchscreenUpParams, metadata?: Metadata): Promise<PageTouchscreenUpResult>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, metadata?: Metadata): Promise<PageAccessibilitySnapshotResult>;
@@ -2026,6 +2027,16 @@ export type PageTouchscreenTapOptions = {
 
 };
 export type PageTouchscreenTapResult = void;
+export type PageTouchscreenMoveParams = {
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+};
+export type PageTouchscreenMoveOptions = {
+
+};
+export type PageTouchscreenMoveResult = void;
 export type PageTouchscreenDownParams = {
   startX: number,
   startY: number,
